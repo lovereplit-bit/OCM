@@ -1,0 +1,24 @@
+#!/bin/sh
+# Opens a link on the phone. Addresses on this device (localhost) go to the in-app preview window, everything else to
+# the system browser. Used as $BROWSER and as the xdg-open stand-in, so tools that "open a browser" just work.
+. /usr/local/lib/opencode-android/bridge.sh
+
+url="${1:-}"
+
+if [ -z "$url" ]; then
+  echo "usage: android-open <url>" >&2
+  exit 64
+fi
+
+case "$url" in
+  http://localhost*|http://127.0.0.1*|http://0.0.0.0*|http://\[::1\]*|https://localhost*|https://127.0.0.1*)
+    bridge /preview --get --data-urlencode "url=$url" >/dev/null
+    ;;
+  http://*|https://*)
+    bridge /open --get --data-urlencode "url=$url" >/dev/null
+    ;;
+  *)
+    echo "android-open: only http(s) addresses can be opened (got: $url)" >&2
+    exit 64
+    ;;
+esac

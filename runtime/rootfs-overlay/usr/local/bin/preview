@@ -1,0 +1,94 @@
+#!/bin/sh
+# Shows a page in a window inside the app: a floating window or full screen, like a browser tab on a desktop.
+#
+#   preview 5173                    a dev server on that port
+#   preview http://localhost:3000   an address on this device
+#   preview index.html              a file or a folder; a small static server is started for it
+#
+# Dev servers must listen on 127.0.0.1 or 0.0.0.0, not on a name the phone cannot resolve.
+. /usr/local/lib/opencode-android/bridge.sh
+
+usage() {
+  echo "usage: preview <port | url | file | folder>" >&2
+  exit 64
+}
+
+[ $# -ge 1 ] || usage
+
+arg="$1"
+
+show() {
+  if bridge /preview --get --data-urlencode "url=$1" >/dev/null; then
+    echo "Opened in the preview window: $1"
+  else
+    echo "The app refused to show it. Is the server running and reachable on this device?" >&2
+    exit 1
+  fi
+}
+
+case "$arg" in
+  *[!0-9]*) ;;
+  *) show "http://localhost:$arg"; exit 0 ;;
+esac
+
+case "$arg" in
+  http://*|https://*) show "$arg"; exit 0 ;;
+esac
+
+if [ -d "$arg" ]; then
+  dir="$(cd "$arg" && pwd -P)"
+  page=""
+elif [ -f "$arg" ]; then
+  dir="$(cd "$(dirname "$arg")" && pwd -P)"
+  page="$(basename "$arg")"
+else
+  echo "preview: not a port, address, file or folder: $arg" >&2
+  usage
+fi
+
+state="${TMPDIR:-/tmp}/preview-servers"
+mkdir -p "$state"
+
+# Reuse a server that already serves this folder.
+port=""
+for f in "$state"/*.dir; do
+  [ -e "$f" ] || continue
+  if [ "$(cat "$f")" = "$dir" ]; then
+    candidate="$(basename "$f" .dir)"
+    if curl -s --max-time 2 -o /dev/null "http://127.0.0.1:$candidate/"; then
+      port="$candidate"
+    else
+      rm -f "$f"
+    fi
+  fi
+done
+
+if [ -z "$port" ]; then
+  port="$(python3 - <<'PY'
+import socket
+for p in range(8000, 8100):
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", p))
+        s.close()
+        print(p)
+        break
+    except OSError:
+        s.close()
+PY
+)"
+
+  [ -n "$port" ] || { echo "preview: no free port between 8000 and 8099" >&2; exit 1; }
+
+  setsid nohup python3 -m http.server "$port" --bind 127.0.0.1 --directory "$dir" >"$state/$port.log" 2>&1 &
+  echo "$dir" >"$state/$port.dir"
+
+  i=0
+  until curl -s --max-time 1 -o /dev/null "http://127.0.0.1:$port/"; do
+    i=$((i + 1))
+    [ "$i" -lt 25 ] || { echo "preview: the static server did not start, see $state/$port.log" >&2; exit 1; }
+    sleep 0.2
+  done
+fi
+
+show "http://localhost:$port/$page"

@@ -1,0 +1,507 @@
+package dev.opencode.mobile
+
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
+import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.Executors
+
+/**
+ * Keeps OpenCode alive when the app is not on screen: it owns the Linux server process, the loopback bridge for
+ * commands inside it, the event stream that produces notifications, and the periodic update check.
+ */
+class ServerService : Service() {
+    private val app: App get() = application as App
+    private val worker = Executors.newSingleThreadExecutor { Thread(it, "server-worker") }
+    private val main = Handler(Looper.getMainLooper())
+
+    private lateinit var server: ServerProcess
+
+    private var bridge: BridgeServer? = null
+    private var watcher: EventWatcher? = null
+    private var wake: PowerManager.WakeLock? = null
+    private var wifi: WifiManager.WifiLock? = null
+    private val crashes = ArrayDeque<Long>()
+
+    /** Bumped on every start and stop so a watchdog or timer from an earlier run can tell it is stale. */
+    @Volatile
+    private var epoch = 0
+
+    private val updateTick = object : Runnable {
+        override fun run() {
+            Updates.auto(app)
+            main.postDelayed(this, 6 * 60 * 60 * 1000L)
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+
+        server = ServerProcess(app.paths)
+        running = true
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        try {
+            val notification = Notifier.server(this, "OpenCode", tr("Запуск...", "Starting..."))
+
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(Notifier.ID_SERVER, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(Notifier.ID_SERVER, notification)
+            }
+        } catch (e: Exception) {
+            // Android refuses to start a foreground service from the background; the next visit to the app starts it.
+            Log.w("service", "could not enter the foreground: ${e.message}")
+            stopSelf()
+
+            return START_NOT_STICKY
+        }
+
+        when (intent?.action) {
+            ACTION_STOP -> worker.execute {
+                shutdown()
+                main.post {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
+            ACTION_SWITCH -> {
+                intent.getStringExtra(EXTRA_PROFILE)?.let { app.profiles.setActive(it) }
+                worker.execute { begin(apply = false) }
+            }
+            ACTION_RESTART -> worker.execute { begin(apply = false) }
+            ACTION_APPLY -> worker.execute { begin(apply = true) }
+            else -> worker.execute { ensureRunning() }
+        }
+
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        running = false
+        epoch++
+        main.removeCallbacksAndMessages(null)
+        watcher?.stop()
+        bridge?.stop()
+        releaseLocks()
+        worker.shutdownNow()
+
+        // The server belongs to this service; leaving it running without a notification would be a hidden process.
+        Thread { server.stop() }.start()
+
+        super.onDestroy()
+    }
+
+    // ---- lifecycle ---------------------------------------------------------------------------------------------------
+
+    private fun baseFor(profile: Profile) = "http://127.0.0.1:${profile.port}"
+
+    private fun begin(apply: Boolean) {
+        if (app.prefs.remote) startRemote() else startLocal(apply)
+    }
+
+    private fun ensureRunning() {
+        val snap = ServerState.snapshot
+
+        if (snap.phase == Phase.RUNNING || snap.phase == Phase.STARTING || snap.phase == Phase.INSTALLING) return
+
+        if (app.prefs.remote) {
+            startRemote()
+
+            return
+        }
+
+        val profile = app.profiles.active
+
+        // The service can be recreated while the server is still up; take it over instead of starting a second one.
+        if (server.health(baseFor(profile), app.prefs.password) == 200 && server.prootPids().isNotEmpty()) {
+            Log.i("service", "adopting a running server for ${profile.id}")
+            bridge = bridge ?: startBridge()
+            onRunning(profile, baseFor(profile), app.prefs.password, local = true)
+        } else {
+            startLocal(apply = false)
+        }
+    }
+
+    private fun startLocal(apply: Boolean) {
+        val my = ++epoch
+        val profile = app.profiles.active
+        val base = baseFor(profile)
+        val password = app.prefs.password
+
+        quiet()
+        publish(Phase.STARTING, tr("Подготовка...", "Preparing..."), profile)
+
+        try {
+            if (app.runtime.needsInstall()) {
+                publish(Phase.INSTALLING, tr("Распаковка Linux-окружения. Это нужно один раз.", "Unpacking the Linux runtime. This happens once."), profile, 0)
+                app.runtime.install { p -> publish(Phase.INSTALLING, tr("Распаковка Linux-окружения. Это нужно один раз.", "Unpacking the Linux runtime. This happens once."), profile, p) }
+            }
+
+            if (!app.runtime.ready()) {
+                throw IOException(tr("Linux-окружение не установлено. Соберите приложение через GitHub Actions (см. README).", "The Linux runtime is not installed. Build the app with GitHub Actions (see the README)."))
+            }
+        } catch (e: Exception) {
+            Log.e("service", "runtime install failed", e)
+            fail(e.message ?: e.javaClass.simpleName, false, profile)
+
+            return
+        }
+
+        if (my != epoch) return
+
+        app.runtime.writeFakeProc()
+
+        val bridgeUrl = (bridge ?: startBridge()).also { bridge = it }.url
+
+        server.killOrphans()
+
+        var otaDir = app.ota.prepareStart(profile, apply)
+        var attempt = 0
+
+        while (true) {
+            val config = server.config(app.prefs, profile, bridgeUrl, otaDir)
+            val process = try {
+                server.spawn(config)
+            } catch (e: Exception) {
+                Log.e("service", "could not start the server", e)
+                fail(tr("Не удалось запустить сервер: ", "Could not start the server: ") + (e.message ?: ""), false, profile)
+
+                return
+            }
+
+            publish(Phase.STARTING, tr("Запуск сервера...", "Starting the server..."), profile)
+
+            val healthy = server.waitHealthy(base, password, 180_000, { process.isAlive }) { ms ->
+                if (ms > 20_000 && ms % 5_000 < 600) {
+                    publish(Phase.STARTING, tr("Сервер запускается, это может занять до минуты...", "The server is starting, this can take up to a minute..."), profile)
+                }
+            }
+
+            if (my != epoch) return
+
+            if (healthy) break
+
+            val exit = if (process.isAlive) null else process.exitValue()
+
+            server.stop()
+
+            val (hint, compat) = server.failureHint(exit)
+
+            Log.w("service", "server did not become healthy (exit=$exit): ${hint.lines().firstOrNull().orEmpty()}")
+
+            if (app.ota.trial && attempt == 0) {
+                val bad = app.ota.failTrial(profile)
+
+                Log.w("service", "rolled back $bad")
+                Notifier.update(this, tr("Новая версия сервера не запустилась, возвращена предыдущая.", "The new server build did not start, the previous one was restored."))
+                otaDir = app.ota.prepareStart(profile, apply = false)
+                attempt++
+
+                continue
+            }
+
+            fail(hint, compat, profile)
+
+            return
+        }
+
+        onRunning(profile, base, password, local = true)
+    }
+
+    private fun startRemote() {
+        val my = ++epoch
+        val profile = Profile("remote", "Remote", null, 0, 0)
+
+        quiet()
+        server.stop()
+
+        val base = Urls.normalizeServer(app.prefs.remoteUrl)
+
+        if (base == null) {
+            fail(tr("Адрес удалённого сервера не задан или неверен", "The remote server address is missing or invalid"), false, profile)
+
+            return
+        }
+
+        publish(Phase.STARTING, tr("Подключение к ", "Connecting to ") + Urls.displayHost(base), profile)
+
+        var code = -1
+
+        repeat(8) {
+            if (code != 200 && code != 401) {
+                code = server.health(base, app.prefs.remotePassword)
+
+                if (code != 200 && code != 401) Thread.sleep(1500)
+            }
+        }
+
+        if (my != epoch) return
+
+        when (code) {
+            200 -> onRunning(profile, base, app.prefs.remotePassword, local = false)
+            401 -> fail(tr("Сервер отклонил пароль", "The server rejected the password"), false, profile)
+            else -> fail(tr("Сервер недоступен: ", "The server is unreachable: ") + Urls.displayHost(base), false, profile)
+        }
+    }
+
+    private fun onRunning(profile: Profile, base: String, password: String, local: Boolean) {
+        val my = epoch
+        val next = ServerState.snapshot.generation + 1
+
+        ServerState.update {
+            it.copy(
+                phase = Phase.RUNNING,
+                message = "",
+                progress = -1,
+                profileId = profile.id,
+                port = Urls.parse(base)?.let { uri -> Urls.port(uri) } ?: 0,
+                baseUrl = base,
+                generation = next,
+                error = null,
+                suggestCompat = false,
+            )
+        }
+
+        status(if (local) tr("Сервер работает: ", "Server is running: ") + profile.title else tr("Подключено к ", "Connected to ") + Urls.displayHost(base))
+        acquireLocks()
+
+        watcher = EventWatcher(this, base, password, { app.prefs.notifyEnabled }, { app.inForeground }).also { it.start() }
+
+        if (local) {
+            watchdog(my, base, password)
+
+            // A new build only becomes the trusted one after it has stayed up for a while.
+            main.postDelayed({
+                if (epoch == my) worker.execute { if (epoch == my && server.health(base, password) == 200) app.ota.confirm() }
+            }, 25_000)
+
+            app.syncAccountAsync()
+            main.removeCallbacks(updateTick)
+            main.postDelayed(updateTick, 60_000)
+        }
+    }
+
+    private fun watchdog(my: Int, base: String, password: String) {
+        Thread({
+            var misses = 0
+
+            while (epoch == my) {
+                try {
+                    Thread.sleep(10_000)
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
+
+                if (epoch != my) return@Thread
+
+                if (server.health(base, password) == 200) {
+                    misses = 0
+                } else if (++misses >= 3) {
+                    worker.execute { onCrash(my) }
+
+                    return@Thread
+                }
+            }
+        }, "server-watchdog").apply { isDaemon = true; start() }
+    }
+
+    private fun onCrash(my: Int) {
+        if (epoch != my) return
+
+        val now = System.currentTimeMillis()
+
+        crashes.addLast(now)
+
+        while (crashes.isNotEmpty() && now - crashes.first() > 5 * 60_000) crashes.removeFirst()
+
+        val profile = app.profiles.active
+
+        Log.w("service", "the server stopped answering (${crashes.size} in 5 minutes)")
+
+        if (app.ota.trial) {
+            app.ota.failTrial(profile)
+            Notifier.update(this, tr("Новая версия сервера работала нестабильно, возвращена предыдущая.", "The new server build was unstable, the previous one was restored."))
+        }
+
+        if (crashes.size > 3) {
+            val (hint, compat) = server.failureHint(null)
+
+            epoch++
+            quiet()
+            server.stop()
+            fail(tr("Сервер постоянно падает. ", "The server keeps crashing. ") + hint, compat, profile)
+
+            return
+        }
+
+        startLocal(apply = false)
+    }
+
+    private fun shutdown() {
+        epoch++
+        quiet()
+        server.stop()
+        bridge?.stop()
+        bridge = null
+        releaseLocks()
+        ServerState.update { it.copy(phase = Phase.STOPPED, message = "", progress = -1, error = null) }
+    }
+
+    /** Stops what belongs to one run of the server without touching the bridge. */
+    private fun quiet() {
+        watcher?.stop()
+        watcher = null
+        main.removeCallbacks(updateTick)
+        server.stop()
+    }
+
+    // ---- state and notification --------------------------------------------------------------------------------------
+
+    private fun publish(phase: Phase, message: String, profile: Profile, progress: Int = -1) {
+        ServerState.update { it.copy(phase = phase, message = message, progress = progress, profileId = profile.id, error = null, suggestCompat = false) }
+        status(message)
+    }
+
+    private fun fail(message: String, suggestCompat: Boolean, profile: Profile) {
+        ServerState.update {
+            it.copy(phase = Phase.FAILED, message = "", progress = -1, profileId = profile.id, error = message, suggestCompat = suggestCompat)
+        }
+        status(tr("Ошибка запуска", "Failed to start"))
+        releaseLocks()
+    }
+
+    private fun status(text: String) {
+        getSystemService(NotificationManager::class.java).notify(Notifier.ID_SERVER, Notifier.server(this, "OpenCode", text))
+    }
+
+    private fun acquireLocks() {
+        if (!app.prefs.keepAwake) return
+
+        if (wake == null) {
+            wake = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "opencode:server").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }
+
+        if (wifi == null) {
+            val mode = if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY else @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF
+
+            wifi = applicationContext.getSystemService(Context.WIFI_SERVICE).let { it as WifiManager }.createWifiLock(mode, "opencode:server").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }
+    }
+
+    private fun releaseLocks() {
+        runCatching { wake?.takeIf { it.isHeld }?.release() }
+        runCatching { wifi?.takeIf { it.isHeld }?.release() }
+        wake = null
+        wifi = null
+    }
+
+    // ---- bridge to the Linux side ------------------------------------------------------------------------------------
+
+    private fun startBridge(): BridgeServer {
+        val handler = object : BridgeHandler {
+            override fun preview(url: String): String? {
+                val host = UiBus.host
+
+                if (host != null) main.post { host.showPreview(url) }
+
+                if (host == null || !app.inForeground) Notifier.openLink(this@ServerService, url, preview = true)
+
+                return null
+            }
+
+            override fun open(url: String): String? {
+                val host = UiBus.host
+
+                if (host != null && app.inForeground) main.post { host.openExternal(url) } else Notifier.openLink(this@ServerService, url, preview = false)
+
+                return null
+            }
+
+            override fun notify(title: String, text: String) {
+                Notifier.activity(this@ServerService, title + text, title.ifEmpty { "OpenCode" }, text)
+            }
+
+            override fun save(path: String, name: String): String {
+                val profile = app.profiles.active
+                val shared = if (app.prefs.bindStorage) File("/storage/emulated/0") else null
+                val guest = GuestPaths(app.paths.rootfs, Profiles.homeDir(app.paths.profilesDir, profile), shared)
+                val file = guest.resolve(path) ?: throw IOException(tr("Файл не найден: ", "File not found: ") + path)
+                val display = name.ifEmpty { file.name }
+                val ext = display.substringAfterLast('.', "").lowercase()
+                val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext).orEmpty()
+                val writer = Downloads.Writer(this@ServerService, display, mime)
+
+                try {
+                    file.inputStream().use { input ->
+                        val buffer = ByteArray(64 * 1024)
+
+                        while (true) {
+                            val n = input.read(buffer)
+
+                            if (n < 0) break
+
+                            writer.write(buffer, 0, n)
+                        }
+                    }
+
+                    return writer.finish()
+                } catch (e: Exception) {
+                    writer.abort()
+
+                    throw if (e is IOException) e else IOException(e.message ?: "could not save the file")
+                }
+            }
+
+            override fun version() = BuildConfig.VERSION_NAME
+        }
+
+        return BridgeServer(app.prefs.bridgeToken, handler, 4090).also {
+            it.start()
+            UiBus.bridgePort = it.port
+        }
+    }
+
+    companion object {
+        const val ACTION_START = "dev.opencode.mobile.START"
+        const val ACTION_STOP = "dev.opencode.mobile.STOP"
+        const val ACTION_RESTART = "dev.opencode.mobile.RESTART"
+        const val ACTION_APPLY = "dev.opencode.mobile.APPLY_UPDATE"
+        const val ACTION_SWITCH = "dev.opencode.mobile.SWITCH"
+        const val EXTRA_PROFILE = "profile"
+
+        @Volatile
+        var running = false
+            private set
+
+        fun send(context: Context, action: String = ACTION_START, profileId: String? = null) {
+            val intent = Intent(context, ServerService::class.java).setAction(action)
+
+            if (profileId != null) intent.putExtra(EXTRA_PROFILE, profileId)
+
+            try {
+                context.startForegroundService(intent)
+            } catch (e: Exception) {
+                Log.w("service", "could not start the service: ${e.message}")
+            }
+        }
+    }
+}

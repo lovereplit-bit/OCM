@@ -1,0 +1,169 @@
+package dev.opencode.mobile
+
+import java.io.File
+import java.security.SecureRandom
+
+/**
+ * One isolated OpenCode environment: its own home directory (credentials, sessions, config, MCP and plugin state)
+ * and its own loopback port, so the web UI keeps a separate origin and storage per profile.
+ */
+data class Profile(
+    val id: String,
+    val name: String,
+    /** The Console account (usually a Google address) signed in to this profile, once known. */
+    val account: String?,
+    val slot: Int,
+    val createdAt: Long,
+) {
+    val port: Int get() = Profiles.BASE_PORT + slot
+
+    val title: String get() = account?.takeIf { it.isNotBlank() } ?: name
+}
+
+/**
+ * The list of profiles and which one is active, persisted as one small JSON file. File access is injected so the
+ * rules (unique slots, never deleting the last profile, home paths) can be tested without Android.
+ */
+class Profiles(private val file: File, private val clock: () -> Long = System::currentTimeMillis) {
+    private val items = ArrayList<Profile>()
+    private var activeId: String = MAIN
+
+    init {
+        load()
+    }
+
+    val all: List<Profile> get() = items.toList()
+
+    val active: Profile get() = items.firstOrNull { it.id == activeId } ?: items.first()
+
+    fun find(id: String): Profile? = items.firstOrNull { it.id == id }
+
+    fun setActive(id: String): Boolean {
+        if (find(id) == null) return false
+
+        activeId = id
+        save()
+
+        return true
+    }
+
+    fun create(name: String): Profile {
+        val slot = (0..MAX_PROFILES).first { candidate -> items.none { it.slot == candidate } }
+
+        require(items.size < MAX_PROFILES) { "Too many profiles" }
+
+        val profile = Profile(newId(), name.trim().ifEmpty { "Profile ${items.size + 1}" }.take(40), null, slot, clock())
+
+        items += profile
+        save()
+
+        return profile
+    }
+
+    fun rename(id: String, name: String) {
+        update(id) { it.copy(name = name.trim().ifEmpty { it.name }.take(40)) }
+    }
+
+    fun setAccount(id: String, account: String?) {
+        update(id) { it.copy(account = account?.trim()?.takeIf { value -> value.isNotEmpty() }) }
+    }
+
+    /** Removes a profile from the list. The caller deletes its files. The last profile can never be removed. */
+    fun remove(id: String): Boolean {
+        if (items.size <= 1 || find(id) == null) return false
+
+        items.removeAll { it.id == id }
+
+        if (activeId == id) activeId = items.first().id
+
+        save()
+
+        return true
+    }
+
+    private fun update(id: String, change: (Profile) -> Profile) {
+        val index = items.indexOfFirst { it.id == id }
+
+        if (index < 0) return
+
+        items[index] = change(items[index])
+        save()
+    }
+
+    private fun load() {
+        val root = if (file.exists()) runCatching { MiniJson.obj(file.readText()) }.getOrNull() else null
+        val list = (root?.get("profiles") as? List<*>)?.mapNotNull { parse(it) }.orEmpty()
+
+        items.clear()
+        items += list.distinctBy { it.id }.distinctBy { it.slot }
+
+        if (items.isEmpty()) {
+            items += Profile(MAIN, "Main", null, 0, clock())
+        }
+
+        val wanted = root?.get("active") as? String
+
+        activeId = if (wanted != null && items.any { it.id == wanted }) wanted else items.first().id
+    }
+
+    private fun parse(value: Any?): Profile? {
+        val map = value as? Map<*, *> ?: return null
+        val id = map["id"] as? String ?: return null
+        val slot = (map["slot"] as? Number)?.toInt() ?: return null
+
+        if (!ID.matches(id) || slot !in 0..MAX_PROFILES) return null
+
+        return Profile(
+            id = id,
+            name = (map["name"] as? String)?.takeIf { it.isNotBlank() } ?: id,
+            account = map["account"] as? String,
+            slot = slot,
+            createdAt = (map["createdAt"] as? Number)?.toLong() ?: 0L,
+        )
+    }
+
+    private fun save() {
+        val out = StringBuilder("{\"active\":").append(MiniJson.quote(activeId)).append(",\"profiles\":[")
+
+        items.forEachIndexed { i, p ->
+            if (i > 0) out.append(',')
+            out.append("{\"id\":").append(MiniJson.quote(p.id))
+            out.append(",\"name\":").append(MiniJson.quote(p.name))
+            out.append(",\"account\":").append(if (p.account == null) "null" else MiniJson.quote(p.account))
+            out.append(",\"slot\":").append(p.slot)
+            out.append(",\"createdAt\":").append(p.createdAt).append('}')
+        }
+
+        out.append("]}")
+        file.parentFile?.mkdirs()
+
+        // Write beside the target and rename, so a crash never leaves a half-written list.
+        val temp = File(file.parentFile, file.name + ".tmp")
+
+        temp.writeText(out.toString())
+
+        if (!temp.renameTo(file)) {
+            file.writeText(out.toString())
+            temp.delete()
+        }
+    }
+
+    companion object {
+        const val MAIN = "main"
+        const val BASE_PORT = 4096
+        const val MAX_PROFILES = 8
+
+        private val ID = Regex("^[a-z0-9]{1,16}$")
+
+        fun newId(): String {
+            val bytes = ByteArray(5)
+
+            SecureRandom().nextBytes(bytes)
+
+            return bytes.joinToString("") { "%02x".format(it) }
+        }
+
+        /** `<profiles dir>/<id>/home`, mounted as `/root` inside the Linux environment. */
+        fun homeDir(profilesDir: File, profile: Profile): File = File(File(profilesDir, profile.id), "home")
+    }
+}

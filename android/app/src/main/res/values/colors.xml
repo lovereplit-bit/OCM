@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light palette: the desktop app grey scale, grey-100 background. -->
+    <color name="oc_bg">#FAFAFA</color>
+    <color name="oc_icon_bg">#131010</color>
+    <color name="oc_layer">#F0F0F0</color>
+    <color name="oc_layer_strong">#E2E2E2</color>
+    <color name="oc_border">#DCDCDC</color>
+    <color name="oc_text">#161616</color>
+    <color name="oc_muted">#5C5C5C</color>
+    <color name="oc_faint">#8A8A8A</color>
+    <color name="oc_accent_bg">#161616</color>
+    <color name="oc_accent_text">#FAFAFA</color>
+    <color name="oc_danger">#B3261E</color>
+    <color name="oc_ok">#2E7D32</color>
+    <color name="oc_scrim">#99000000</color>
+</resources>

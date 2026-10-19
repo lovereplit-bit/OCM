@@ -1,0 +1,241 @@
+name: OpenCode updates
+
+# Follows the upstream OpenCode releases and offers each one to installed apps over the air, without a reinstall.
+#
+# What protects the phones:
+#   plan     decides whether the newest upstream release should be offered: it must be newer, public for a cooling-down
+#            period, its tag must not have moved, and its diff against the last offered build is searched for risky
+#            changes (build chain, install-time scripts, new trusted dependencies, floods of new packages or hosts).
+#   build    builds the server from the exact commit and runs the contract test, WITHOUT access to any secret.
+#   publish  signs the result with the app's key and publishes it. A risky release becomes a draft plus an issue and
+#            waits for a person to publish it. The apps verify the signature, the size and the checksum, run the new
+#            build once before using it, keep the old one, and roll back on their own if the new one misbehaves.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Upstream release tag to build (empty: the latest published release)"
+        required: false
+        default: ""
+      force:
+        description: "Skip the newer-than, cooling-down and already-offered checks"
+        type: boolean
+        default: false
+      allow_risky:
+        description: "Publish at once even if the diff looks risky"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ota
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan
+    if: vars.OTA_DISABLED != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      reason: ${{ steps.plan.outputs.reason }}
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      commit: ${{ steps.plan.outputs.commit }}
+      risky: ${{ steps.plan.outputs.risky }}
+      upstream: ${{ steps.cfg.outputs.repo }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Settings
+        id: cfg
+        run: |
+          echo "repo=$(jq -r .repo upstream.json)" >> "$GITHUB_OUTPUT"
+          echo "major=$(jq -r .major upstream.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Look at upstream
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_REPO: ${{ steps.cfg.outputs.repo }}
+          PINNED_MAJOR: ${{ steps.cfg.outputs.major }}
+          THIS_REPO: ${{ github.repository }}
+          MIN_AGE_HOURS: ${{ vars.OTA_MIN_AGE_HOURS || '24' }}
+          FORCE_REF: ${{ inputs.ref }}
+          FORCE: ${{ inputs.force }}
+          PLAN_SUMMARY: ${{ runner.temp }}/plan-summary.md
+          PLAN_RISKS: ${{ runner.temp }}/plan-risks.md
+        run: |
+          bash runtime/ota-plan.sh
+          {
+            echo "### Upstream check"
+            cat "$PLAN_SUMMARY"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.plan.outputs.build == 'true'
+        with:
+          name: plan
+          path: |
+            ${{ runner.temp }}/plan-summary.md
+            ${{ runner.temp }}/plan-risks.md
+
+  build:
+    name: Build and test
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    # No secrets and a read-only token: this job runs code that comes from upstream.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the OpenCode sources
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: ${{ needs.plan.outputs.upstream }}
+          ref: ${{ needs.plan.outputs.commit }}
+          path: upstream-src
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: upstream-src/package.json
+
+      - name: Node version that upstream builds with
+        id: node
+        run: |
+          v="$(grep -oE 'NODE_VERSION = "[0-9.]+"' upstream-src/packages/cli/script/build-node.ts | grep -oE '[0-9.]+' | head -1)"
+          echo "version=${v:-26.4.0}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+
+      - name: Build the OpenCode server
+        env:
+          UPSTREAM_REPO: ${{ needs.plan.outputs.upstream }}
+        run: SRC_DIR="$PWD/upstream-src" bash runtime/build-opencode.sh "${{ needs.plan.outputs.tag }}" out
+
+      - name: Check the server against what the app needs
+        run: bash runtime/contract-test.sh out/opencode "${{ needs.plan.outputs.version }}"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: server
+          path: |
+            out/opencode
+            out/build-info.json
+          compression-level: 0
+          if-no-files-found: error
+
+  publish:
+    name: Sign and publish
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: server
+          path: server
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: plan
+          path: plan
+
+      - name: Package and sign
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_SECRET: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_SECRET: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD_SECRET: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          COMMIT: ${{ needs.plan.outputs.commit }}
+          UPSTREAM: ${{ needs.plan.outputs.upstream }}
+        run: |
+          # The same key that signed the installed app: phones accept an update only if the signature matches it.
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            export KEYSTORE_FILE="$RUNNER_TEMP/release.keystore" KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD_SECRET" KEY_ALIAS="$KEY_ALIAS_SECRET" KEY_PASSWORD="$KEY_PASSWORD_SECRET"
+          else
+            export KEYSTORE_FILE="$PWD/android/app/dev.keystore" KEYSTORE_PASSWORD=opencode-dev KEY_ALIAS=opencode-dev KEY_PASSWORD=opencode-dev
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          bash runtime/package-ota.sh --out ota-out --seq "$(date +%s)" --binary server/opencode --version "$VERSION" --commit "$COMMIT" --upstream-repo "$UPSTREAM"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RISKY: ${{ needs.plan.outputs.risky }}
+          ALLOW_RISKY: ${{ inputs.allow_risky }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          COMMIT: ${{ needs.plan.outputs.commit }}
+          UPSTREAM: ${{ needs.plan.outputs.upstream }}
+        run: |
+          id="$(cat ota-out/release-id)"
+          draft=()
+          if [ "$RISKY" = true ] && [ "$ALLOW_RISKY" != true ]; then draft=(--draft); fi
+
+          {
+            echo "OpenCode $VERSION from https://github.com/$UPSTREAM/releases/tag/$TAG (commit $COMMIT)."
+            echo
+            echo "Built from source, checked against the interfaces the app depends on, and signed with the app's key."
+            if [ -s plan/plan-risks.md ]; then
+              echo
+              echo "Findings:"
+              cat plan/plan-risks.md
+            fi
+          } > notes.md
+
+          gh release create "ota-$id" ota-out/manifest.json ota-out/manifest.json.sig ota-out/opencode-linux-arm64.tar.gz \
+            --title "OpenCode $VERSION (server build)" --notes-file notes.md --latest=false --target "$GITHUB_SHA" "${draft[@]}"
+
+          if [ "${#draft[@]}" -gt 0 ]; then
+            {
+              echo "OpenCode $VERSION was built and tested, but the diff against the last offered build has findings that a person should look at before phones receive it:"
+              echo
+              cat plan/plan-risks.md
+              echo
+              echo "Compare: https://github.com/$UPSTREAM/releases/tag/$TAG"
+              echo "If it looks fine, open the draft release ota-$id in this repository and publish it."
+            } > issue.md
+            gh issue create --title "Review OpenCode $VERSION before it is offered to phones" --body-file issue.md
+            echo "::warning::OpenCode $VERSION was published as a draft because of risky changes. See the new issue."
+          fi
+
+      - name: Keep the newest server builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release list --limit 100 --json tagName,isDraft,createdAt \
+            | jq -r '[.[] | select((.isDraft | not) and (.tagName | startswith("ota-rt-")))] | sort_by(.createdAt) | reverse | .[8:][] | .tagName' \
+            | while read -r tag; do gh release delete "$tag" --cleanup-tag --yes; done
