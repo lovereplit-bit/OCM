@@ -16,3 +16,4 @@ out/
 upstream-src/
 plan-summary.md
 plan-risks.md
+android/app/dev.keystore
