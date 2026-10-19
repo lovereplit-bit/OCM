@@ -99,7 +99,7 @@ jobs:
           repo="$(jq -r .repo upstream.json)"
           echo "UPSTREAM_REPO=$repo" >> "$GITHUB_ENV"
           echo "repo=$repo" >> "$GITHUB_OUTPUT"
-          UPSTREAM_REPO="$repo" bash runtime/resolve-upstream.sh "$REQUESTED"
+          UPSTREAM_REPO="$repo" PINNED_MAJOR="$(jq -r .major upstream.json)" bash runtime/resolve-upstream.sh "$REQUESTED"
 
       - name: Fetch the OpenCode sources
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

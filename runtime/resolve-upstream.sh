@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Resolves which OpenCode release to bundle into an app build.
 #
-# Usage: runtime/resolve-upstream.sh [tag]     (no tag: the latest published, non-draft, non-pre-release upstream release)
+# Usage: runtime/resolve-upstream.sh [tag]     (no tag: the newest vN.x.y tag of the pinned major line)
 # Outputs tag, version and commit to $GITHUB_OUTPUT (or stdout).
-# Environment: UPSTREAM_REPO, GH_TOKEN (for gh), UPSTREAM_GIT_URL (default https://github.com/$UPSTREAM_REPO.git).
+# Environment: UPSTREAM_REPO, PINNED_MAJOR,  UPSTREAM_GIT_URL (default https://github.com/$UPSTREAM_REPO.git).
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -18,10 +18,12 @@ tag="${1:-}"
 die() { echo "resolve-upstream: $*" >&2; exit 1; }
 
 if [ -z "$tag" ]; then
-  latest="$(gh api "repos/$up/releases/latest")" || die "could not read the latest release of $up"
-  [ "$(jq -r '.draft // false' <<<"$latest")" = false ] || die "the latest release is a draft"
-  [ "$(jq -r '.prerelease // false' <<<"$latest")" = false ] || die "the latest release is a pre-release"
-  tag="$(jq -r '.tag_name // empty' <<<"$latest")"
+  # GitHub's "latest release" can be an older line (upstream keeps publishing 1.x next to 2.x): take the newest plain tag
+  # of the major line this app is built for.
+  major="${PINNED_MAJOR:?set PINNED_MAJOR or pass a tag}"
+  tag="$(git ls-remote --tags "$git_url" "refs/tags/v$major.*" | awk '{print $2}' | grep -v '\^{}$' | sed 's#refs/tags/##' \
+    | grep -E "^v$major\.[0-9]+\.[0-9]+$" | sort -V | tail -1 || true)"
+  [ -n "$tag" ] || die "no v$major.x tag found in $up"
 fi
 
 [[ "$tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || die "'$tag' is not a version tag"

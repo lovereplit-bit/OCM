@@ -52,7 +52,7 @@ cat >"$shim/bin/gh" <<'SHIM'
 #!/usr/bin/env bash
 s="$SHIM_DIR"
 case "$1 $2" in
-  "api repos/"*/releases/latest) cat "$s/latest.json" || exit 1 ;;
+  "api repos/"*/releases/latest|"api repos/"*/releases/tags/*) cat "$s/latest.json" || exit 1 ;;
   "api repos/"*/commits/*) echo "${SHIM_VERIFIED:-true}" ;;
   "release list") cat "$s/releases.json" ;;
   "release download")
@@ -69,6 +69,7 @@ export SHIM_DIR="$shim" PATH="$shim/bin:$PATH"
 ago() { date -u -d "$1 hours ago" +%Y-%m-%dT%H:%M:%SZ; }
 
 latest() { # latest <tag> <hours-ago> [prerelease]
+  CUR_TAG="$1"
   printf '{"tag_name":"%s","published_at":"%s","draft":false,"prerelease":%s}\n' "$1" "$(ago "$2")" "${3:-false}" >"$shim/latest.json"
 }
 
@@ -80,7 +81,7 @@ last() { # last <version> <ref> <seq>   (a build this repository offered earlier
 run() { # run <env...> ; prints outputs into $work/out
   : >"$work/out"
   env UPSTREAM_REPO=o/r THIS_REPO=me/app UPSTREAM_GIT_URL="$up" GITHUB_OUTPUT="$work/out" PLAN_SUMMARY="$work/summary.md" \
-    PLAN_RISKS="$work/risks.md" PINNED_MAJOR=1 MIN_AGE_HOURS=24 GH_TOKEN=x "$@" bash "$root/runtime/ota-plan.sh" >"$work/log" 2>&1 || { bad "script failed: $(tail -3 "$work/log")"; return 0; }
+    PLAN_RISKS="$work/risks.md" PINNED_MAJOR=1 MIN_AGE_HOURS=24 GH_TOKEN=x FORCE_REF="$CUR_TAG" "$@" bash "$root/runtime/ota-plan.sh" >"$work/log" 2>&1 || { bad "script failed: $(tail -3 "$work/log")"; return 0; }
 }
 get() { grep "^$1=" "$work/out" | tail -1 | cut -d= -f2-; }
 risks() { cat "$work/risks.md"; }
@@ -150,9 +151,6 @@ expect "H risky" "$(get risky)" false
 latest nightly 72; echo '[]' >"$shim/releases.json"
 run
 expect "I nightly" "$(get build)" false
-latest v1.0.1 72 true
-run
-expect "I prerelease" "$(get build)" false
 run FORCE_REF=v9.9.9
 expect "I unknown forced tag" "$(get build)" false
 
@@ -178,19 +176,27 @@ expect "J tag" "$(get tag)" v1.0.2
 expect "J commit" "$(get commit)" "$(git --git-dir="$up" rev-parse v1.0.2^{commit})"
 
 # R. resolve-upstream.sh
-resolve() { env UPSTREAM_REPO=o/r UPSTREAM_GIT_URL="$up" GITHUB_OUTPUT="$work/out" GH_TOKEN=x bash "$root/runtime/resolve-upstream.sh" "$@" >"$work/log" 2>&1; }
-latest v1.0.1 72; : >"$work/out"
-resolve && ok || bad "R latest failed: $(tail -2 "$work/log")"
+resolve() { env UPSTREAM_REPO=o/r UPSTREAM_GIT_URL="$up" GITHUB_OUTPUT="$work/out" PINNED_MAJOR=1 bash "$root/runtime/resolve-upstream.sh" "$@" >"$work/log" 2>&1; }
+: >"$work/out"
+resolve v1.0.1 && ok || bad "R tag failed: $(tail -2 "$work/log")"
 expect "R tag" "$(get tag)" v1.0.1
 expect "R commit" "$(get commit)" "$c101"
 expect "R version" "$(get version)" 1.0.1
 : >"$work/out"
 resolve v1.0.0 && ok || bad "R annotated tag failed"
 expect "R annotated tag is peeled to its commit" "$(get commit)" "$c100"
-latest v1.0.1 72 true
-resolve && bad "R accepted a pre-release" || ok
 resolve "../x" && bad "R accepted a bad tag" || ok
 resolve v7.7.7 && bad "R accepted an unknown tag" || ok
+
+# newest tag of the pinned line, regardless of what GitHub calls latest
+latest v1.0.0 72; echo '[]' >"$shim/releases.json"
+run FORCE_REF=
+expect "M major 1 picks newest 1.x" "$(get tag)" v1.0.2
+run FORCE_REF= PINNED_MAJOR=2
+expect "M major 2 picks 2.x" "$(get tag)" v2.0.0
+resolve2() { env UPSTREAM_REPO=o/r UPSTREAM_GIT_URL="$up" GITHUB_OUTPUT="$work/out" PINNED_MAJOR=1 bash "$root/runtime/resolve-upstream.sh" "$@" >"$work/log" 2>&1; }
+: >"$work/out"; resolve2 && ok || bad "M resolve without tag"
+expect "M resolve newest" "$(get tag)" v1.0.2
 
 echo "ota plan: passed $pass, failed $fail"
 [ "$fail" -eq 0 ]

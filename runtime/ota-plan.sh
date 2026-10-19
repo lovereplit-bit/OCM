@@ -61,11 +61,17 @@ if [ -n "$force_ref" ]; then
   tag="$force_ref"
   say "Building the tag requested by hand: $tag"
 else
-  gh api "repos/$up/releases/latest" >"$work/latest.json" || stop "could not read the latest release of $up"
-  tag="$(jq -r '.tag_name // empty' "$work/latest.json")"
+  # GitHub's "latest release" can be an older line (upstream keeps publishing 1.x next to 2.x), so the newest plain tag of
+  # the line this app is built for is used instead.
+  [ -n "$pinned_major" ] || stop "PINNED_MAJOR is not set"
+  tag="$(git ls-remote --tags "$git_url" "refs/tags/v$pinned_major.*" 2>/dev/null | awk '{print $2}' | grep -v '\^{}$' \
+    | sed 's#refs/tags/##' | grep -E "^v$pinned_major\.[0-9]+\.[0-9]+$" | sort -V | tail -1 || true)"
+  [ -n "$tag" ] || stop "no v$pinned_major.x tag found in $up"
+fi
+
+if [[ "$tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] && gh api "repos/$up/releases/tags/$tag" >"$work/latest.json" 2>/dev/null; then
+  [ "$(jq -r '.draft // false' "$work/latest.json")" = false ] || stop "$tag is a draft release"
   published_at="$(jq -r '.published_at // empty' "$work/latest.json")"
-  [ "$(jq -r '.draft // false' "$work/latest.json")" = false ] || stop "the latest release is a draft"
-  [ "$(jq -r '.prerelease // false' "$work/latest.json")" = false ] || stop "the latest release is a pre-release"
 fi
 
 [[ "$tag" =~ $semver_re ]] || stop "tag '$tag' is not a plain version"
