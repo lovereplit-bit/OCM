@@ -143,6 +143,9 @@ jobs:
         id: seq
         run: echo "seq=$(date +%s)" >> "$GITHUB_OUTPUT"
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Linux userland archive
         run: bash runtime/build-rootfs.sh out/server/opencode out/assets "${{ steps.up.outputs.version }}-${{ steps.seq.outputs.seq }}"
 
