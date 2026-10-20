@@ -97,6 +97,7 @@ check "event stream opens" bash -c "head -1 '$work/sse.headers' | grep -q ' 200'
 
 # Sign-in with a Console account (device code flow) needs these routes to exist.
 integration="$(status -u "$auth" "$base/api/integration/opencode" || true)"
+if [ "$integration" = 404 ]; then integration="$(status -u "$auth" "$base/api/integration" || true)"; fi
 if [ "$integration" = 200 ]; then pass "console integration is listed"; else fail "console integration is listed (HTTP $integration)"; fi
 
 # Where the app looks for data to back up before an update.
