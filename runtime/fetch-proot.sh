@@ -4,7 +4,8 @@
 #
 #   libproot.so          the launcher
 #   libproot-loader.so   its helper, started inside the guest
-#   libtalloc.so         the one library proot needs besides the system ones
+#   libtalloc.so         the talloc library proot needs
+#   libandroid-shmem.so  the shared memory helper library proot needs (if required)
 #
 # Android only unpacks files named lib*.so into that directory, so the names are rewritten with patchelf. The result is
 # refused unless every library it needs is something Android itself provides.
@@ -85,11 +86,23 @@ patchelf --set-soname libtalloc.so "$dest/libtalloc.so"
 patchelf --remove-rpath "$dest/libtalloc.so"
 
 needed() { readelf -d "$1" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'; }
+bundled_libs="libtalloc.so"
+
+if needed "$dest/libproot.so" | grep -q "libandroid-shmem"; then
+  download libandroid-shmem "$work/shmem"
+  shmem="$(find "$work/shmem/$prefix/lib" -maxdepth 1 -type f -name 'libandroid-shmem.so*' | sort | head -1)"
+  [ -n "$shmem" ] || { echo "libandroid-shmem not found in the package" >&2; exit 1; }
+  install -m 0755 "$shmem" "$dest/libandroid-shmem.so"
+  patchelf --set-soname libandroid-shmem.so "$dest/libandroid-shmem.so" 2>/dev/null || true
+  patchelf --remove-rpath "$dest/libandroid-shmem.so"
+  bundled_libs="$bundled_libs libandroid-shmem.so"
+fi
 
 status=0
-for lib in "$dest/libproot.so" "$dest/libtalloc.so"; do
+for lib in "$dest"/lib*.so; do
+  [ -f "$lib" ] || continue
   for dep in $(needed "$lib"); do
-    case " $system_libs libtalloc.so " in
+    case " $system_libs $bundled_libs " in
       *" $dep "*) ;;
       *) echo "$(basename "$lib") needs $dep, which Android does not provide" >&2; status=1 ;;
     esac
