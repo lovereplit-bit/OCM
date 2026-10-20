@@ -38,10 +38,14 @@ build_mirror() { # build_mirror <dir> <extra-needed-lib or "">
     -Wl,-rpath,/data/data/com.termux/files/usr/lib -Wl,--enable-new-dtags
   gcc -static -nostdlib -o "$pkg/proot/$prefix/libexec/proot/loader" "$work/start.c"
 
+  mkdir -p "$pkg/shmem/$prefix/lib" "$pkg/shmem/DEBIAN"
+  gcc -shared -nostdlib -fPIC -Wl,-soname,libandroid-shmem.so -o "$pkg/shmem/$prefix/lib/libandroid-shmem.so" "$work/dummy.c" -L"$libs" -l:libc.so
   printf 'Package: proot\nVersion: 5.1.107-65\nArchitecture: aarch64\nMaintainer: t\nDescription: t\n' >"$pkg/proot/DEBIAN/control"
   printf 'Package: libtalloc\nVersion: 2.4.2\nArchitecture: aarch64\nMaintainer: t\nDescription: t\n' >"$pkg/talloc/DEBIAN/control"
+  printf 'Package: libandroid-shmem\nVersion: 0.7\nArchitecture: aarch64\nMaintainer: t\nDescription: t\n' >"$pkg/shmem/DEBIAN/control"
   dpkg-deb -Zxz --build "$pkg/proot" "$dir/pool/proot.deb" >/dev/null
   dpkg-deb -Zxz --build "$pkg/talloc" "$dir/pool/libtalloc.deb" >/dev/null
+  dpkg-deb -Zxz --build "$pkg/shmem" "$dir/pool/libandroid-shmem.deb" >/dev/null
 
   python3 - "$dir" <<'PY'
 import hashlib, sys
@@ -50,7 +54,7 @@ def entry(name, ver, path):
     sha = hashlib.sha256(open(f"{d}/{path}", "rb").read()).hexdigest()
     return f"Package: {name}\nVersion: {ver}\nDepends: libtalloc\nFilename: {path}\nSize: 1\nSHA256: {sha}\nDescription: x\n multi line\n"
 older = "Package: proot\nVersion: 5.1.99-1\nFilename: pool/old-proot.deb\nSHA256: " + "0" * 64 + "\n"
-text = older + "\n" + entry("proot", "5.1.107-65", "pool/proot.deb") + "\n" + entry("libtalloc", "2.4.2", "pool/libtalloc.deb")
+text = older + "\n" + entry("proot", "5.1.107-65", "pool/proot.deb") + "\n" + entry("libtalloc", "2.4.2", "pool/libtalloc.deb") + "\n" + entry("libandroid-shmem", "0.7", "pool/libandroid-shmem.deb")
 open(f"{d}/dists/stable/main/binary-aarch64/Packages", "w").write(text)
 PY
   xz -k -f "$dir/dists/stable/main/binary-aarch64/Packages"
