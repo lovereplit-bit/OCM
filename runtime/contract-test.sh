@@ -38,11 +38,16 @@ auth="opencode:$password"
 check "version flag" bash -c "'$bin' --version | grep -qF '$want'"
 
 # The same variables the app sets (see ProotCommand.guestEnv), with a scratch HOME and no XDG overrides, so the data
-# location is the one the app backs up before an update.
-env -i PATH="$PATH" HOME="$work/home" LANG=C.UTF-8 TMPDIR="$work" \
-  OPENCODE_PASSWORD="$password" OPENCODE_CLIENT=android OPENCODE_DISABLE_AUTOUPDATE=1 \
-  OPENCODE_CONFIG_CONTENT="{\"instructions\":[\"$work/guest/AGENTS.md\"]}" \
-  "$bin" serve --hostname 127.0.0.1 --port "$port" >"$work/server.log" 2>&1 &
+# location is the one the app backs up before an update. The app also starts the server inside HOME (proot -w /root), and
+# the server treats its working directory as the project it serves: run from HOME like the app does, not from the CI
+# checkout, which holds a whole upstream monorepo with node_modules.
+(
+  cd "$work/home" &&
+    exec env -i PATH="$PATH" HOME="$work/home" LANG=C.UTF-8 TMPDIR="$work" \
+      OPENCODE_PASSWORD="$password" OPENCODE_CLIENT=android OPENCODE_DISABLE_AUTOUPDATE=1 \
+      OPENCODE_CONFIG_CONTENT="{\"instructions\":[\"$work/guest/AGENTS.md\"]}" \
+      "$bin" serve --hostname 127.0.0.1 --port "$port"
+) >"$work/server.log" 2>&1 &
 pid=$!
 
 up=0
@@ -95,10 +100,30 @@ check "web interface looks like a page" grep -qi '<html' "$work/page.html"
 curl -s -N -D "$work/sse.headers" -o /dev/null --max-time 4 -u "$auth" "$base/api/event" || true
 check "event stream opens" bash -c "head -1 '$work/sse.headers' | grep -q ' 200' && grep -qi '^content-type: *text/event-stream' '$work/sse.headers'"
 
-# Sign-in with a Console account (device code flow) needs these routes to exist.
-integration="$(status -u "$auth" "$base/api/integration/opencode" || true)"
-if [ "$integration" = 404 ]; then integration="$(status -u "$auth" "$base/api/integration" || true)"; fi
-if [ "$integration" = 200 ]; then pass "console integration is listed"; else fail "console integration is listed (HTTP $integration)"; fi
+# Sign-in with a Console account (device code flow) needs these routes to exist. They are tied to a location (the working
+# directory): the first request boots that location, and the plugins that register integrations finish activating a
+# moment later. Until then the single-integration route answers 404 (not found yet), so ask again for a while instead of
+# judging the first reply. The person taps "sign in" long after start-up; only this test is that quick.
+integration=""
+integration_body="$work/integration.json"
+integration_deadline=$((SECONDS + 60))
+while :; do
+  integration="$(curl -s -o "$integration_body" -w '%{http_code}' --max-time 20 -u "$auth" "$base/api/integration/opencode" || true)"
+  if [ "$integration" = 404 ]; then
+    integration="$(curl -s -o "$integration_body" -w '%{http_code}' --max-time 20 -u "$auth" "$base/api/integration" || true)"
+  fi
+  [ "$integration" = 200 ] && break
+  [ "$SECONDS" -ge "$integration_deadline" ] && break
+  kill -0 "$pid" 2>/dev/null || break
+  sleep 1
+done
+
+if [ "$integration" = 200 ]; then
+  pass "console integration is listed"
+else
+  # The body tells a missing route (empty 404) from a location that could not be resolved (LocationNotFoundError).
+  fail "console integration is listed (HTTP $integration): $(head -c 300 "$integration_body" 2>/dev/null | tr '\n' ' ')"
+fi
 
 # Where the app looks for data to back up before an update.
 check "data directory is where the app expects" test -d "$work/home/.local/share/opencode"
