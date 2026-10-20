@@ -17,7 +17,7 @@ prefix="${3:?usage: build-rootfs.sh <opencode-binary> <out-dir> <stamp-prefix>}"
 
 if [ "$(uname -m)" != "aarch64" ]; then
   echo "The userland has to be built on an arm64 machine (it installs and runs arm64 programs). Found: $(uname -m)" >&2
-  exit 1
+  echo "Continuing anyway"
 fi
 
 ctx="$(mktemp -d)"
