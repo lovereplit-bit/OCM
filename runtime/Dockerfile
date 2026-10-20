@@ -10,7 +10,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates curl wget git openssh-client ripgrep jq unzip zip xz-utils bzip2 less nano procps file tzdata \
-      python3 python3-pip python3-venv locales gnupg \
+      python3 python3-pip python3-venv locales gnupg libatomic1 \
  && rm -rf /var/lib/apt/lists/*
 
 # Node.js from nodejs.org (the distribution's own package is too old for current MCP servers and plugins). The newest
