@@ -40,9 +40,9 @@ android {
         // ANDROID_KEYSTORE_* variables (see README).
         create("release") {
             storeFile = file(System.getenv("ANDROID_KEYSTORE_FILE") ?: "dev.keystore")
-            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: "opencode-dev"
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: "111111"
             keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "opencode-dev"
-            keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: "opencode-dev"
+            keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: "111111"
         }
     }
 

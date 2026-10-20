@@ -300,7 +300,7 @@ jobs:
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
             export KEYSTORE_FILE="$RUNNER_TEMP/release.keystore" KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD_SECRET" KEY_ALIAS="$KEY_ALIAS_SECRET" KEY_PASSWORD="$KEY_PASSWORD_SECRET"
           else
-            export KEYSTORE_FILE="$PWD/android/app/dev.keystore" KEYSTORE_PASSWORD=opencode-dev KEY_ALIAS=opencode-dev KEY_PASSWORD=opencode-dev
+            export KEYSTORE_FILE="$PWD/android/app/dev.keystore" KEYSTORE_PASSWORD=111111 KEY_ALIAS=opencode-dev KEY_PASSWORD=111111
           fi
           sudo apt-get update -qq && sudo apt-get install -y -qq jq
           apk="$(ls dist/*.apk | head -1)"
