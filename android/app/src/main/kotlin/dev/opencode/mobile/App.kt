@@ -32,6 +32,7 @@ class App : Application() {
         paths = Paths(this)
         paths.ensure()
         Log.init(paths.logs)
+        Log.installCrashHandler()
         prefs = Prefs(this)
         profiles = Profiles(paths.profilesFile)
         runtime = RuntimeInstaller(this, paths)
