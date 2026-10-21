@@ -19,6 +19,18 @@ object Log {
         file = File(dir, "app.log")
     }
 
+    /** Persist uncaught JVM exceptions before Android's default handler terminates the process. */
+    fun installCrashHandler() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler() ?: return
+
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching {
+                e("crash", "FATAL: uncaught exception on thread '${thread.name}':\n${error.stackTraceToString()}")
+            }
+            previous.uncaughtException(thread, error)
+        }
+    }
+
     fun i(tag: String, message: String) = write("I", tag, message, null)
 
     fun w(tag: String, message: String, error: Throwable? = null) = write("W", tag, message, error)
