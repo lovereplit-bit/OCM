@@ -2,7 +2,7 @@
 # Builds the Linux userland archive that the app unpacks on first start.
 #
 # Usage: runtime/build-rootfs.sh <opencode-binary> <out-dir> <stamp-prefix>
-#   writes <out-dir>/rootfs.tar.gz and <out-dir>/rootfs.stamp (the stamp tells the app when to unpack again)
+#   writes <out-dir>/rootfs.tgz and <out-dir>/rootfs.stamp (the stamp tells the app when to unpack again)
 # Needs Docker on an arm64 host.
 set -euo pipefail
 
@@ -41,9 +41,9 @@ docker build --platform linux/arm64 --pull \
 docker run --rm --platform linux/arm64 "$tag" sh -c 'opencode --version && node --version && python3 --version && git --version && rg --version | head -1 && uv --version && test -x /usr/local/bin/preview'
 
 cid="$(docker create --platform linux/arm64 "$tag" /bin/true)"
-docker export "$cid" | gzip -6 >"$out/rootfs.tar.gz"
+docker export "$cid" | gzip -6 >"$out/rootfs.tgz"
 
-sha="$(sha256sum "$out/rootfs.tar.gz" | cut -c1-12)"
+sha="$(sha256sum "$out/rootfs.tgz" | cut -c1-12)"
 printf '%s-%s' "$prefix" "$sha" >"$out/rootfs.stamp"
 
 ls -l "$out"
