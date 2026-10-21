@@ -109,7 +109,7 @@ class RuntimeInstaller(private val context: Context, private val paths: Paths) {
     }
 
     companion object {
-        const val ARCHIVE_ASSET = "rootfs.tar.gz"
+        const val ARCHIVE_ASSET = "rootfs.tgz"
         const val STAMP_ASSET = "rootfs.stamp"
     }
 }

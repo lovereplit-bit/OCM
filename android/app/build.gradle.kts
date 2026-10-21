@@ -65,7 +65,7 @@ android {
 
     androidResources {
         // The root filesystem is large; storing it uncompressed lets the app open it as a file descriptor.
-        noCompress += listOf("gz", "stamp")
+        noCompress += listOf("tgz", "stamp")
     }
 
     lint {
