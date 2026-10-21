@@ -249,12 +249,21 @@ jobs:
         run: |
           apk="$(ls android/app/build/outputs/apk/release/*.apk | head -1)"
           echo "apk=$apk"
-          unzip -l "$apk" | grep -E 'assets/rootfs\.tgz|assets/rootfs\.stamp|assets/bridge\.js|lib/arm64-v8a/libproot\.so|lib/arm64-v8a/libproot-loader\.so|lib/arm64-v8a/libtalloc\.so|lib/arm64-v8a/libandroid-shmem\.so' | awk '{print $1, $4}'
+          # Read the listing once; matching it with grep -q in a loop is fragile and slow for a 250 MB APK.
+          unzip -Z1 "$apk" > "$RUNNER_TEMP/apk-files.txt"
           for want in assets/rootfs.tgz assets/rootfs.stamp assets/bridge.js lib/arm64-v8a/libproot.so lib/arm64-v8a/libproot-loader.so lib/arm64-v8a/libtalloc.so lib/arm64-v8a/libandroid-shmem.so; do
-            unzip -l "$apk" | grep -q " $want\$" || { echo "missing from the APK: $want"; exit 1; }
+            if grep -qxF "$want" "$RUNNER_TEMP/apk-files.txt"; then echo "ok: $want"; else echo "::error::missing from the APK: $want"; exit 1; fi
           done
           apksigner="$(ls "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/*/apksigner | sort -V | tail -1)"
-          "$apksigner" verify --print-certs "$apk" | grep -E 'Signer #1 certificate (DN|SHA-256)'
+          echo "apksigner=$apksigner"
+          # Do not let a missing grep match (the output format differs between build-tools versions) fail the step:
+          # only a failed verification does.
+          if ! "$apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/apksigner.log" 2>&1; then
+            cat "$RUNNER_TEMP/apksigner.log"
+            echo "::error::apksigner could not verify the APK signature"
+            exit 1
+          fi
+          grep -iE 'Verifies|certificate (DN|SHA-256)' "$RUNNER_TEMP/apksigner.log" || cat "$RUNNER_TEMP/apksigner.log"
           mkdir -p dist
           cp "$apk" "dist/opencode-android-${{ steps.ver.outputs.name }}.apk"
           ls -l dist
