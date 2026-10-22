@@ -79,8 +79,9 @@ class RuntimeInstaller(private val context: Context, private val paths: Paths) {
         paths.rootfsStamp.writeText(stamp)
         progress(100)
 
-        // Deleting the previous tree can take a while, and nothing depends on it.
-        Thread { Fs.deleteTree(old) }.apply { isDaemon = true }.start()
+        // Deleting the previous tree can take a while, and nothing depends on it. It runs on its own thread, where an
+        // uncaught error would kill the whole process - so it is guarded.
+        Thread { runCatching { Fs.deleteTree(old) } }.apply { isDaemon = true }.start()
     }
 
     /** Things the archive cannot carry: DNS (Android hides its resolver from apps), hosts and the scratch directories. */

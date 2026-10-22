@@ -73,7 +73,12 @@ class StartupView(context: Context, private val palette: Palette, private val ac
 
     fun progress(text: String, percent: Int) {
         common(text, percent, null)
-        setButtons(Triple(tr("Настройки", "Settings"), false, actions::openSettings))
+
+        // The log holds the reason when a previous run died or this one struggles; keep it reachable at all times.
+        setButtons(
+            Triple(tr("Журнал", "Logs"), false, actions::showLogs),
+            Triple(tr("Настройки", "Settings"), false, actions::openSettings),
+        )
     }
 
     fun loading() {

@@ -51,12 +51,15 @@ class MainActivity : Activity(), UiHost {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.setStage("MainActivity.onCreate: loading palette")
 
         palette = Palette(this)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        applyBars(!Ui.isNight(this).not(), String.format("#%06X", 0xFFFFFF and palette.bg))
+        runCatching { applyBars(Ui.isNight(this), String.format("#%06X", 0xFFFFFF and palette.bg)) }
 
+        Log.setStage("MainActivity.onCreate: creating WebView")
         web = WebHost(this)
+        Log.setStage("MainActivity.onCreate: creating keyboard bar")
         keys = KeysBar(this, palette) { web.view }
 
         root = FrameLayout(this).apply { setBackgroundColor(palette.bg) }
@@ -67,12 +70,15 @@ class MainActivity : Activity(), UiHost {
 
         previewLayer = FrameLayout(this)
         root.addView(previewLayer, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH))
+        Log.setStage("MainActivity.onCreate: creating preview manager")
         previews = PreviewManager(this, previewLayer, palette)
 
+        Log.setStage("MainActivity.onCreate: creating floating menu")
         handle = buildHandle()
         root.addView(handle, FrameLayout.LayoutParams(Ui.dp(this, 40), Ui.dp(this, 40)))
         handle.visibility = if (app.prefs.floatingMenu) View.VISIBLE else View.GONE
 
+        Log.setStage("MainActivity.onCreate: creating startup screen")
         startup = StartupView(this, palette, object : StartupView.Actions {
             override fun retry() = this@MainActivity.retry()
 
@@ -90,13 +96,21 @@ class MainActivity : Activity(), UiHost {
         root.addView(startup, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH))
         startup.progress(tr("Подготовка...", "Preparing..."), StartupView.INDETERMINATE)
 
+        Log.setStage("MainActivity.onCreate: attaching UI")
         setContentView(root)
         UiBus.host = this
 
+        Log.setStage("MainActivity.onCreate: requesting permissions")
         requestFirstPermissions()
         handleIntent(intent)
+        Log.setStage("MainActivity.onCreate: starting server service")
         ServerService.send(this)
         unsubscribe = ServerState.listen { onState(it) }
+        Log.setStage("Application active")
+
+        // If Android refused to launch the crash screen while the previous process was dying, retry now that
+        // a foreground Activity exists. CrashActivity clears the saved report only after it has displayed it.
+        Log.pendingCrashReport(this)?.let { CrashActivity.show(this, it) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -156,6 +170,17 @@ class MainActivity : Activity(), UiHost {
     // ---- server state -------------------------------------------------------------------------------------------------
 
     private fun onState(s: Snapshot) {
+        // The listener runs on the main thread; an error while applying a state must not take the app down.
+        try {
+            applyState(s)
+        } catch (t: Throwable) {
+            Log.e("main", "could not apply the server state", t)
+
+            runCatching { startup.failed(tr("Внутренняя ошибка приложения: ", "Internal app error: ") + (t.message ?: t.javaClass.simpleName), false) }
+        }
+    }
+
+    private fun applyState(s: Snapshot) {
         when (s.phase) {
             Phase.IDLE -> startup.progress(tr("Подготовка...", "Preparing..."), StartupView.INDETERMINATE)
             Phase.INSTALLING -> startup.progress(s.message, if (s.progress >= 0) s.progress else StartupView.INDETERMINATE)
