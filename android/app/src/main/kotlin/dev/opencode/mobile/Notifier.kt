@@ -61,7 +61,7 @@ object Notifier {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
-            .addAction(Notification.Action.Builder(null, tr("Остановить", "Stop"), stop).build())
+            .addAction(Notification.Action.Builder(android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_stat_opencode), tr("Остановить", "Stop"), stop).build())
             .build()
     }
 
