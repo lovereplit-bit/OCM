@@ -25,8 +25,8 @@ interface BridgeHandler {
      */
     fun save(path: String, name: String): String
 
-    /** Creates or updates a named home-screen widget. Returns a short message for the agent. */
-    fun widgetSet(name: String, title: String, text: String, url: String, pin: Boolean): String
+    /** Creates or updates a named home-screen widget. Returns a short message for the agent. ([src] holds rich content: HTML, an SVG or a picture.) */
+    fun widgetSet(name: String, title: String, text: String, url: String, pin: Boolean, src: String, w: Int, h: Int): String
 
     /** Removes the widget called [name]; false when there is none. */
     fun widgetRemove(name: String): Boolean
@@ -47,7 +47,8 @@ data class BridgeRequest(
 
 object BridgeHttp {
     const val MAX_HEADER = 16 * 1024
-    const val MAX_BODY = 64 * 1024
+    // Rich widget sources (self-contained pages or pictures) ride along base64 in the form body.
+    const val MAX_BODY = 6 * 1024 * 1024
 
     fun parse(input: InputStream): BridgeRequest? {
         val head = readHead(input) ?: return null
@@ -151,6 +152,9 @@ private val WIDGET_NAME = Regex("^[A-Za-z0-9_-]{1,32}$")
 private const val WIDGET_TITLE_MAX = 60
 
 private const val WIDGET_TEXT_MAX = 400
+
+/** How many bytes of rich widget content (decoded) the agent may send at once. */
+private const val WIDGET_SRC_MAX = 4 * 1024 * 1024
 
 /**
  * A tiny HTTP server on the phone's loopback that lets commands inside the Linux environment reach the app: show a
@@ -299,7 +303,20 @@ class BridgeServer(
                 val url = if (wanted.isEmpty()) "" else (Urls.normalizePreview(wanted) ?: return BridgeHttp.response(400, "not a valid address"))
                 val pin = args["pin"]?.lowercase() !in setOf("0", "false", "no", "off")
 
-                BridgeHttp.response(200, handler.widgetSet(name, title, text, url, pin))
+                val src = try {
+                    val encoded = args["src_b64"].orEmpty()
+
+                    if (encoded.isEmpty()) "" else String(java.util.Base64.getMimeDecoder().decode(encoded), Charsets.ISO_8859_1)
+                } catch (_: IllegalArgumentException) {
+                    return BridgeHttp.response(400, "src_b64 is not valid base64")
+                }
+
+                if (src.length > WIDGET_SRC_MAX) return BridgeHttp.response(400, "source is too big (max ${WIDGET_SRC_MAX / 1024} kB)")
+
+                val w = (args["w"]?.toIntOrNull() ?: 0).coerceIn(0, WidgetContent.MAX_PX)
+                val h = (args["h"]?.toIntOrNull() ?: 0).coerceIn(0, WidgetContent.MAX_PX)
+
+                BridgeHttp.response(200, handler.widgetSet(name, title, text, url, pin, src, w, h))
             }
 
             "/widget/list" -> BridgeHttp.response(200, handler.widgetList())

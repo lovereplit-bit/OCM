@@ -567,7 +567,7 @@ fun testBridge() {
 
             return "Download/" + name.ifEmpty { "file" }
         }
-        override fun widgetSet(name: String, title: String, text: String, url: String, pin: Boolean): String { widgets += "$name|$title|$text|$url|$pin"; return "widget $name: saved" }
+        override fun widgetSet(name: String, title: String, text: String, url: String, pin: Boolean, src: String, w: Int, h: Int): String { widgets += "$name|$title|$text|$url|$pin|$src|$w|$h"; return "widget $name: saved" }
         override fun widgetRemove(name: String): Boolean = widgets.removeAll { it.startsWith("$name|") }
         override fun widgetList() = widgets.joinToString("\n") { it.substringBefore('|') }
         override fun version() = "1.2.3"
@@ -596,6 +596,13 @@ fun testBridge() {
         check("widget set", http(port, "GET /widget/set?name=w1&title=Hi&text=There&url=5173&pin=0 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200") && widgets == listOf("w1|Hi|There|http://localhost:5173|false"))
         check("widget bad name", http(port, "GET /widget/set?name=a%20b&title=x HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 400"))
         check("widget bad url", http(port, "GET /widget/set?name=w2&url=ftp://x HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 400"))
+        val rich = "name=w3&src_b64=PGgxPmhpPC9oMT4%3D&w=400&h=300"
+        check(
+            "widget rich set",
+            http(port, "POST /widget/set HTTP/1.1\r\n${h}X-OC-Token: secret\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ${rich.length}\r\n\r\n$rich")
+                .startsWith("HTTP/1.1 200") && widgets.lastOrNull() == "w3||||true|<h1>hi</h1>|400|300",
+        )
+        check("widget bad base64", http(port, "POST /widget/set HTTP/1.1\r\n${h}X-OC-Token: secret\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 22\r\n\r\nname=w4&src_b64=not%2Bb64%21").startsWith("HTTP/1.1 400"))
         check("widget list", http(port, "GET /widget/list HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").endsWith("w1"))
         check("widget remove", http(port, "GET /widget/remove?name=w1 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200") && widgets.isEmpty())
         check("widget remove missing", http(port, "GET /widget/remove?name=w1 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 404"))

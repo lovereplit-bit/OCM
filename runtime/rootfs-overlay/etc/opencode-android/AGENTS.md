@@ -55,6 +55,27 @@ for the person.
 - Keep the text short: a title up to 60 characters, the text up to 400. Update a widget when its facts change, and do not
   create widgets the person did not ask for.
 
+Rich widgets you draw yourself, as a picture on the home screen:
+
+- `android-widget set <name> "Title" --file <path> [--w N] [--h N]` sends a file as the whole widget: an `.html` file
+  (anything inline is fine: CSS, JS, `data:` images, fonts-to-URI), an `.svg` image, or raster `.png`, `.jpeg`,
+  `.webp` or `.gif`. Render size defaults to 512x384 pixels; `--w`/`--h` change it (64..1280).
+- Keep the file self-contained (everything inline, images as `data:` URLs); relative file references do not work.
+- Tap actions: define `function widgetTap() {...}` in the page. Tapping the widget calls it, so the page can toggle
+  states, play a CSS/canvas animation or open its own screens. While the animation runs set `window.__ocBusy = true`
+  and clear it when done — the widget then keeps updating each frame until the page says it is finished. Without
+  `__ocBusy` the widget just repaints once after the tap.
+- The old title/text widgets still work and you can mix both.
+- Update a rich widget by re-running `set` with the changed file; the person only confirms placement the first time.
+
+## Style</think><tool_call>edit<arg_key>newString</arg_key><arg_value>- Keep the file self-contained (everything inline, images as `data:` URLs); relative file references do not work.
+- Tap actions: define `function widgetTap() {...}` in the page. Tapping the widget calls it, so the page can toggle
+  states, play a CSS or canvas animation and repaint itself. While animating set `window.__ocBusy = true` and clear it
+  when the animation ends — the widget then re-renders each frame until the page says it is ready (up to 24 frames at
+  60 ms). Without `__ocBusy` the widget simply repaints once after the tap.
+- The old title/text widgets still work and you can mix both.
+- Update a rich widget by re-running `set` with the changed file; the person only confirms placement the first time.
+
 ## Style
 
 - Write plain text and Markdown. Math can be written in LaTeX (`$...$` and `$$...$$`), the app renders it.

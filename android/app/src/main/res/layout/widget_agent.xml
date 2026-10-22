@@ -7,6 +7,14 @@
     android:orientation="vertical"
     android:padding="14dp">
 
+    <ImageView
+        android:id="@+id/widget_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/widget_title"
         android:layout_width="match_parent"

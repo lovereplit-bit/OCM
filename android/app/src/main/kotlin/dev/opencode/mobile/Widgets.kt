@@ -6,10 +6,27 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.view.View
 import android.widget.RemoteViews
 
 /** What a home-screen widget shows. [url] is optional; tapping the widget opens it, or just the app when empty. */
-data class WidgetSpec(val name: String, val title: String, val text: String, val url: String)
+data class WidgetSpec(val name: String, val title: String, val text: String, val url: String, val src: String = "", val w: Int = 0, val h: Int = 0) {
+    /**
+     * Rich content the agent sent for this widget: an HTML document (which may embed CSS and JS), an SVG image or
+     * a raster picture such as PNG, stored as raw opaque bytes in a one-byte-per-character string via [WidgetContent.bytesOf].
+     * Empty means the plain title/text widget.
+     */
+    val isRich get() = src.isNotEmpty()
+
+    val richKind get() = WidgetContent.kindOf(src)
+
+    /** Content renders at this many pixels. Zero falls back to the default canvas size in [WidgetContent]. */
+    val pixelW: Int get() = if (w > 0) w.coerceIn(1, WidgetContent.MAX_PX) else WidgetContent.DEFAULT_W
+
+    val pixelH: Int get() = if (h > 0) h.coerceIn(1, WidgetContent.MAX_PX) else WidgetContent.DEFAULT_H
+
+    fun hash(): String = WidgetContent.hashOf(src, w, h)
+}
 
 /**
  * Widgets the agent defines for itself. The agent sets the content with `android-widget`; the app keeps it here and
@@ -25,7 +42,15 @@ class WidgetStore(context: Context) {
             val m = item as? Map<*, *> ?: return@mapNotNull null
             val name = m["name"] as? String ?: return@mapNotNull null
 
-            WidgetSpec(name, m["title"] as? String ?: "", m["text"] as? String ?: "", m["url"] as? String ?: "")
+            WidgetSpec(
+                name,
+                m["title"] as? String ?: "",
+                m["text"] as? String ?: "",
+                m["url"] as? String ?: "",
+                m["src"] as? String ?: "",
+                (m["w"] as? Long)?.toInt() ?: 0,
+                (m["h"] as? Long)?.toInt() ?: 0,
+            )
         }
     }
 
@@ -40,15 +65,17 @@ class WidgetStore(context: Context) {
         if (after.size == before.size) return false
 
         save(after)
-        assignments().filterValues { it == name }.keys.forEach { unassign(it) }
 
         return true
     }
 
     private fun save(specs: List<WidgetSpec>) {
         val json = specs.joinToString(",", "[", "]") {
-            "{\"name\":${MiniJson.quote(it.name)},\"title\":${MiniJson.quote(it.title)}," +
-                "\"text\":${MiniJson.quote(it.text)},\"url\":${MiniJson.quote(it.url)}}"
+            val base = "{\"name\":${MiniJson.quote(it.name)},\"title\":${MiniJson.quote(it.title)}," +
+                "\"text\":${MiniJson.quote(it.text)},\"url\":${MiniJson.quote(it.url)}"
+
+            if (!it.isRich) "$base}"
+            else "$base,\"src\":${MiniJson.quote(it.src)},\"w\":${it.w},\"h\":${it.h}}"
         }
 
         sp.edit().putString("specs", json).apply()
@@ -83,6 +110,10 @@ class WidgetStore(context: Context) {
 }
 
 object Widgets {
+    /** Requests from the agent's side that a planted rich widget play its tap animation. */
+    const val ACTION_TAP = "dev.opencode.mobile.WIDGET_TAP"
+    const val EXTRA_ID = "widgetId"
+
     /** Pushes the current content to every placed widget. Safe to call from any thread. */
     fun refresh(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
@@ -99,7 +130,10 @@ object Widgets {
         val store = WidgetStore(context)
         val isNew = store.get(spec.name) == null
 
+        RichWidgets.forget(spec.name)
+
         store.set(spec)
+        store.pending = ""
 
         val manager = AppWidgetManager.getInstance(context)
         val shown = store.assignments().filterKeys { it in placed(context) }.containsValue(spec.name)
@@ -125,6 +159,8 @@ object Widgets {
     fun remove(context: Context, name: String): Boolean {
         val removed = WidgetStore(context).remove(name)
 
+        RichWidgets.forget(name)
+
         refresh(context)
 
         return removed
@@ -136,6 +172,20 @@ object Widgets {
 
         return store.list().joinToString("\n") { "${it.name}\t${if (it.name in live) "on screen" else "not placed"}\t${it.title}" }
     }
+
+    /** The person tapped a rich widget on the home screen; ask its page to play the tap animation. */
+    fun onTap(context: Context, id: Int, done: () -> Unit) {
+        val store = WidgetStore(context)
+        val name = store.assignments()[id]
+        val spec = name?.let { store.get(it) }
+
+        if (spec == null || spec.richKind != WidgetContent.KIND_HTML) {
+            done()
+            return
+        }
+
+        RichWidgets.tap(context, spec, done)
+    }
 }
 
 /** The widget itself: one provider, many instances, each showing the spec the agent assigned to it. */
@@ -146,6 +196,18 @@ class AgentWidgetProvider : AppWidgetProvider() {
         val store = WidgetStore(context)
 
         ids.forEach { store.unassign(it) }
+    }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Widgets.ACTION_TAP) {
+            val result = goAsync()
+
+            Widgets.onTap(context, intent.getIntExtra(Widgets.EXTRA_ID, AppWidgetManager.INVALID_APPWIDGET_ID)) { result.finish() }
+
+            return
+        }
+
+        super.onReceive(context, intent)
     }
 
     companion object {
@@ -167,16 +229,31 @@ class AgentWidgetProvider : AppWidgetProvider() {
                     store.pending = ""
                 }
 
-                manager.updateAppWidget(id, views(context, specs.firstOrNull { it.name == name }, id))
+                val spec = specs.firstOrNull { it.name == name }
+
+                manager.updateAppWidget(id, renderViews(context, spec, id))
             }
         }
 
-        private fun views(context: Context, spec: WidgetSpec?, id: Int): RemoteViews {
+        fun renderViews(context: Context, spec: WidgetSpec?, id: Int): RemoteViews {
+            if (spec != null && spec.isRich) {
+                val cached = RichWidgets.cached(spec)
+
+                if (cached != null) return RichWidgets.views(context, spec, cached)
+
+                RichWidgets.load(context, spec)
+            }
+
+            return textView(context, spec)
+        }
+
+        internal fun textView(context: Context, spec: WidgetSpec?): RemoteViews {
             val v = RemoteViews(context.packageName, R.layout.widget_agent)
             val open = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
 
             if (spec != null && spec.url.isNotEmpty()) open.putExtra(MainActivity.EXTRA_PREVIEW, spec.url)
 
+            v.setViewVisibility(R.id.widget_image, View.GONE)
             v.setTextViewText(R.id.widget_title, spec?.title?.ifEmpty { null } ?: tr("OpenCode", "OpenCode"))
             v.setTextViewText(
                 R.id.widget_text,
@@ -184,7 +261,7 @@ class AgentWidgetProvider : AppWidgetProvider() {
             )
             v.setOnClickPendingIntent(
                 R.id.widget_root,
-                PendingIntent.getActivity(context, id, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT),
+                PendingIntent.getActivity(context, spec?.name?.hashCode() ?: 0x4F4321, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT),
             )
 
             return v

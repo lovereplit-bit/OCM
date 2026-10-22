@@ -559,8 +559,8 @@ class ServerService : Service() {
 
             override fun version() = BuildConfig.VERSION_NAME
 
-            override fun widgetSet(name: String, title: String, text: String, url: String, pin: Boolean): String =
-                Widgets.set(this@ServerService, WidgetSpec(name, title, text, url), pin)
+            override fun widgetSet(name: String, title: String, text: String, url: String, pin: Boolean, src: String, w: Int, h: Int): String =
+                Widgets.set(this@ServerService, WidgetSpec(name, title, text, url, src, w, h), pin)
 
             override fun widgetRemove(name: String): Boolean = Widgets.remove(this@ServerService, name)
 

@@ -238,4 +238,13 @@
       });
     };
   }
+
+  // Composer layout on phones: a long model name used to push the model-variant (thinking) control out of the
+  // scrollable controls row, so it was clipped exactly where the send button sits. Cap the wide triggers instead.
+  var composerStyle = document.createElement("style");
+
+  composerStyle.textContent =
+    '@media (max-width: 767px) { [data-slot="composer-controls"] [class*="max-w-[220px]"] { max-width: 148px !important; } }';
+
+  (document.head || document.documentElement).appendChild(composerStyle);
 })();
