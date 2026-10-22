@@ -12,8 +12,7 @@
 
   window.__ocAndroidBridge = true;
 
-  // ---- file downloads ---------------------------------------------------------------------------------------------
-
+  // File downloads
   var blobs = new Map();
   var createObjectURL = URL.createObjectURL;
   var revokeObjectURL = URL.revokeObjectURL;
@@ -142,8 +141,7 @@
 
   window.__ocSaveUrl = saveUrl;
 
-  // ---- system bars follow the theme ---------------------------------------------------------------------------------
-
+  // System bars follow the theme
   function parseColor(value) {
     var match = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?/.exec(value || "");
 
@@ -207,8 +205,7 @@
   setInterval(syncBars, 2000);
   scheduleBars();
 
-  // ---- terminal focus ---------------------------------------------------------------------------------------------------
-
+  // Terminal focus
   var terminalFocused = false;
 
   function inTerminal(element) {
@@ -231,8 +228,7 @@
   document.addEventListener("focusin", reportFocus, true);
   document.addEventListener("focusout", function () { setTimeout(reportFocus, 50); }, true);
 
-  // ---- clipboard fallback -----------------------------------------------------------------------------------------------
-
+  // Clipboard fallback
   if (navigator.clipboard && navigator.clipboard.writeText) {
     var writeText = navigator.clipboard.writeText.bind(navigator.clipboard);
 

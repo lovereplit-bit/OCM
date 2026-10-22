@@ -7,7 +7,7 @@ plugins {
 
 // Everything here comes from the environment so the GitHub Actions workflow can stamp each build.
 val appVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
-val appVersionName = System.getenv("VERSION_NAME") ?: "0.1.0-local"
+val appVersionName = System.getenv("VERSION_NAME") ?: "1.0.2"
 
 android {
     namespace = "dev.opencode.mobile"

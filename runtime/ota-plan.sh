@@ -55,7 +55,7 @@ stop() { # stop <reason>
 
 semver_re='^v?[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'
 
-# ---- which upstream release ----------------------------------------------------------------------------------------------
+# Which upstream release
 published_at=""
 if [ -n "$force_ref" ]; then
   tag="$force_ref"
@@ -78,7 +78,7 @@ fi
 version="${tag#v}"
 say "Upstream release: $tag"
 
-# ---- the commit behind the tag -------------------------------------------------------------------------------------------
+# The commit behind the tag
 resolve() { # resolve <tag> -> commit of the tag (peeled when the tag is annotated)
   local refs peeled direct
   refs="$(git ls-remote "$git_url" "refs/tags/$1" "refs/tags/$1^{}" 2>/dev/null || true)"
@@ -91,7 +91,7 @@ commit="$(resolve "$tag" || true)"
 [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || stop "could not resolve $tag to a commit"
 say "Commit: $commit"
 
-# ---- the last build this repository offered -------------------------------------------------------------------------------
+# The last build this repository offered
 gh release list --repo "$this" --limit 100 --json tagName,isDraft,createdAt >"$work/releases.json" 2>/dev/null || echo '[]' >"$work/releases.json"
 
 # A draft for this very version is already waiting for a person: do not queue another.
@@ -124,7 +124,7 @@ else
   say "No earlier build has been offered from this repository."
 fi
 
-# ---- gates ---------------------------------------------------------------------------------------------------------------
+# Gates
 if [ "$force" != true ] && [ -n "$last_version" ]; then
   if [ "$last_version" = "$version" ]; then
     stop "$version is already offered"
@@ -146,7 +146,7 @@ if [ -n "$pinned_major" ]; then
   [ "$major" = "$pinned_major" ] || risk "major version changed: this app is built for $pinned_major.x, upstream is now $version"
 fi
 
-# ---- what changed since the last build ------------------------------------------------------------------------------------
+# What changed since the last build
 guard() {
   local old_tag="" cand g="$work/up.git" files
 
@@ -219,7 +219,7 @@ guard() {
 
 guard
 
-# ---- provenance (informational) -------------------------------------------------------------------------------------------
+# Provenance (informational)
 if verified="$(gh api "repos/$up/commits/$commit" --jq '.commit.verification.verified' 2>/dev/null)"; then
   note "commit signature verified by GitHub: $verified"
 fi

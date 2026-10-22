@@ -99,6 +99,18 @@ expect "save rejects a missing file" bash -c "! '$bin/android-save' '$work/nope'
 "$bin/android-notify" "Build" "Finished & ok"
 expect "notify" grep -qx 'notify Build|Finished & ok' "$work/log"
 
+# android-widget
+"$bin/android-widget" set demo "Title here" "Some text" --url 5173 >/dev/null
+expect "widget set" grep -qx 'widget demo|Title here|Some text|http://localhost:5173|true' "$work/log"
+"$bin/android-widget" set demo "Only title" --no-pin >/dev/null
+expect "widget no pin" grep -qx 'widget demo|Only title|||false' "$work/log"
+expect "widget list" bash -c "'$bin/android-widget' list | grep -q demo"
+"$bin/android-widget" remove demo >/dev/null
+expect "widget remove" grep -qx 'widget-remove demo' "$work/log"
+expect "widget remove missing" bash -c "! '$bin/android-widget' remove missing 2>/dev/null"
+expect "widget bad name" bash -c "! '$bin/android-widget' set 'bad name' T 2>/dev/null"
+expect "widget usage" bash -c "! '$bin/android-widget' 2>/dev/null"
+
 # the wrong token must not work
 expect "wrong token is refused" bash -c "! OPENCODE_ANDROID_TOKEN=wrong '$bin/android-notify' x y 2>/dev/null"
 expect "outside the app" bash -c "! env -u OPENCODE_ANDROID_BRIDGE '$bin/android-open' https://example.com 2>/dev/null"

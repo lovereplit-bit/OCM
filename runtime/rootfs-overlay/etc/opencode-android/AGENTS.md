@@ -42,6 +42,19 @@ Stop dev servers you started when they are no longer needed.
 - Tools that try to open a browser (`xdg-open`, `$BROWSER`) are already redirected to it.
 - `android-notify "Title" "Text"` posts a notification. Use it after a long task finishes only when the person asked to be told.
 
+## Widgets for yourself
+
+You can put a widget on the phone's home screen and keep it up to date, for example a task list, a build status or a note
+for the person.
+
+- `android-widget set <name> "Title" "Text"` creates the widget, or updates it when `<name>` already exists
+  (the name is 1-32 letters, digits, `-` or `_`). The first time, the phone asks the person to confirm placing it.
+- Add `--url <address>` so tapping the widget opens that page in the app, and `--no-pin` to change the content without
+  asking to place it.
+- `android-widget list` shows your widgets and whether they are on screen; `android-widget remove <name>` deletes one.
+- Keep the text short: a title up to 60 characters, the text up to 400. Update a widget when its facts change, and do not
+  create widgets the person did not ask for.
+
 ## Style
 
 - Write plain text and Markdown. Math can be written in LaTeX (`$...$` and `$$...$$`), the app renders it.

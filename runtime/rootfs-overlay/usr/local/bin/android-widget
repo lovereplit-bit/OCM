@@ -1,0 +1,49 @@
+#!/bin/sh
+# Creates and manages home-screen widgets of the app itself.
+#   android-widget set <name> <title> [text] [--url <address>] [--no-pin]
+#   android-widget remove <name>
+#   android-widget list
+# "set" with a name that exists updates the widget, so one command keeps it fresh.
+. /usr/local/lib/opencode-android/bridge.sh
+
+usage() {
+  echo "usage: android-widget set <name> <title> [text] [--url <address>] [--no-pin] | remove <name> | list" >&2
+  exit 64
+}
+
+cmd="${1:-}"
+[ -n "$cmd" ] && shift
+
+case "$cmd" in
+  set)
+    name="${1:-}"
+    title="${2:-}"
+    [ -z "$name" ] && usage
+    [ $# -gt 0 ] && shift
+    [ $# -gt 0 ] && shift
+    text=""
+    url=""
+    pin=1
+
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --url) url="${2:-}"; shift 2 || usage ;;
+        --no-pin) pin=0; shift ;;
+        *) if [ -z "$text" ]; then text="$1"; shift; else usage; fi ;;
+      esac
+    done
+
+    bridge /widget/set --get --data-urlencode "name=$name" --data-urlencode "title=$title" \
+      --data-urlencode "text=$text" --data-urlencode "url=$url" --data-urlencode "pin=$pin"
+    ;;
+  remove)
+    [ -z "${1:-}" ] && usage
+    bridge /widget/remove --get --data-urlencode "name=$1"
+    ;;
+  list)
+    bridge /widget/list
+    ;;
+  *)
+    usage
+    ;;
+esac

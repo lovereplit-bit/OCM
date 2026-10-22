@@ -108,8 +108,7 @@ object Downloads {
         return target
     }
 
-    // ---- chunked saving from the page (blob and data URLs) -----------------------------------------------------------
-
+    // Chunked saving from the page (blob and data URLs)
     fun begin(context: Context, name: String, mime: String): String? = try {
         val id = "s" + counter.incrementAndGet()
 
@@ -147,8 +146,7 @@ object Downloads {
         sessions.remove(id)?.abort()
     }
 
-    // ---- links the web view hands over -------------------------------------------------------------------------------
-
+    // Links the web view hands over
     /** Downloads [url] with the web view's cookies. Runs on its own thread and reports on the main thread via [done]. */
     fun fromUrl(context: Context, url: String, userAgent: String, contentDisposition: String?, mime: String?, done: (Result<String>) -> Unit) {
         Thread({

@@ -16,7 +16,7 @@ expect() { # expect <name> <actual> <expected>
 
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 
-# ---- a fake upstream -------------------------------------------------------------------------------------------------------
+# A fake upstream
 up="$work/upstream.git"
 src="$work/src"
 git init -q "$src"
@@ -45,7 +45,7 @@ git add -A && git commit -qm v2.0.0 && git tag v2.0.0
 git clone -q --bare "$src" "$up"
 cd "$root"
 
-# ---- a stand-in for gh -----------------------------------------------------------------------------------------------------
+# A stand-in for gh
 shim="$work/shim"
 mkdir -p "$shim/bin"
 cat >"$shim/bin/gh" <<'SHIM'

@@ -223,6 +223,34 @@ fun testProot() {
     eq("fakeproc cpus", fp.getValue("stat").lines().count { it.startsWith("cpu") && it[3].isDigit() }, 4)
 }
 
+fun testPortPicker() {
+    eq("port kept when free", PortPicker.pick(4096) { false }, 4096)
+    eq("busy port takes the next", PortPicker.pick(4096) { it == 4096 }, 4097)
+    eq("busy run skipped", PortPicker.pick(4096) { it < 4100 }, 4100)
+    eq("span exhausted", PortPicker.pick(4096) { true }, null)
+    eq("port below range", PortPicker.pick(0) { false }, null)
+    eq("port above range", PortPicker.pick(65536) { false }, null)
+    eq("port at the top", PortPicker.pick(65535) { false }, 65535)
+    eq("top neighbor", PortPicker.pick(65534) { it == 65534 }, 65535)
+    eq("top span exhausted", PortPicker.pick(65535) { true }, null)
+
+    val live = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
+
+    try {
+        check("a live listener is busy", !PortPicker.free(live.localPort))
+        check("pick walks past a live listener", (PortPicker.pick(live.localPort) { !PortPicker.free(it) } ?: -1) > live.localPort)
+    } finally {
+        live.close()
+    }
+
+    val probe = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
+    val idle = probe.localPort
+
+    probe.close()
+
+    check("a port nobody listens on is free", PortPicker.free(idle))
+}
+
 fun testProfiles() {
     val dir = Files.createTempDirectory("prof").toFile()
     val file = File(dir, "profiles.json")
@@ -256,6 +284,23 @@ fun testProfiles() {
     val c = again.create("C")
 
     eq("slot reused", c.slot, 1)
+
+    // Every profile has a port of its own, remembered once it had to move.
+    eq("profile port from slot", again.find(b.id)?.port, 4098)
+
+    again.setPort(b.id, 4200)
+
+    eq("port set", again.find(b.id)?.port, 4200)
+
+    again.setPort(b.id, 80)
+
+    eq("port below range ignored", again.find(b.id)?.port, 4200)
+
+    again.setPort(b.id, 70000)
+
+    eq("port above range ignored", again.find(b.id)?.port, 4200)
+    eq("port persisted", Profiles(file).find(b.id)?.port, 4200)
+
     check("remove b", again.remove(b.id))
     check("remove c", again.remove(c.id))
     check("last profile kept", !again.remove("main"))
@@ -271,6 +316,13 @@ fun testProfiles() {
 
     eq("hostile ids rejected", sane.all.map { it.id }, listOf("ok2"))
     eq("active fallback", sane.active.id, "ok2")
+
+    file.writeText("""{"active":"ok2","profiles":[{"id":"ok2","name":"N2","slot":2,"port":70000},{"id":"ok5","name":"N5","slot":3,"port":4200}]}""")
+
+    val ported = Profiles(file)
+
+    eq("corrupt port falls back to slot", ported.find("ok2")?.port, 4098)
+    eq("saved port kept", ported.find("ok5")?.port, 4200)
 
     for (i in 1 until Profiles.MAX_PROFILES) sane.create("p$i")
 
@@ -503,6 +555,7 @@ fun testBridge() {
     val shown = ArrayList<String>()
     val notified = ArrayList<String>()
     val saved = ArrayList<String>()
+    val widgets = ArrayList<String>()
     val handler = object : BridgeHandler {
         override fun preview(url: String): String? { shown += url; return if (url.contains("fail")) "no window" else null }
         override fun open(url: String): String? { shown += "open:$url"; return null }
@@ -514,6 +567,9 @@ fun testBridge() {
 
             return "Download/" + name.ifEmpty { "file" }
         }
+        override fun widgetSet(name: String, title: String, text: String, url: String, pin: Boolean): String { widgets += "$name|$title|$text|$url|$pin"; return "widget $name: saved" }
+        override fun widgetRemove(name: String): Boolean = widgets.removeAll { it.startsWith("$name|") }
+        override fun widgetList() = widgets.joinToString("\n") { it.substringBefore('|') }
         override fun version() = "1.2.3"
     }
     val server = BridgeServer("secret", handler)
@@ -537,6 +593,12 @@ fun testBridge() {
         check("open", http(port, "GET /open?url=https%3A%2F%2Fexample.com HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200"))
         check("open rejects file", http(port, "GET /open?url=file%3A%2F%2F%2Fetc HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 400"))
         check("notify", http(port, "GET /notify?title=T&text=Done HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200") && notified == listOf("T|Done"))
+        check("widget set", http(port, "GET /widget/set?name=w1&title=Hi&text=There&url=5173&pin=0 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200") && widgets == listOf("w1|Hi|There|http://localhost:5173|false"))
+        check("widget bad name", http(port, "GET /widget/set?name=a%20b&title=x HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 400"))
+        check("widget bad url", http(port, "GET /widget/set?name=w2&url=ftp://x HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 400"))
+        check("widget list", http(port, "GET /widget/list HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").endsWith("w1"))
+        check("widget remove", http(port, "GET /widget/remove?name=w1 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200") && widgets.isEmpty())
+        check("widget remove missing", http(port, "GET /widget/remove?name=w1 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 404"))
         check("save", http(port, "GET /save?path=%2Froot%2Fa%20b.txt&name=x.txt HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").let { it.startsWith("HTTP/1.1 200") && it.endsWith("Download/x.txt") } && saved == listOf("/root/a b.txt|x.txt"))
         check("save needs a path", http(port, "GET /save HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 400"))
         check("save error is reported", http(port, "GET /save?path=%2Fmissing HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").let { it.startsWith("HTTP/1.1 400") && it.contains("File not found") })
@@ -699,6 +761,7 @@ fun main(args: Array<String>) {
     testTar(fixtures)
     testFs()
     testProot()
+    testPortPicker()
     testProfiles()
     testLogin()
     testHttpTransport()

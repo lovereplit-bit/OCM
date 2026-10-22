@@ -65,8 +65,7 @@ class SettingsActivity : Activity() {
         render()
     }
 
-    // ---- building blocks ----------------------------------------------------------------------------------------------
-
+    // Building blocks
     private fun section(title: String): LinearLayout {
         column.addView(
             Ui.text(this, title.uppercase(), 12f, palette.faint, bold = true).apply { letterSpacing = 0.08f },
@@ -120,8 +119,7 @@ class SettingsActivity : Activity() {
 
     private fun state(text: String, good: Boolean) = Ui.text(this, text, 12f, if (good) palette.ok else palette.faint, bold = true)
 
-    // ---- screen --------------------------------------------------------------------------------------------------------
-
+    // Screen
     private fun render() {
         column.removeAllViews()
 

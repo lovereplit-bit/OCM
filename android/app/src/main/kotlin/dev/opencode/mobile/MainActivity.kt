@@ -167,8 +167,7 @@ class MainActivity : Activity(), UiHost {
         moveTaskToBack(true)
     }
 
-    // ---- server state -------------------------------------------------------------------------------------------------
-
+    // Server state
     private fun onState(s: Snapshot) {
         // The listener runs on the main thread; an error while applying a state must not take the app down.
         try {
@@ -245,8 +244,7 @@ class MainActivity : Activity(), UiHost {
 
     fun currentPassword(): String = if (app.prefs.remote) app.prefs.remotePassword else app.prefs.password
 
-    // ---- page callbacks -------------------------------------------------------------------------------------------------
-
+    // Page callbacks
     fun onPageReady() {
         if (ServerState.snapshot.phase == Phase.RUNNING) startup.hide()
     }
@@ -269,8 +267,7 @@ class MainActivity : Activity(), UiHost {
         web.open(ServerState.snapshot.baseUrl, currentPassword())
     }
 
-    // ---- links ----------------------------------------------------------------------------------------------------------
-
+    // Links
     private fun reservedPorts(): Set<Int> =
         app.profiles.all.map { it.port }.toSet() + setOfNotNull(UiBus.bridgePort.takeIf { it > 0 }) + 4090
 
@@ -342,8 +339,7 @@ class MainActivity : Activity(), UiHost {
         if (intent.action == ServerService.ACTION_RESTART) ServerService.send(this, ServerService.ACTION_RESTART)
     }
 
-    // ---- files and permissions --------------------------------------------------------------------------------------------
-
+    // Files and permissions
     fun pickFiles(params: WebChromeClient.FileChooserParams, callback: ValueCallback<Array<Uri>>) {
         fileCallback?.onReceiveValue(null)
         fileCallback = callback
@@ -415,8 +411,7 @@ class MainActivity : Activity(), UiHost {
         }
     }
 
-    // ---- appearance ---------------------------------------------------------------------------------------------------------
-
+    // Appearance
     /** Colours the system bars like the page, so the app looks like one surface. */
     fun applyBars(dark: Boolean, hex: String) {
         val color = try {
@@ -444,8 +439,7 @@ class MainActivity : Activity(), UiHost {
         }
     }
 
-    // ---- the floating menu button ---------------------------------------------------------------------------------------------
-
+    // The floating menu button
     @SuppressLint("ClickableViewAccessibility")
     private fun buildHandle(): ImageView {
         val view = ImageView(this).apply {

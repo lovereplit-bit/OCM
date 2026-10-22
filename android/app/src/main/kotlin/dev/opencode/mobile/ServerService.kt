@@ -130,8 +130,7 @@ class ServerService : Service() {
         super.onDestroy()
     }
 
-    // ---- lifecycle ---------------------------------------------------------------------------------------------------
-
+    // Lifecycle
     private fun baseFor(profile: Profile) = "http://127.0.0.1:${profile.port}"
 
     private fun begin(apply: Boolean) {
@@ -163,8 +162,7 @@ class ServerService : Service() {
 
     private fun startLocal(apply: Boolean) {
         val my = ++epoch
-        val profile = app.profiles.active
-        val base = baseFor(profile)
+        var profile = app.profiles.active
         val password = app.prefs.password
 
         quiet()
@@ -194,8 +192,30 @@ class ServerService : Service() {
 
         server.killOrphans()
 
+        // Every profile gets a port of its own. When something else on the phone already sits on it, the next
+        // free port is taken and remembered, so the server starts anyway and the port stays individual.
+        var port = pickPort(profile)
+
+        if (port == null) {
+            fail(
+                tr(
+                    "Не нашлось свободного порта для сервера (искали от ${profile.port} и выше). Похоже, другое приложение занимает соседние порты.",
+                    "No free port was left for the server (looked from ${profile.port} upward). Another app seems to hold the ports near it.",
+                ),
+                false,
+                profile,
+            )
+
+            return
+        }
+
+        if (port != profile.port) profile = rememberPort(profile, port)
+
+        var base = baseFor(profile)
+
         var otaDir = app.ota.prepareStart(profile, apply)
         var attempt = 0
+        var shifts = 0
 
         while (true) {
             val config = server.config(app.prefs, profile, bridgeUrl, otaDir)
@@ -224,6 +244,22 @@ class ServerService : Service() {
 
             server.stop()
 
+            // Someone took the port between the check and the bind; move on to the next free one instead of failing.
+            if (server.portWasBusy() && shifts < MAX_PORT_SHIFTS) {
+                val next = pickPort(profile, port)
+
+                if (next != null) {
+                    Log.w("service", "port $port was taken during startup, moving to $next")
+
+                    shifts++
+                    port = next
+                    profile = rememberPort(profile, port)
+                    base = baseFor(profile)
+
+                    continue
+                }
+            }
+
             val (hint, compat) = server.failureHint(exit)
 
             Log.w("service", "server did not become healthy (exit=$exit): ${hint.lines().firstOrNull().orEmpty()}")
@@ -245,6 +281,30 @@ class ServerService : Service() {
         }
 
         onRunning(profile, base, password, local = true)
+    }
+
+    /**
+     * The port this profile's server listens on: its own saved one, or the next free port when something else on the
+     * phone already holds it. Ports saved by other profiles and the bridge's own are never taken. Null when every
+     * port nearby is busy.
+     */
+    private fun pickPort(profile: Profile, after: Int? = null): Int? {
+        val taken = app.profiles.all.filter { it.id != profile.id }.map { it.port }.toHashSet()
+        val bridgePort = UiBus.bridgePort
+
+        if (bridgePort > 0) taken += bridgePort
+
+        return PortPicker.pick(after?.plus(1) ?: profile.port) { candidate -> candidate in taken || !PortPicker.free(candidate) }
+    }
+
+    /** Records a moved port as this profile's own, so it stays individual across restarts. */
+    private fun rememberPort(profile: Profile, port: Int): Profile {
+        if (port != profile.port) {
+            app.profiles.setPort(profile.id, port)
+            Log.i("service", "profile ${profile.id} listens on port $port now")
+        }
+
+        return profile.copy(port = port)
     }
 
     private fun startRemote() {
@@ -394,8 +454,7 @@ class ServerService : Service() {
         server.stop()
     }
 
-    // ---- state and notification --------------------------------------------------------------------------------------
-
+    // State and notification
     private fun publish(phase: Phase, message: String, profile: Profile, progress: Int = -1) {
         ServerState.update { it.copy(phase = phase, message = message, progress = progress, profileId = profile.id, error = null, suggestCompat = false) }
         status(message)
@@ -442,8 +501,7 @@ class ServerService : Service() {
         wifi = null
     }
 
-    // ---- bridge to the Linux side ------------------------------------------------------------------------------------
-
+    // Bridge to the Linux side
     private fun startBridge(): BridgeServer {
         val handler = object : BridgeHandler {
             override fun preview(url: String): String? {
@@ -500,6 +558,13 @@ class ServerService : Service() {
             }
 
             override fun version() = BuildConfig.VERSION_NAME
+
+            override fun widgetSet(name: String, title: String, text: String, url: String, pin: Boolean): String =
+                Widgets.set(this@ServerService, WidgetSpec(name, title, text, url), pin)
+
+            override fun widgetRemove(name: String): Boolean = Widgets.remove(this@ServerService, name)
+
+            override fun widgetList(): String = Widgets.describe(this@ServerService)
         }
 
         return BridgeServer(app.prefs.bridgeToken, handler, 4090).also {
@@ -510,6 +575,9 @@ class ServerService : Service() {
 
     companion object {
         const val ACTION_START = "dev.opencode.mobile.START"
+
+        /** How many times a start may move to the next port after the server found its port taken. */
+        private const val MAX_PORT_SHIFTS = 4
         const val ACTION_STOP = "dev.opencode.mobile.STOP"
         const val ACTION_RESTART = "dev.opencode.mobile.RESTART"
         const val ACTION_APPLY = "dev.opencode.mobile.APPLY_UPDATE"

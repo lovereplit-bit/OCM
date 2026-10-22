@@ -74,7 +74,7 @@ for path in files():
         if hit is not None:
             problems.append(f"{rel(path)}:{lineno}: emoji or pictograph U+{ord(hit):04X}")
 
-# ---- XML ---------------------------------------------------------------------------------------------------------------
+# XML
 xml_files = [p for p in files() if p.endswith(".xml")]
 trees = {}
 for path in xml_files:
@@ -124,7 +124,7 @@ for path, tree in trees.items():
         if name not in defined.get(kind, set()):
             problems.append(f"{rel(path)}: reference @{kind}/{m.group(2)} does not exist")
 
-# ---- string resources ---------------------------------------------------------------------------------------------------
+# String resources
 for path in xml_files:
     if not re.search(r"/res/values[^/]*/strings\.xml$", path) or path not in trees:
         continue
@@ -142,7 +142,7 @@ for path in xml_files:
         if len(markers) > 1 and any("$" not in m for m in markers):
             problems.append(f"{rel(path)}: string '{el.get('name')}' has several format markers without positions")
 
-# ---- scripts and workflows ------------------------------------------------------------------------------------------------
+# Scripts and workflows
 for path in files():
     if path.endswith(".sh") or "rootfs-overlay/usr/local/bin" in path:
         head = open(path, encoding="utf-8", errors="replace").readline()
@@ -173,7 +173,7 @@ for path in files():
         except ValueError as e:
             problems.append(f"{rel(path)}: JSON error {e}")
 
-# ---- workflow wiring: every steps.* and needs.* reference must point at something that exists --------------------------------
+# Workflow wiring: every steps.* and needs.* reference must point at something that exists
 try:
     import yaml  # type: ignore
 except ImportError:

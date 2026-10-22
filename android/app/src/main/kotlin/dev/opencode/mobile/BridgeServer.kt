@@ -25,6 +25,15 @@ interface BridgeHandler {
      */
     fun save(path: String, name: String): String
 
+    /** Creates or updates a named home-screen widget. Returns a short message for the agent. */
+    fun widgetSet(name: String, title: String, text: String, url: String, pin: Boolean): String
+
+    /** Removes the widget called [name]; false when there is none. */
+    fun widgetRemove(name: String): Boolean
+
+    /** Lists the widgets, one per line. */
+    fun widgetList(): String
+
     fun version(): String
 }
 
@@ -135,6 +144,13 @@ object BridgeHttp {
         return head.toByteArray(Charsets.ISO_8859_1) + payload
     }
 }
+
+/** The shape of a widget name the agent may use: 1-32 of letters, digits, hyphens and underscores. */
+private val WIDGET_NAME = Regex("^[A-Za-z0-9_-]{1,32}$")
+
+private const val WIDGET_TITLE_MAX = 60
+
+private const val WIDGET_TEXT_MAX = 400
 
 /**
  * A tiny HTTP server on the phone's loopback that lets commands inside the Linux environment reach the app: show a
@@ -266,6 +282,34 @@ class BridgeServer(
             "/notify" -> {
                 handler.notify(args["title"].orEmpty().take(120), args["text"].orEmpty().take(500))
                 BridgeHttp.response(200, "ok")
+            }
+
+            "/widget/set" -> {
+                val name = args["name"].orEmpty()
+
+                if (!WIDGET_NAME.matches(name)) return BridgeHttp.response(400, "not a valid widget name")
+
+                val title = args["title"].orEmpty()
+                val text = args["text"].orEmpty()
+
+                if (title.length > WIDGET_TITLE_MAX) return BridgeHttp.response(400, "title is too long")
+                if (text.length > WIDGET_TEXT_MAX) return BridgeHttp.response(400, "text is too long")
+
+                val wanted = args["url"].orEmpty()
+                val url = if (wanted.isEmpty()) "" else (Urls.normalizePreview(wanted) ?: return BridgeHttp.response(400, "not a valid address"))
+                val pin = args["pin"]?.lowercase() !in setOf("0", "false", "no", "off")
+
+                BridgeHttp.response(200, handler.widgetSet(name, title, text, url, pin))
+            }
+
+            "/widget/list" -> BridgeHttp.response(200, handler.widgetList())
+
+            "/widget/remove" -> {
+                val name = args["name"].orEmpty()
+
+                if (!WIDGET_NAME.matches(name)) return BridgeHttp.response(400, "not a valid widget name")
+
+                if (handler.widgetRemove(name)) BridgeHttp.response(200, "ok") else BridgeHttp.response(404, "no such widget")
             }
 
             else -> BridgeHttp.response(404, "not found")

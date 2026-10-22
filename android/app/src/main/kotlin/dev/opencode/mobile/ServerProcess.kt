@@ -11,6 +11,9 @@ class ServerProcess(private val paths: Paths) {
     var process: Process? = null
         private set
 
+    /** Where the server log stood when the running attempt started, so only that attempt is inspected on failure. */
+    private var logMark: Long = 0
+
     fun config(prefs: Prefs, profile: Profile, bridgeUrl: String, otaDir: File?): ProotConfig {
         val home = Profiles.homeDir(paths.profilesDir, profile)
 
@@ -39,6 +42,7 @@ class ServerProcess(private val paths: Paths) {
         File(config.home).mkdirs()
         File(config.prootTmp).mkdirs()
         rotateLog()
+        logMark = paths.serverLog.length()
         paths.serverLog.appendText("--- start ${java.util.Date()} port=${config.port} compat=${config.compat} bin=${ProotCommand.guestBinary(config)}\n")
 
         val builder = ProcessBuilder(launch.command)
@@ -167,7 +171,7 @@ class ServerProcess(private val paths: Paths) {
 
     /** Reads why the server died, to tell the person something more useful than "failed". */
     fun failureHint(exitCode: Int?): Pair<String, Boolean> {
-        val tail = Log.tailOf(paths.serverLog, 6 * 1024)
+        val tail = attemptLog()
         val lower = tail.lowercase()
         val seccomp = exitCode == 159 || "bad system call" in lower || "sigsys" in lower || "seccomp" in lower
         val lines = tail.lines().filter { it.isNotBlank() }.takeLast(8).joinToString("\n")
@@ -183,5 +187,15 @@ class ServerProcess(private val paths: Paths) {
             ) to false
             else -> lines.ifEmpty { tr("Сервер не ответил вовремя", "The server did not answer in time") } to false
         }
+    }
+
+    /** What the current attempt printed, so an earlier attempt in the same log cannot be mistaken for it. */
+    private fun attemptLog(): String = Log.since(paths.serverLog, logMark, 6 * 1024)
+
+    /** True when the current attempt died because its port was already in use by something else on the phone. */
+    fun portWasBusy(): Boolean {
+        val lower = attemptLog().lowercase()
+
+        return "address already in use" in lower || "eaddrinuse" in lower
     }
 }

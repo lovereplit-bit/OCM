@@ -32,6 +32,11 @@ for entry in sorted(os.listdir(res)):
                     add(k, m.group(1))
         else:
             add(kind, os.path.splitext(f)[0])
+            # Ids are declared with @+id inside layouts and menus, not in a file of their own.
+            if f.endswith('.xml'):
+                text = open(os.path.join(path, f), encoding='utf-8').read()
+                for m in re.finditer(r'@\+id/([A-Za-z0-9_]+)', text):
+                    add('id', m.group(1))
 with open(target, 'w') as out:
     out.write('package dev.opencode.mobile\n\nobject R {\n')
     for kind, names in sorted(ids.items()):

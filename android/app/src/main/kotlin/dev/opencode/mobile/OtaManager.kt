@@ -56,8 +56,7 @@ class OtaManager(private val context: Context, private val paths: Paths, private
 
     val trial: Boolean get() = synchronized(this) { state.trial != null }
 
-    // ---- checking ----------------------------------------------------------------------------------------------------
-
+    // Checking
     fun check(): CheckResult {
         val repo = prefs.otaRepo
 
@@ -124,8 +123,7 @@ class OtaManager(private val context: Context, private val paths: Paths, private
         return if (picks.runtime != null || picks.app != null) CheckResult.Available(picks.runtime, picks.app) else CheckResult.UpToDate
     }
 
-    // ---- downloading -------------------------------------------------------------------------------------------------
-
+    // Downloading
     /** Downloads the runtime build, checks it, runs [selfTest] on it and stages it for the next server start. */
     fun download(
         update: Offer,
@@ -222,8 +220,7 @@ class OtaManager(private val context: Context, private val paths: Paths, private
         }
     }
 
-    // ---- applying ----------------------------------------------------------------------------------------------------
-
+    // Applying
     /**
      * Called before every local server start. Switches to a staged build (after saving the profile's data) and returns
      * the directory of the build to run, or null for the one bundled in the app.
@@ -303,8 +300,7 @@ class OtaManager(private val context: Context, private val paths: Paths, private
         }
     }
 
-    // ---- saving the profile's data -----------------------------------------------------------------------------------
-
+    // Saving the profile's data
     private fun dataDir(profile: Profile) = File(Profiles.homeDir(paths.profilesDir, profile), ".local/share/opencode")
 
     private val dataFile = { name: String ->
@@ -349,8 +345,7 @@ class OtaManager(private val context: Context, private val paths: Paths, private
         }
     }
 
-    // ---- plumbing ----------------------------------------------------------------------------------------------------
-
+    // Plumbing
     private fun unmetered(): Boolean {
         val manager = context.getSystemService(ConnectivityManager::class.java)
         val caps = manager.getNetworkCapabilities(manager.activeNetwork ?: return false) ?: return false

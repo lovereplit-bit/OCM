@@ -200,8 +200,7 @@ class PreviewWindow(
         }
     }
 
-    // ---- tabs --------------------------------------------------------------------------------------------------------
-
+    // Tabs
     fun open(url: String) {
         val key = Urls.parse(url)?.let { Urls.displayHost(url) }
         val existing = tabs.indexOfFirst { Urls.displayHost(it.url) == key }
@@ -295,8 +294,7 @@ class PreviewWindow(
         tabs.clear()
     }
 
-    // ---- modes, dragging, resizing -----------------------------------------------------------------------------------
-
+    // Modes, dragging, resizing
     fun setMode(next: Mode) {
         if (mode == Mode.FLOAT && next != Mode.FLOAT) {
             floatX = x
@@ -393,8 +391,7 @@ class PreviewWindow(
         }
     }
 
-    // ---- web views ---------------------------------------------------------------------------------------------------
-
+    // Web views
     @SuppressLint("SetJavaScriptEnabled")
     private fun createWebView(): WebView {
         val web = WebView(activity)

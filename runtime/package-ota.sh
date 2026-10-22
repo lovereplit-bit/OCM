@@ -108,7 +108,7 @@ jq -n \
    + (if $runtime != null then {runtime: $runtime} else {} end)
    + (if $app != null then {app: $app} else {} end)' >"$out/manifest.json"
 
-# ---- signing -----------------------------------------------------------------------------------------------------------
+# Signing
 export P12_PASSWORD="ota-$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 keytool_args=(-importkeystore -srckeystore "$KEYSTORE_FILE" -srcalias "$KEY_ALIAS" -srcstorepass:env KEYSTORE_PASSWORD
   -destkeystore "$work/key.p12" -deststoretype PKCS12 -deststorepass:env P12_PASSWORD -destalias key -noprompt)

@@ -74,7 +74,7 @@ run() { # run <out-dir>; returns the script's status
   TERMUX_MIRRORS="http://127.0.0.1:1 $mirror" EXPECT_MACHINE="x86-64" bash "$root/runtime/fetch-proot.sh" "$1" >"$work/run.log" 2>&1
 }
 
-# ---- good mirror ------------------------------------------------------------------------------------------------------
+# Good mirror
 build_mirror "$work/good" ""
 serve "$work/good"
 if run "$work/out"; then ok; else bad "good mirror failed"; cat "$work/run.log"; fi
@@ -87,20 +87,20 @@ readelf -d "$work/out/libtalloc.so" | grep -q 'SONAME.*\[libtalloc.so\]' && ok |
 grep -q "mirror http://127.0.0.1:1 did not answer" "$work/run.log" && ok || bad "did not fall back to the second mirror"
 grep -q "proot 5.1.107-65" "$work/run.log" && ok || bad "did not pick the newest proot"
 
-# ---- a library Android does not have -----------------------------------------------------------------------------------
+# A library Android does not have
 build_mirror "$work/extra" "libandroid-support.so"
 serve "$work/extra"
 if run "$work/out2"; then bad "an unexpected NEEDED library was accepted"; else ok; fi
 grep -q "libandroid-support.so" "$work/run.log" && ok || bad "the refusal did not name the library"
 
-# ---- tampered download -------------------------------------------------------------------------------------------------
+# Tampered download
 build_mirror "$work/tampered" ""
 printf 'x' >>"$work/tampered/pool/proot.deb"
 serve "$work/tampered"
 if run "$work/out3"; then bad "a modified package was accepted"; else ok; fi
 grep -q "Checksum mismatch" "$work/run.log" && ok || bad "no checksum message"
 
-# ---- no mirror ---------------------------------------------------------------------------------------------------------
+# No mirror
 if TERMUX_MIRRORS="http://127.0.0.1:1" EXPECT_MACHINE=x86-64 bash "$root/runtime/fetch-proot.sh" "$work/out4" >"$work/run.log" 2>&1; then bad "worked without a mirror"; else ok; fi
 
 echo "proot fetch: passed $pass, failed $fail"

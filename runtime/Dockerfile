@@ -42,7 +42,7 @@ RUN set -eux; \
 COPY opencode /usr/local/bin/opencode
 COPY overlay/ /
 RUN chmod 0755 /usr/local/bin/opencode /usr/local/bin/preview /usr/local/bin/android-open /usr/local/bin/android-save \
-      /usr/local/bin/android-notify /usr/local/bin/xdg-open \
+      /usr/local/bin/android-notify /usr/local/bin/android-widget /usr/local/bin/xdg-open \
  && mkdir -p /root /tmp /opt/opencode-ota /storage/emulated/0/Download /sdcard \
  && chmod 1777 /tmp \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/* /root/.cache /root/.npm

@@ -14,9 +14,13 @@ data class Profile(
     val account: String?,
     val slot: Int,
     val createdAt: Long,
+    /**
+     * The port this profile's server listens on. It starts as the slot-based one (BASE_PORT + slot) and is remembered
+     * once the profile had to move because something else on the phone held the port, so every user keeps a port of
+     * their own across restarts.
+     */
+    val port: Int = Profiles.BASE_PORT + slot,
 ) {
-    val port: Int get() = Profiles.BASE_PORT + slot
-
     val title: String get() = account?.takeIf { it.isNotBlank() } ?: name
 }
 
@@ -68,6 +72,20 @@ class Profiles(private val file: File, private val clock: () -> Long = System::c
         update(id) { it.copy(account = account?.trim()?.takeIf { value -> value.isNotEmpty() }) }
     }
 
+    /**
+     * Gives the profile a port of its own (after it had to move to the next free one) and remembers it. Remembering
+     * is best effort: when the write fails the server still runs, and the next start simply picks a fresh port.
+     */
+    fun setPort(id: String, port: Int) {
+        if (port !in MIN_PORT..MAX_PORT) return
+
+        try {
+            update(id) { it.copy(port = port) }
+        } catch (_: Exception) {
+            // Not worth stopping the server over.
+        }
+    }
+
     /** Removes a profile from the list. The caller deletes its files. The last profile can never be removed. */
     fun remove(id: String): Boolean {
         if (items.size <= 1 || find(id) == null) return false
@@ -113,12 +131,17 @@ class Profiles(private val file: File, private val clock: () -> Long = System::c
 
         if (!ID.matches(id) || slot !in 0..MAX_PROFILES) return null
 
+        // The port is optional: older lists predate it, and the slot-based one is the default. A port outside the
+        // valid range is corruption, not a port to run on.
+        val port = (map["port"] as? Number)?.toInt()?.takeIf { it in MIN_PORT..MAX_PORT } ?: (BASE_PORT + slot)
+
         return Profile(
             id = id,
             name = (map["name"] as? String)?.takeIf { it.isNotBlank() } ?: id,
             account = map["account"] as? String,
             slot = slot,
             createdAt = (map["createdAt"] as? Number)?.toLong() ?: 0L,
+            port = port,
         )
     }
 
@@ -131,6 +154,7 @@ class Profiles(private val file: File, private val clock: () -> Long = System::c
             out.append(",\"name\":").append(MiniJson.quote(p.name))
             out.append(",\"account\":").append(if (p.account == null) "null" else MiniJson.quote(p.account))
             out.append(",\"slot\":").append(p.slot)
+            out.append(",\"port\":").append(p.port)
             out.append(",\"createdAt\":").append(p.createdAt).append('}')
         }
 
@@ -152,6 +176,10 @@ class Profiles(private val file: File, private val clock: () -> Long = System::c
         const val MAIN = "main"
         const val BASE_PORT = 4096
         const val MAX_PROFILES = 8
+
+        /** The range a saved profile port may fall into; anything else in the file is ignored. */
+        const val MIN_PORT = 1024
+        const val MAX_PORT = 65535
 
         private val ID = Regex("^[a-z0-9]{1,16}$")
 

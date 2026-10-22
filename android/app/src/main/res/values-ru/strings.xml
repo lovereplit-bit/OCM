@@ -2,4 +2,5 @@
 <resources>
     <string name="shortcut_settings">Настройки</string>
     <string name="shortcut_restart">Перезапуск сервера</string>
+    <string name="widget_description">Виджет, который агент OpenCode заполняет сам</string>
 </resources>

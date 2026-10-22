@@ -149,4 +149,29 @@ object Log {
             ""
         }
     }
+
+    /**
+     * The part of the file written after byte offset [mark] (at most [maxBytes]), so one server attempt can be told
+     * apart from what earlier attempts left in the same log.
+     */
+    fun since(target: File?, mark: Long, maxBytes: Int): String {
+        if (target == null || !target.exists()) return ""
+
+        return try {
+            java.io.RandomAccessFile(target, "r").use { raf ->
+                val size = raf.length()
+                val from = mark.coerceIn(0L, size).coerceAtLeast(size - maxBytes)
+
+                raf.seek(from)
+
+                val bytes = ByteArray((size - from).toInt())
+
+                raf.readFully(bytes)
+
+                String(bytes, Charsets.UTF_8)
+            }
+        } catch (_: Exception) {
+            ""
+        }
+    }
 }
