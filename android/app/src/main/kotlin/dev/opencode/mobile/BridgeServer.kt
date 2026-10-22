@@ -306,7 +306,7 @@ class BridgeServer(
                 val src = try {
                     val encoded = args["src_b64"].orEmpty()
 
-                    if (encoded.isEmpty()) "" else String(java.util.Base64.getMimeDecoder().decode(encoded), Charsets.ISO_8859_1)
+                    if (encoded.isEmpty()) "" else String(java.util.Base64.getDecoder().decode(encoded), Charsets.ISO_8859_1)
                 } catch (_: IllegalArgumentException) {
                     return BridgeHttp.response(400, "src_b64 is not valid base64")
                 }

@@ -593,19 +593,20 @@ fun testBridge() {
         check("open", http(port, "GET /open?url=https%3A%2F%2Fexample.com HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200"))
         check("open rejects file", http(port, "GET /open?url=file%3A%2F%2F%2Fetc HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 400"))
         check("notify", http(port, "GET /notify?title=T&text=Done HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200") && notified == listOf("T|Done"))
-        check("widget set", http(port, "GET /widget/set?name=w1&title=Hi&text=There&url=5173&pin=0 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200") && widgets == listOf("w1|Hi|There|http://localhost:5173|false"))
+        check("widget set", http(port, "GET /widget/set?name=w1&title=Hi&text=There&url=5173&pin=0 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200") && widgets == listOf("w1|Hi|There|http://localhost:5173|false||0|0"))
         check("widget bad name", http(port, "GET /widget/set?name=a%20b&title=x HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 400"))
         check("widget bad url", http(port, "GET /widget/set?name=w2&url=ftp://x HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 400"))
+        check("widget list", http(port, "GET /widget/list HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").endsWith("w1"))
+        check("widget remove", http(port, "GET /widget/remove?name=w1 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200") && widgets.isEmpty())
+        check("widget remove missing", http(port, "GET /widget/remove?name=w1 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 404"))
         val rich = "name=w3&src_b64=PGgxPmhpPC9oMT4%3D&w=400&h=300"
         check(
             "widget rich set",
             http(port, "POST /widget/set HTTP/1.1\r\n${h}X-OC-Token: secret\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ${rich.length}\r\n\r\n$rich")
                 .startsWith("HTTP/1.1 200") && widgets.lastOrNull() == "w3||||true|<h1>hi</h1>|400|300",
         )
-        check("widget bad base64", http(port, "POST /widget/set HTTP/1.1\r\n${h}X-OC-Token: secret\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 22\r\n\r\nname=w4&src_b64=not%2Bb64%21").startsWith("HTTP/1.1 400"))
-        check("widget list", http(port, "GET /widget/list HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").endsWith("w1"))
-        check("widget remove", http(port, "GET /widget/remove?name=w1 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 200") && widgets.isEmpty())
-        check("widget remove missing", http(port, "GET /widget/remove?name=w1 HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 404"))
+        val bad64 = "name=w4&src_b64=%23%23%23"
+        check("widget bad base64", http(port, "POST /widget/set HTTP/1.1\r\n${h}X-OC-Token: secret\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ${bad64.length}\r\n\r\n$bad64").startsWith("HTTP/1.1 400"))
         check("save", http(port, "GET /save?path=%2Froot%2Fa%20b.txt&name=x.txt HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").let { it.startsWith("HTTP/1.1 200") && it.endsWith("Download/x.txt") } && saved == listOf("/root/a b.txt|x.txt"))
         check("save needs a path", http(port, "GET /save HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 400"))
         check("save error is reported", http(port, "GET /save?path=%2Fmissing HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").let { it.startsWith("HTTP/1.1 400") && it.contains("File not found") })
