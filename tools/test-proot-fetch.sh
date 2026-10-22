@@ -4,6 +4,8 @@
 # network. The fake binaries are x86-64 and trivial; what is tested is the script, not proot itself.
 # Needs gcc, dpkg-deb, patchelf, readelf, python3, xz, gzip.
 set -euo pipefail
+# dpkg-deb rejects control directories that are not world-readable; some shells start tighter than 022.
+umask 022
 root="$(cd "$(dirname "$0")/.." && pwd)"
 work="$(mktemp -d)"
 server=""
@@ -18,6 +20,10 @@ prefix="data/data/com.termux/files/usr"
 echo 'void android_dummy(void) {}' >"$work/dummy.c"
 echo 'void _start(void) { for (;;) {} }' >"$work/start.c"
 echo 'void talloc_dummy(void) {}' >"$work/talloc.c"
+
+# The fakes are built with the host compiler, so the accepted machine matches it, not a fixed triple.
+gcc -shared -fPIC -nostdlib -o "$work/probe.so" "$work/dummy.c"
+machine="$(readelf -h "$work/probe.so" | sed 's/.*Machine:[[:space:]]*//')"
 
 build_mirror() { # build_mirror <dir> <extra-needed-lib or "">
   local dir="$1" extra="$2" pkg="$work/pkg" libs="$work/libs"
@@ -71,7 +77,7 @@ serve() { # serve <dir> -> sets $server and $mirror
 }
 
 run() { # run <out-dir>; returns the script's status
-  TERMUX_MIRRORS="http://127.0.0.1:1 $mirror" EXPECT_MACHINE="x86-64" bash "$root/runtime/fetch-proot.sh" "$1" >"$work/run.log" 2>&1
+  TERMUX_MIRRORS="http://127.0.0.1:1 $mirror" EXPECT_MACHINE="$machine" bash "$root/runtime/fetch-proot.sh" "$1" >"$work/run.log" 2>&1
 }
 
 # Good mirror
@@ -101,7 +107,7 @@ if run "$work/out3"; then bad "a modified package was accepted"; else ok; fi
 grep -q "Checksum mismatch" "$work/run.log" && ok || bad "no checksum message"
 
 # No mirror
-if TERMUX_MIRRORS="http://127.0.0.1:1" EXPECT_MACHINE=x86-64 bash "$root/runtime/fetch-proot.sh" "$work/out4" >"$work/run.log" 2>&1; then bad "worked without a mirror"; else ok; fi
+if TERMUX_MIRRORS="http://127.0.0.1:1" EXPECT_MACHINE="$machine" bash "$root/runtime/fetch-proot.sh" "$work/out4" >"$work/run.log" 2>&1; then bad "worked without a mirror"; else ok; fi
 
 echo "proot fetch: passed $pass, failed $fail"
 [ "$fail" -eq 0 ]

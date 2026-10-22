@@ -29,8 +29,8 @@ fun main(args: Array<String>) {
 
             return "Download/${target.name}"
         }
-        override fun widgetSet(name: String, title: String, text: String, url: String, pin: Boolean): String {
-            log.appendText("widget $name|$title|$text|$url|$pin\n")
+        override fun widgetSet(name: String, title: String, text: String, url: String, pin: Boolean, src: String, w: Int, h: Int): String {
+            log.appendText("widget $name|$title|$text|$url|$pin|$src|$w|$h\n")
             return "widget $name: saved"
         }
         override fun widgetRemove(name: String): Boolean { log.appendText("widget-remove $name\n"); return name != "missing" }

@@ -22,7 +22,7 @@ expect() { # expect <name> <condition-as-command...>
 }
 
 "$kotlinc" -nowarn -jvm-target 17 -d "$work/classes" \
-  "$src/MiniJson.kt" "$src/Urls.kt" "$src/BridgeServer.kt" "$src/GuestPaths.kt" "$root/tools/test-guest/GuestMain.kt" 2>&1 | grep -v '^warning:' || true
+  "$src/MiniJson.kt" "$src/Urls.kt" "$src/BridgeServer.kt" "$src/GuestPaths.kt" "$src/WidgetContent.kt" "$root/tools/test-guest/GuestMain.kt" 2>&1 | grep -v '^warning:' || true
 
 # A copy of the overlay whose absolute paths point into the work directory.
 mkdir -p "$work/guest"
@@ -101,14 +101,18 @@ expect "notify" grep -qx 'notify Build|Finished & ok' "$work/log"
 
 # android-widget
 "$bin/android-widget" set demo "Title here" "Some text" --url 5173 >/dev/null
-expect "widget set" grep -qx 'widget demo|Title here|Some text|http://localhost:5173|true' "$work/log"
+expect "widget set" grep -qx 'widget demo|Title here|Some text|http://localhost:5173|true||0|0' "$work/log"
 "$bin/android-widget" set demo "Only title" --no-pin >/dev/null
-expect "widget no pin" grep -qx 'widget demo|Only title|||false' "$work/log"
+expect "widget no pin" grep -qx 'widget demo|Only title|||false||0|0' "$work/log"
 expect "widget list" bash -c "'$bin/android-widget' list | grep -q demo"
 "$bin/android-widget" remove demo >/dev/null
 expect "widget remove" grep -qx 'widget-remove demo' "$work/log"
 expect "widget remove missing" bash -c "! '$bin/android-widget' remove missing 2>/dev/null"
 expect "widget bad name" bash -c "! '$bin/android-widget' set 'bad name' T 2>/dev/null"
+printf '<h1>hi</h1>' >"$work/w.html"
+"$bin/android-widget" set rich "Rich" --file "$work/w.html" --w 300 --h 200 >/dev/null
+expect "widget rich set" grep -qx 'widget rich|Rich|||true|<h1>hi</h1>|300|200' "$work/log"
+"$bin/android-widget" remove rich >/dev/null
 expect "widget usage" bash -c "! '$bin/android-widget' 2>/dev/null"
 
 # the wrong token must not work
