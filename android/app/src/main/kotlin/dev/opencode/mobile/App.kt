@@ -1,85 +1,80 @@
 package dev.opencode.mobile
 
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import android.app.Activity
+import android.app.Application
+import android.os.Bundle
 
-/** A small rotating log file the diagnostics screen can show and share. */
-object Log {
-    private const val LIMIT = 512 * 1024L
+class App : Application() {
+    lateinit var paths: Paths
+        private set
 
-    @Volatile
-    private var file: File? = null
+    lateinit var prefs: Prefs
+        private set
 
-    private val format = SimpleDateFormat("MM-dd HH:mm:ss", Locale.US)
+    lateinit var profiles: Profiles
+        private set
 
-    fun init(dir: File) {
-        dir.mkdirs()
-        file = File(dir, "app.log")
+    lateinit var runtime: RuntimeInstaller
+        private set
+
+    lateinit var ota: OtaManager
+        private set
+
+    private var started = 0
+
+    /** True while any of the app's screens is visible. Notifications are only needed when it is not. */
+    val inForeground: Boolean get() = started > 0
+
+    override fun onCreate() {
+        super.onCreate()
+
+        instance = this
+        paths = Paths(this)
+        paths.ensure()
+        Log.init(paths.logs)
+        prefs = Prefs(this)
+        profiles = Profiles(paths.profilesFile)
+        runtime = RuntimeInstaller(this, paths)
+        ota = OtaManager(this, paths, prefs)
+        Notifier.init(this)
+
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: Activity) { started++ }
+            override fun onActivityStopped(activity: Activity) { started-- }
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityResumed(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
+
+        Log.i("app", "started ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}), server ${ota.current}")
     }
 
-    /** Persist uncaught JVM exceptions before Android's default handler terminates the process. */
-    fun installCrashHandler() {
-        val previous = Thread.getDefaultUncaughtExceptionHandler()
+    /** Reads the signed-in Console account from the running server and records it as the active profile's name. */
+    fun syncAccountAsync() {
+        val snap = ServerState.snapshot
 
-        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            runCatching {
-                e("crash", "FATAL: uncaught exception on thread '${thread.name}':\n${error.stackTraceToString()}")
+        if (snap.phase != Phase.RUNNING || snap.profileId.isEmpty() || prefs.remote) return
+
+        Thread({
+            repeat(3) {
+                try {
+                    val accounts = ConsoleLogin(HttpTransport(snap.baseUrl, prefs.password)).signedInAccounts()
+
+                    profiles.setAccount(snap.profileId, accounts.firstOrNull()?.label)
+
+                    return@Thread
+                } catch (e: Exception) {
+                    Log.w("account", "sync failed: ${e.message}")
+                    Thread.sleep(3000)
+                }
             }
-            previous?.uncaughtException(thread, error)
-        }
+        }, "account-sync").apply { isDaemon = true; start() }
     }
 
-    fun i(tag: String, message: String) = write("I", tag, message, null)
-
-    fun w(tag: String, message: String, error: Throwable? = null) = write("W", tag, message, error)
-
-    fun e(tag: String, message: String, error: Throwable? = null) = write("E", tag, message, error)
-
-    @Synchronized
-    private fun write(level: String, tag: String, message: String, error: Throwable?) {
-        android.util.Log.println(
-            when (level) { "E" -> android.util.Log.ERROR; "W" -> android.util.Log.WARN; else -> android.util.Log.INFO },
-            "OpenCode/$tag",
-            message + (error?.let { " " + it } ?: ""),
-        )
-
-        val target = file ?: return
-
-        try {
-            if (target.length() > LIMIT) {
-                val old = File(target.parentFile, "app.log.1")
-
-                old.delete()
-                target.renameTo(old)
-            }
-
-            target.appendText("${format.format(Date())} $level $tag: $message${error?.let { " | $it" } ?: ""}\n")
-        } catch (_: Exception) {
-            // Logging must never take the app down.
-        }
-    }
-
-    fun tail(maxBytes: Int = 64 * 1024): String = tailOf(file, maxBytes)
-
-    fun tailOf(target: File?, maxBytes: Int): String {
-        if (target == null || !target.exists()) return ""
-
-        return try {
-            java.io.RandomAccessFile(target, "r").use { raf ->
-                val size = raf.length()
-                val start = maxOf(0L, size - maxBytes)
-
-                raf.seek(start)
-
-                val bytes = ByteArray((size - start).toInt())
-
-                raf.readFully(bytes)
-                String(bytes, Charsets.UTF_8)
-            }
-        } catch (_: Exception) {
-            ""
-        }
+    companion object {
+        lateinit var instance: App
+            private set
     }
 }
