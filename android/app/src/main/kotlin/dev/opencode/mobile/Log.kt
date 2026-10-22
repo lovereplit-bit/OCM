@@ -63,6 +63,16 @@ object Log {
 
     fun tail(maxBytes: Int = 64 * 1024): String = tailOf(file, maxBytes)
 
+    /** The last recorded crash of a previous run, so the next one can say what killed it. Null when there was none. */
+    fun lastCrash(): String? {
+        val text = tailOf(file, 96 * 1024)
+        val at = text.lastIndexOf("FATAL: uncaught exception")
+
+        if (at < 0) return null
+
+        return text.substring(at).trim().take(2000)
+    }
+
     fun tailOf(target: File?, maxBytes: Int): String {
         if (target == null || !target.exists()) return ""
 
