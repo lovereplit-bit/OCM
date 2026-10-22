@@ -21,13 +21,13 @@ object Log {
 
     /** Persist uncaught JVM exceptions before Android's default handler terminates the process. */
     fun installCrashHandler() {
-        val previous = Thread.getDefaultUncaughtExceptionHandler() ?: return
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
 
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             runCatching {
                 e("crash", "FATAL: uncaught exception on thread '${thread.name}':\n${error.stackTraceToString()}")
             }
-            previous.uncaughtException(thread, error)
+            previous?.uncaughtException(thread, error)
         }
     }
 
