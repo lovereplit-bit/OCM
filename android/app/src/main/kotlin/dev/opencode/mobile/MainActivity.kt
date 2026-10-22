@@ -97,6 +97,18 @@ class MainActivity : Activity(), UiHost {
         handleIntent(intent)
         ServerService.send(this)
         unsubscribe = ServerState.listen { onState(it) }
+
+        // If the previous run died, say so right away: the reason is in the log the Logs screen shows.
+        Log.lastCrash()?.let { crash ->
+            if (!app.prefs.seen("crash_${crash.hashCode()}")) {
+                app.prefs.markSeen("crash_${crash.hashCode()}")
+
+                startup.progress(
+                    tr("Предыдущий запуск упал. Причина — в журнале, кнопка ниже.", "The previous run crashed. The reason is in the logs, button below."),
+                    StartupView.INDETERMINATE,
+                )
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -156,6 +168,17 @@ class MainActivity : Activity(), UiHost {
     // ---- server state -------------------------------------------------------------------------------------------------
 
     private fun onState(s: Snapshot) {
+        // The listener runs on the main thread; an error while applying a state must not take the app down.
+        try {
+            applyState(s)
+        } catch (t: Throwable) {
+            Log.e("main", "could not apply the server state", t)
+
+            runCatching { startup.failed(tr("Внутренняя ошибка приложения: ", "Internal app error: ") + (t.message ?: t.javaClass.simpleName), false) }
+        }
+    }
+
+    private fun applyState(s: Snapshot) {
         when (s.phase) {
             Phase.IDLE -> startup.progress(tr("Подготовка...", "Preparing..."), StartupView.INDETERMINATE)
             Phase.INSTALLING -> startup.progress(s.message, if (s.progress >= 0) s.progress else StartupView.INDETERMINATE)
