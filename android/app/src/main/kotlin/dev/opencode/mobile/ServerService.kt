@@ -52,6 +52,24 @@ class ServerService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /**
+     * Everything the worker thread runs goes through here: an uncaught error there would kill the whole process, so
+     * it is turned into a failed state the screen can show instead.
+     */
+    private fun run(work: () -> Unit) {
+        worker.execute {
+            try {
+                work()
+            } catch (t: Throwable) {
+                Log.e("service", "fatal error inside the service", t)
+
+                val profile = runCatching { app.profiles.active }.getOrElse { null }
+
+                runCatching { fail(tr("Внутренняя ошибка приложения: ", "Internal app error: ") + (t.message ?: t.javaClass.simpleName), false, profile) }
+            }
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
             val notification = Notifier.server(this, "OpenCode", tr("Запуск...", "Starting..."))
@@ -70,7 +88,7 @@ class ServerService : Service() {
         }
 
         when (intent?.action) {
-            ACTION_STOP -> worker.execute {
+            ACTION_STOP -> run {
                 shutdown()
                 main.post {
                     stopForeground(STOP_FOREGROUND_REMOVE)
@@ -79,11 +97,11 @@ class ServerService : Service() {
             }
             ACTION_SWITCH -> {
                 intent.getStringExtra(EXTRA_PROFILE)?.let { app.profiles.setActive(it) }
-                worker.execute { begin(apply = false) }
+                run { begin(apply = false) }
             }
-            ACTION_RESTART -> worker.execute { begin(apply = false) }
-            ACTION_APPLY -> worker.execute { begin(apply = true) }
-            else -> worker.execute { ensureRunning() }
+            ACTION_RESTART -> run { begin(apply = false) }
+            ACTION_APPLY -> run { begin(apply = true) }
+            else -> run { ensureRunning() }
         }
 
         return START_STICKY
@@ -99,7 +117,9 @@ class ServerService : Service() {
         worker.shutdownNow()
 
         // The server belongs to this service; leaving it running without a notification would be a hidden process.
-        Thread { server.stop() }.start()
+        Thread {
+            runCatching { server.stop() }.onFailure { Log.w("service", "could not stop the server: ${it.message}") }
+        }.start()
 
         super.onDestroy()
     }
@@ -285,7 +305,7 @@ class ServerService : Service() {
 
             // A new build only becomes the trusted one after it has stayed up for a while.
             main.postDelayed({
-                if (epoch == my) worker.execute { if (epoch == my && server.health(base, password) == 200) app.ota.confirm() }
+                if (epoch == my) run { if (epoch == my && server.health(base, password) == 200) app.ota.confirm() }
             }, 25_000)
 
             app.syncAccountAsync()
@@ -310,7 +330,7 @@ class ServerService : Service() {
                 if (server.health(base, password) == 200) {
                     misses = 0
                 } else if (++misses >= 3) {
-                    worker.execute { onCrash(my) }
+                    run { onCrash(my) }
 
                     return@Thread
                 }
@@ -375,16 +395,18 @@ class ServerService : Service() {
         status(message)
     }
 
-    private fun fail(message: String, suggestCompat: Boolean, profile: Profile) {
+    private fun fail(message: String, suggestCompat: Boolean, profile: Profile?) {
         ServerState.update {
-            it.copy(phase = Phase.FAILED, message = "", progress = -1, profileId = profile.id, error = message, suggestCompat = suggestCompat)
+            it.copy(phase = Phase.FAILED, message = "", progress = -1, profileId = profile?.id.orEmpty(), error = message, suggestCompat = suggestCompat)
         }
         status(tr("Ошибка запуска", "Failed to start"))
         releaseLocks()
     }
 
     private fun status(text: String) {
-        getSystemService(NotificationManager::class.java).notify(Notifier.ID_SERVER, Notifier.server(this, "OpenCode", text))
+        // A notification the device refuses must never take the process down.
+        runCatching { getSystemService(NotificationManager::class.java).notify(Notifier.ID_SERVER, Notifier.server(this, "OpenCode", text)) }
+            .onFailure { Log.w("service", "could not update the notification: ${it.message}") }
     }
 
     private fun acquireLocks() {
