@@ -32,11 +32,15 @@ class App : Application() {
         paths = Paths(this)
         paths.ensure()
         Log.init(paths.logs)
+        // Without this every uncaught exception dies in silence: nothing is left in the log the Logs screen shows.
+        Log.installCrashHandler()
         prefs = Prefs(this)
         profiles = Profiles(paths.profilesFile)
         runtime = RuntimeInstaller(this, paths)
         ota = OtaManager(this, paths, prefs)
-        Notifier.init(this)
+        // A device with a broken notification service must still let the app open; startForeground failures are
+        // handled where they happen.
+        runCatching { Notifier.init(this) }
 
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: Activity) { started++ }
@@ -58,16 +62,18 @@ class App : Application() {
         if (snap.phase != Phase.RUNNING || snap.profileId.isEmpty() || prefs.remote) return
 
         Thread({
-            repeat(3) {
-                try {
-                    val accounts = ConsoleLogin(HttpTransport(snap.baseUrl, prefs.password)).signedInAccounts()
+            runCatching {
+                repeat(3) {
+                    try {
+                        val accounts = ConsoleLogin(HttpTransport(snap.baseUrl, prefs.password)).signedInAccounts()
 
-                    profiles.setAccount(snap.profileId, accounts.firstOrNull()?.label)
+                        profiles.setAccount(snap.profileId, accounts.firstOrNull()?.label)
 
-                    return@Thread
-                } catch (e: Exception) {
-                    Log.w("account", "sync failed: ${e.message}")
-                    Thread.sleep(3000)
+                        return@repeat
+                    } catch (e: Exception) {
+                        Log.w("account", "sync failed: ${e.message}")
+                        Thread.sleep(3000)
+                    }
                 }
             }
         }, "account-sync").apply { isDaemon = true; start() }
