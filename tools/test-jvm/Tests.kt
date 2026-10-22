@@ -611,7 +611,7 @@ fun testBridge() {
         check("save error is reported", http(port, "GET /save?path=%2Fmissing HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").let { it.startsWith("HTTP/1.1 400") && it.contains("File not found") })
         check("save needs the token", http(port, "GET /save?path=%2Fa HTTP/1.1\r\n$h\r\n").startsWith("HTTP/1.1 401"))
         check("unknown route", http(port, "GET /nope HTTP/1.1\r\n${h}X-OC-Token: secret\r\n\r\n").startsWith("HTTP/1.1 404"))
-        check("oversized body", http(port, "POST /preview HTTP/1.1\r\n${h}X-OC-Token: secret\r\nContent-Length: 999999\r\n\r\n").startsWith("HTTP/1.1 400"))
+        check("oversized body", http(port, "POST /preview HTTP/1.1\r\n${h}X-OC-Token: secret\r\nContent-Length: 99999999\r\n\r\n").startsWith("HTTP/1.1 400"))
         check("garbage", http(port, "hello\r\n\r\n").startsWith("HTTP/1.1 400"))
         eq("handler saw", shown.first(), "http://localhost:5173")
     } finally {
