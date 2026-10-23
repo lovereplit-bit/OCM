@@ -11,7 +11,7 @@ import android.widget.TextView
 /**
  * Signs in to the OpenCode Console (the account behind Zen and Go). The sign-in page opens in the system browser, where
  * the person picks Google and then the Google account, or adds another one. This screen follows the attempt and
- * returns when it completes.
+ * returns when it completes. It is only opened when the person asks to sign in; the first launch never forces it.
  */
 class LoginActivity : Activity() {
     private val app: App get() = application as App
@@ -30,13 +30,10 @@ class LoginActivity : Activity() {
     @Volatile
     private var running = false
 
-    private var firstRun = false
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         palette = Palette(this)
-        firstRun = intent.getBooleanExtra(EXTRA_FIRST_RUN, false)
 
         val column = Ui.vertical(this).apply {
             setPadding(Ui.dp(this@LoginActivity, 24), Ui.dp(this@LoginActivity, 32), Ui.dp(this@LoginActivity, 24), Ui.dp(this@LoginActivity, 24))
@@ -48,8 +45,8 @@ class LoginActivity : Activity() {
             Ui.text(
                 this,
                 tr(
-                    "Аккаунт нужен для Zen и покупки доступа к моделям. Откроется страница входа: выберите Google, затем нужный аккаунт Google или добавьте другой.",
-                    "The account unlocks Zen and paid model access. A sign-in page opens: choose Google, then pick a Google account or add another one.",
+                    "Аккаунт открывает Zen и платные модели. Откроется браузер: выберите Google и нужный аккаунт.",
+                    "The account unlocks Zen and paid models. Your browser opens: pick Google and the account you want.",
                 ),
                 14f,
                 palette.muted,
@@ -79,7 +76,7 @@ class LoginActivity : Activity() {
         window.statusBarColor = palette.bg
         window.navigationBarColor = palette.bg
 
-        showButtons(waiting = true)
+        showButtons()
         ServerService.send(this)
         unsubscribe = ServerState.listen { onState(it) }
     }
@@ -95,7 +92,7 @@ class LoginActivity : Activity() {
             Phase.RUNNING -> if (!running && attempt == null) begin(s)
             Phase.FAILED -> {
                 status.text = tr("Сервер не запустился: ", "The server did not start: ") + s.error.orEmpty()
-                showButtons(waiting = false, retry = true)
+                showButtons(retry = true)
             }
             else -> status.text = if (s.message.isNotEmpty()) s.message else tr("Ожидание сервера...", "Waiting for the server...")
         }
@@ -104,7 +101,7 @@ class LoginActivity : Activity() {
     private fun begin(s: Snapshot) {
         running = true
         status.text = tr("Запрашиваю страницу входа...", "Requesting the sign-in page...")
-        showButtons(waiting = true)
+        showButtons()
 
         val login = ConsoleLogin(HttpTransport(s.baseUrl, app.prefs.password))
 
@@ -117,7 +114,7 @@ class LoginActivity : Activity() {
                     code.text = started.code.orEmpty()
                     codeBox.visibility = if (started.code != null) View.VISIBLE else View.GONE
                     status.text = tr("Ждём, пока вы войдёте в браузере...", "Waiting for you to sign in in the browser...")
-                    showButtons(waiting = false)
+                    showButtons()
                     Browser.open(this, started.url)
                 }
 
@@ -126,7 +123,7 @@ class LoginActivity : Activity() {
                 Log.w("login", "start failed: ${e.message}")
                 runOnUiThread {
                     status.text = tr("Не удалось начать вход: ", "Could not start the sign-in: ") + (e.message ?: "")
-                    showButtons(waiting = false, retry = true)
+                    showButtons(retry = true)
                 }
             } finally {
                 running = false
@@ -152,7 +149,7 @@ class LoginActivity : Activity() {
                             attempt = null
                             codeBox.visibility = View.GONE
                             status.text = tr("Время входа истекло. Начните заново.", "The sign-in timed out. Start again.")
-                            showButtons(waiting = false, retry = true)
+                            showButtons(retry = true)
                         }
 
                         return
@@ -166,7 +163,7 @@ class LoginActivity : Activity() {
                             } else {
                                 tr("Вход не удался: ", "Sign-in failed: ") + result.message
                             }
-                            showButtons(waiting = false, retry = true)
+                            showButtons(retry = true)
                         }
 
                         return
@@ -181,7 +178,7 @@ class LoginActivity : Activity() {
                     runOnUiThread {
                         attempt = null
                         status.text = tr("Потеряна связь с сервером: ", "Lost the connection to the server: ") + (e.message ?: "")
-                        showButtons(waiting = false, retry = true)
+                        showButtons(retry = true)
                     }
 
                     return
@@ -197,8 +194,7 @@ class LoginActivity : Activity() {
         finish()
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    private fun showButtons(waiting: Boolean, retry: Boolean = false) {
+    private fun showButtons(retry: Boolean = false) {
         buttons.removeAllViews()
 
         val current = attempt
@@ -222,24 +218,13 @@ class LoginActivity : Activity() {
                 Ui.params(bottom = Ui.dp(this, 8)),
             )
             buttons.addView(
-                Ui.button(this, tr("Другой аккаунт (приватное окно)", "Another account (private window)"), palette) { Browser.open(this, current.url, private = true) },
-                Ui.params(bottom = Ui.dp(this, 8)),
-            )
-            buttons.addView(
-                Ui.button(this, tr("Скопировать ссылку", "Copy the link"), palette) {
-                    Browser.copy(this, "OpenCode sign-in", current.url)
-                    Ui.toast(this, tr("Ссылка скопирована", "Link copied"))
-                },
+                Ui.button(this, tr("Другой аккаунт", "Another account"), palette) { Browser.open(this, current.url, private = true) },
                 Ui.params(bottom = Ui.dp(this, 8)),
             )
         }
 
-        buttons.addView(Ui.button(this, if (firstRun) tr("Пропустить", "Skip") else tr("Отмена", "Cancel"), palette) { finish() }, Ui.params())
+        buttons.addView(Ui.button(this, tr("Отмена", "Cancel"), palette) { finish() }, Ui.params())
 
         buttons.gravity = Gravity.CENTER_HORIZONTAL
-    }
-
-    companion object {
-        const val EXTRA_FIRST_RUN = "first_run"
     }
 }

@@ -158,7 +158,7 @@ class SettingsActivity : Activity() {
         }
 
         card.divide()
-        card.action(tr("Добавить профиль и войти через Google", "Add a profile and sign in with Google"), primary = true) { addProfile() }
+        card.action(tr("Добавить профиль", "Add a profile"), primary = true) { addProfile() }
         card.action(tr("Добавить ещё один аккаунт в этот профиль", "Add another account to this profile")) {
             startActivity(Intent(this, LoginActivity::class.java))
         }
@@ -195,7 +195,8 @@ class SettingsActivity : Activity() {
         Ui.input(this, tr("Название нового профиля", "New profile name"), tr("Например, Работа", "For example, Work"), tr("Профиль ", "Profile ") + (app.profiles.all.size + 1)) { name ->
             val profile = app.profiles.create(name)
 
-            switchTo(profile, thenLogin = true, confirm = false)
+            // Start the new environment first; signing in is optional and available from the profile menu afterwards.
+            switchTo(profile, confirm = false)
         }
     }
 

@@ -193,7 +193,7 @@ class MainActivity : Activity(), UiHost {
                     loadedGeneration = s.generation
                     startup.loading()
                     web.open(s.baseUrl, currentPassword())
-                    firstRun(s)
+                    firstRun()
                 }
             }
         }
@@ -210,24 +210,8 @@ class MainActivity : Activity(), UiHost {
         }
     }
 
-    /** Prompts shown once: signing in, and letting the app keep running with the screen off. */
-    private fun firstRun(s: Snapshot) {
-        if (!app.prefs.remote && !app.prefs.seen("login_${s.profileId}")) {
-            app.prefs.markSeen("login_${s.profileId}")
-
-            Thread({
-                try {
-                    val signedIn = ConsoleLogin(HttpTransport(s.baseUrl, app.prefs.password)).signedInAccounts()
-
-                    if (signedIn.isEmpty()) runOnUiThread { startActivity(Intent(this, LoginActivity::class.java).putExtra(LoginActivity.EXTRA_FIRST_RUN, true)) }
-                } catch (e: Exception) {
-                    Log.w("main", "could not check the sign-in: ${e.message}")
-                }
-            }, "login-check").apply { isDaemon = true; start() }
-
-            return
-        }
-
+    /** Prompt shown once for keeping the app running with the screen off. Sign-in is never forced. */
+    private fun firstRun() {
         if (!app.prefs.seen("battery") && !Permissions.batteryUnrestricted(this)) {
             app.prefs.markSeen("battery")
             Ui.confirm(
@@ -510,6 +494,15 @@ class MainActivity : Activity(), UiHost {
         val items = ArrayList<Pair<String, () -> Unit>>()
 
         items += tr("Профиль: ", "Profile: ") + profileTitle to { chooseProfile() }
+
+        val account = app.profiles.active.account
+
+        if (account.isNullOrBlank()) {
+            items += tr("Войти через Google", "Sign in with Google") to { startActivity(Intent(this, LoginActivity::class.java)) }
+        } else {
+            items += tr("Аккаунт: ", "Account: ") + account to { startActivity(Intent(this, SettingsActivity::class.java)) }
+        }
+
         items += tr("Открыть адрес в окне предпросмотра", "Open an address in a preview window") to {
             Ui.input(this, tr("Адрес или порт", "Address or port"), "localhost:5173") { value -> if (value.isNotEmpty()) showPreview(value) }
         }
