@@ -7,7 +7,7 @@ plugins {
 
 // Everything here comes from the environment so the GitHub Actions workflow can stamp each build.
 val appVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
-val appVersionName = System.getenv("VERSION_NAME") ?: "1.0.4"
+val appVersionName = System.getenv("VERSION_NAME") ?: "1.0.5"
 
 android {
     namespace = "dev.opencode.mobile"
@@ -27,7 +27,7 @@ android {
         // Build time of the runtime bundled in the app, in seconds. An over-the-air build has to be newer than this.
         buildConfigField("long", "RUNTIME_SEQ", "${System.getenv("RUNTIME_SEQ") ?: "0"}L")
         // owner/name of the repository that publishes signed updates. CI fills it in; empty disables update checks.
-        buildConfigField("String", "OTA_REPO", "\"${System.getenv("OTA_REPO") ?: "samartsevmaksim5-ops/OpenCode-Mobile"}\")
+        buildConfigField("String", "OTA_REPO", "\"${System.getenv("OTA_REPO") ?: "samartsevmaksim5-ops/OpenCode-Mobile"}\"")
         buildConfigField("boolean", "WEBVIEW_DEBUG", System.getenv("WEBVIEW_DEBUG") ?: "false")
     }
 
