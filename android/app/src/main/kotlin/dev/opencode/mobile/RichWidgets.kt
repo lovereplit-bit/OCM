@@ -12,7 +12,7 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.os.Handler
-import android.os.HandlerThread
+import android.os.Looper
 import android.util.Base64
 import android.view.View
 import android.webkit.WebView
@@ -24,8 +24,9 @@ import android.widget.RemoteViews
  * that is screenshotted into home-screen widget bitmaps, SVG files by wrapping them into such a page, and raster
  * pictures (PNG, JPEG, WebP, GIF) through the system decoder.
  *
- * Rendering has its own HandlerThread, because a WebView may only live on a thread with a Looper, and one named
- * widget keeps at most one hidden page for reuse on later taps.
+ * Rendering runs on the UI thread, because a WebView may only be created and driven from the main Looper (a background
+ * HandlerThread makes the Chromium-backed WebView throw). All work is posted or callback-driven, so nothing blocks the
+ * UI, and one named widget keeps at most one hidden page for reuse on later taps.
  *
  * A rich page may define `window.widgetTap()`: tapping such a widget on the home screen calls it and keeps
  * screenshotting frames while the page holds `window.__ocBusy = true` (at most [MAX_FRAMES]), which is how the page
@@ -48,12 +49,9 @@ object RichWidgets {
     /** The fake origin a widget page loads from: self-contained, so nothing may depend on real network paths. */
     private const val BASE_URI = "https://widget.opencode.local/"
 
-    private val threadHolder = lazy {
-        HandlerThread("widget-render").apply { start() }
-    }
-    private val handler: Handler by lazy { Handler(threadHolder.value.looper) }
+    private val handler by lazy { Handler(Looper.getMainLooper()) }
 
-    /** One WebView per widget name; only ever touched on the render thread. */
+    /** One WebView per widget name; only ever touched on the UI thread. */
     private val pages = HashMap<String, WebView>()
 
     /** The spec hash each stored page was built from; empty until the page finishes loading. */
@@ -71,14 +69,12 @@ object RichWidgets {
     fun forget(name: String) {
         synchronized(bitmaps) { bitmaps.keys.removeAll { it.startsWith("$name/") } }
 
-        if (!threadHolder.isInitialized()) return
-
         handler.post { dropPage(name) }
     }
 
     /** Schedules a build so the widget gets its first bitmap; the result publishes itself. */
     fun load(context: Context, spec: WidgetSpec) {
-        handler.post { ensurePage(context.applicationContext, spec) }
+        handler.post { safe { ensurePage(context.applicationContext, spec) } }
     }
 
     /** A tap PendingIntent that plays this widget's tap animation. */
@@ -97,10 +93,10 @@ object RichWidgets {
         val app = context.applicationContext
         val finish = finishOnce(done)
 
-        handler.post { tapAt(app, spec, finish) }
+        handler.post { safe { tapAt(app, spec, finish) } ?: finish() }
     }
 
-    // ---------------------------------------------------------------- render thread
+    // ---------------------------------------------------------------- UI thread
 
     private fun dropPage(name: String) {
         safe { pages.remove(name)?.destroy() }
@@ -121,7 +117,7 @@ object RichWidgets {
 
             pageHash[spec.name] = hash
         } else {
-            val view = buildPage(app, spec, hash)
+            val view = safe { buildPage(app, spec, hash) } ?: return
 
             pages[spec.name] = view
         }
@@ -140,10 +136,9 @@ object RichWidgets {
     }
 
     /** Shows the freshly rendered bitmap for every placed instance of the widget [spec.name]. */
-    private fun pageReady(app: Context, spec: WidgetSpec) {
-        if (pageHash[spec.name] != spec.hash()) return
-
-        val view = pages[spec.name] ?: return
+    private fun pageReady(app: Context, spec: WidgetSpec, view: WebView, hash: String) {
+        // A newer page may have replaced this one while it was loading or settling.
+        if (pages[spec.name] !== view || pageHash[spec.name] != hash || spec.hash() != hash) return
 
         if (view.width <= 0) return
 
@@ -177,9 +172,12 @@ object RichWidgets {
 
         view.webViewClient = object : WebViewClient() {
             override fun onPageFinished(finished: WebView, url: String?) {
+                // Ignore a late callback from a page that has already been replaced.
+                if (pages[spec.name] !== finished) return
+
                 pageHash[spec.name] = hash
 
-                handler.postDelayed({ pageReady(app, spec) }, SETTLE_MS)
+                handler.postDelayed({ pageReady(app, spec, finished, hash) }, SETTLE_MS)
             }
         }
 
@@ -251,7 +249,7 @@ object RichWidgets {
                     if (busy.contains("true")) paintFrames(app, spec, view, left - 1, started, finish)
                     else finish()
                 }
-            }
+            } ?: finish()
         }, FRAME_MS)
     }
 
