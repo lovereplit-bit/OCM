@@ -90,6 +90,8 @@ class App : Application() {
 
                         profiles.setAccount(snap.profileId, accounts.firstOrNull()?.label)
 
+                        if (accounts.isNotEmpty()) prefs.signedIn = true
+
                         return@Thread
                     } catch (e: Exception) {
                         Log.w("account", "sync failed: ${e.message}")

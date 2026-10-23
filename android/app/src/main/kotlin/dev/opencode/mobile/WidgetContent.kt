@@ -39,7 +39,10 @@ object WidgetContent {
 
     /** A content fingerprint that changes when the source or the requested canvas size changes. */
     fun hashOf(src: String, w: Int, h: Int): String {
-        val input = bytesOf(src) + byteArrayOf(w.toByte(), h.toByte())
+        val input = bytesOf(src) + byteArrayOf(
+            (w shr 24).toByte(), (w shr 16).toByte(), (w shr 8).toByte(), w.toByte(),
+            (h shr 24).toByte(), (h shr 16).toByte(), (h shr 8).toByte(), h.toByte(),
+        )
         val digest = MessageDigest.getInstance("SHA-256").digest(input)
 
         return digest.joinToString("") { "%02x".format(it) }

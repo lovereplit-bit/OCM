@@ -106,6 +106,8 @@ class MainActivity : Activity(), UiHost {
         Log.setStage("MainActivity.onCreate: starting server service")
         ServerService.send(this)
         unsubscribe = ServerState.listen { onState(it) }
+
+        if (!app.prefs.signedIn) startActivity(Intent(this, LoginActivity::class.java))
         Log.setStage("Application active")
 
         // If Android refused to launch the crash screen while the previous process was dying, retry now that
@@ -189,11 +191,16 @@ class MainActivity : Activity(), UiHost {
             Phase.RUNNING -> {
                 origin = s.baseUrl
 
+                if (!app.prefs.signedIn) {
+                    startActivity(Intent(this, LoginActivity::class.java))
+                }
+
                 if (s.generation != loadedGeneration) {
                     loadedGeneration = s.generation
                     startup.loading()
                     web.open(s.baseUrl, currentPassword())
-                    firstRun()
+
+                    if (app.prefs.signedIn) firstRun()
                 }
             }
         }

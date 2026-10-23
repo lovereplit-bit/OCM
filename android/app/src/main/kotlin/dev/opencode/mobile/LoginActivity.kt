@@ -87,6 +87,11 @@ class LoginActivity : Activity() {
         super.onDestroy()
     }
 
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        // The first-launch sign-in cannot be skipped.
+    }
+
     private fun onState(s: Snapshot) {
         when (s.phase) {
             Phase.RUNNING -> if (!running && attempt == null) begin(s)
@@ -188,6 +193,7 @@ class LoginActivity : Activity() {
     }
 
     private fun done() {
+        app.prefs.signedIn = true
         UiBus.reloadRequested = true
         app.syncAccountAsync()
         Ui.toast(this, tr("Вход выполнен", "Signed in"))
@@ -222,8 +228,6 @@ class LoginActivity : Activity() {
                 Ui.params(bottom = Ui.dp(this, 8)),
             )
         }
-
-        buttons.addView(Ui.button(this, tr("Отмена", "Cancel"), palette) { finish() }, Ui.params())
 
         buttons.gravity = Gravity.CENTER_HORIZONTAL
     }

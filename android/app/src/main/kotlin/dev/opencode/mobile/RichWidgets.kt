@@ -94,6 +94,7 @@ object RichWidgets {
         val finish = finishOnce(done)
 
         handler.post { safe { tapAt(app, spec, finish) } ?: finish() }
+        handler.postDelayed(finish, TAP_TIMEOUT_MS)
     }
 
     // ---------------------------------------------------------------- UI thread
