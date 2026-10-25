@@ -205,31 +205,7 @@ class LoginActivity : Activity() {
     }
 
     /** Asks for the profile's own Zen API key and applies it: personal quota without a Console sign-in. */
-    private fun askForKey() {
-        Ui.input(
-            this,
-            tr("Ваш персональный API-ключ", "Your personal API key"),
-            tr("Ключ из консоли OpenCode", "A key from the OpenCode console"),
-            password = true,
-        ) { raw ->
-            val key = raw.trim()
-
-            if (key.isNotEmpty()) {
-                val id = app.profiles.active.id
-
-                // Every request of this profile now goes under this key: the server gets it as OPENCODE_API_KEY on the
-                // next start, which replaces the shared anonymous token (verified live on 2.1.4: auth errors instead of
-                // the shared free-limit error).
-                app.profiles.setZenApiKey(id, key)
-                app.guest.markPersonal(id, tr("личный API-ключ", "personal API key"))
-                app.prefs.signedIn = true
-                UiBus.reloadRequested = true
-                ServerService.send(this, ServerService.ACTION_RESTART)
-                Ui.toast(this, tr("Личный ключ подключён", "Personal key connected"))
-                finish()
-            }
-        }
-    }
+    private fun askForKey() = ApiKey.ask(this, close = true)
 
     private fun showButtons(retry: Boolean = false) {
         buttons.removeAllViews()
@@ -278,15 +254,7 @@ class LoginActivity : Activity() {
 
         if (hasKey) {
             buttons.addView(
-                Ui.button(this, tr("Убрать сохранённый ключ", "Remove the saved key"), palette) {
-                    val id = app.profiles.active.id
-
-                    app.profiles.setZenApiKey(id, null)
-                    app.guest.markAnonymous(id)
-                    ServerService.send(this, ServerService.ACTION_RESTART)
-                    UiBus.reloadRequested = true
-                    Ui.toast(this, tr("Ключ убран: снова общий лимит", "Key removed: back to the shared limit"))
-                },
+                Ui.button(this, tr("Убрать сохранённый ключ", "Remove the saved key"), palette) { ApiKey.remove(this) },
                 Ui.params(bottom = Ui.dp(this, 8)),
             )
         }
