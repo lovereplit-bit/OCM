@@ -28,8 +28,12 @@ class SseParser(private val onEvent: (data: String) -> Unit) {
     }
 }
 
-/** The part of an OpenCode server event the app reacts to. */
-data class OcEvent(val id: String?, val type: String, val sessionId: String?) {
+/**
+ * The part of an OpenCode server event the app reacts to. For a failed session the server's own error rides along
+ * (its type such as `provider.free-limit` and its message), so a quota failure can be named honestly in a
+ * notification instead of a generic "task failed".
+ */
+data class OcEvent(val id: String?, val type: String, val sessionId: String?, val errorType: String? = null, val errorMessage: String? = null) {
     companion object {
         const val SESSION_SUCCEEDED = "session.execution.succeeded"
         const val SESSION_FAILED = "session.execution.failed"
@@ -39,8 +43,15 @@ data class OcEvent(val id: String?, val type: String, val sessionId: String?) {
             val root = MiniJson.obj(json) ?: return null
             val type = root["type"] as? String ?: return null
             val data = root["data"] as? Map<*, *>
+            val error = data?.get("error") as? Map<*, *>
 
-            return OcEvent(root["id"] as? String, type, data?.get("sessionID") as? String)
+            return OcEvent(
+                root["id"] as? String,
+                type,
+                data?.get("sessionID") as? String,
+                error?.get("type") as? String,
+                error?.get("message") as? String,
+            )
         }
     }
 }

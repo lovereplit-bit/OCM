@@ -248,11 +248,13 @@
 
   (document.head || document.documentElement).appendChild(composerStyle);
   // Limit and rate-limit answers come from the provider and are shown exactly as received: this script never
-  // rewrites an error. Under the error block it only adds a short hint (data-oc-hint) that names the common causes
+  // rewrites an error. Under the error block it only adds a short hint (data-oc-hint) that names the real cause
   // and offers the app's own sign-in. The scan skips the hint itself, so the hint can never feed back into it.
-  // The English wording mirrors Limits.kt and the texts OpenCode Zen actually sends: "Rate limit exceeded.",
-  // "Free usage exceeded, subscribe to Go", "FreeUsageLimitError" and the per-IP anonymous rejection.
-  var QUOTA = /(rate[\s_-]?limit(?:ed)?|too\s+many\s+requests|(?:status|code|http)\s*:?\s*429\b|insufficient[_ ]?quota|quota\s*(?:exceeded|exhausted|has been exceeded|will run out|is exhausted)|exceeded\s+your\s+current\s+quota|exceeded\s*(?:your|the|its)?\s*(?:usage|quota|free)|plan\s+and\s+billing|(?:free|usage|request)\s*(?:quota|limit)|usage[\s_-]?limit|free[\s_-]?(?:usage|tier)|gousagelimit|creditlimit|(?:credit|credits?|tokens?)\s*(?:exhausted|used up)|(?:^|[^\u0400-\u04ff])\u043a\u0432\u043e\u0442[\u0400-\u04ff]*\s*(?:\u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d[\u0400-\u04ff]*|\u043f\u0440\u0435\u0432\u044b\u0448\u0435\u043d[\u0400-\u04ff]*|\u0437\u0430\u043a\u043e\u043d\u0447\u0438\u043b[\u0400-\u04ff]*)|(?:^|[^\u0400-\u04ff])\u043b\u0438\u043c\u0438\u0442[\u0400-\u04ff]*\s*(?:\u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d[\u0400-\u04ff]*|\u043f\u0440\u0435\u0432\u044b\u0448\u0435\u043d[\u0400-\u04ff]*|\u0437\u0430\u043a\u043e\u043d\u0447\u0438\u043b[\u0400-\u04ff]*)|(?:\u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d[\u0400-\u04ff]*|\u0437\u0430\u043a\u043e\u043d\u0447\u0438\u043b[\u0400-\u04ff]*)\s*(?:\u043b\u0438\u043c\u0438\u0442[\u0400-\u04ff]*|\u043a\u0432\u043e\u0442[\u0400-\u04ff]*))/i;
+  // The wording mirrors what OpenCode Zen actually sends (verified live, October 2026): "FreeUsageLimitError" on
+  // the world-shared anonymous bucket, "RegionError - not available in your country", plain rate limits, and the
+  // personal-account limits.
+  var QUOTA = /(rate[\s_-]?limit(?:ed)?|too\s+many\s+requests|(?:status|code|http)\s*:?\s*429\b|insufficient[_ ]?quota|quota\s*(?:exceeded|exhausted|has been exceeded|will run out|is exhausted)|exceeded\s+your\s+current\s+quota|exceeded\s*(?:your|the|its)?\s*(?:usage|quota|free)|plan\s+and\s+billing|(?:free|usage|request)\s*(?:quota|limit)|usage[\s_-]?limit|free[\s_-]?(?:usage|tier)|freeusagelimit|gousagelimit|creditlimit|(?:credit|credits?|tokens?)\s*(?:exhausted|used up)|(?:^|[^\u0400-\u04ff])\u043a\u0432\u043e\u0442[\u0400-\u04ff]*\s*(?:\u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d[\u0400-\u04ff]*|\u043f\u0440\u0435\u0432\u044b\u0448\u0435\u043d[\u0400-\u04ff]*|\u0437\u0430\u043a\u043e\u043d\u0447\u0438\u043b[\u0400-\u04ff]*)|(?:^|[^\u0400-\u04ff])\u043b\u0438\u043c\u0438\u0442[\u0400-\u04ff]*\s*(?:\u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d[\u0400-\u04ff]*|\u043f\u0440\u0435\u0432\u044b\u0448\u0435\u043d[\u0400-\u04ff]*|\u0437\u0430\u043a\u043e\u043d\u0447\u0438\u043b[\u0400-\u04ff]*)|(?:\u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d[\u0400-\u04ff]*|\u0437\u0430\u043a\u043e\u043d\u0447\u0438\u043b[\u0400-\u04ff]*)\s*(?:\u043b\u0438\u043c\u0438\u0442[\u0400-\u04ff]*|\u043a\u0432\u043e\u0442[\u0400-\u04ff]*))/i;
+  var REGION = /(regionerror|not\s+available\s+in\s+your\s+country|\u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0430\s+\u0432\s+\u0432\u0430\u0448\u0435\u0439\s+\u0441\u0442\u0440\u0430\u043d\u0435)/i;
   var quotaHandled = new WeakSet();
 
   // The sign-in offer only makes sense when this profile has no Console account yet; the native side knows the
@@ -262,6 +264,16 @@
       return !!(native.hasAccount && native.hasAccount());
     } catch (e) {
       return false;
+    }
+  }
+
+  // `personal` once the profile runs its own Console account, `anonymous` while its requests fall into the
+  // world-shared free bucket. Older app builds without the method read as "anonymous".
+  function guestState() {
+    try {
+      return (native.guestState && native.guestState()) || "anonymous";
+    } catch (e) {
+      return "anonymous";
     }
   }
 
@@ -305,27 +317,46 @@
     return !!host.closest('[role="alert"], [class*="error"], [class*="Error"], [data-error], [class*="danger"]');
   }
 
-  function makeHint() {
+  // The hint names the real cause. Verified against the live gateway (October 2026): the anonymous free capacity
+  // is ONE bucket shared by every OpenCode user in the world - not per IP, not per install - so without an account
+  // the honest answer is "the shared bucket is spent; a personal account is the only way to a quota of your own".
+  function makeHint(errorText) {
     var isRussian = (document.documentElement.lang || navigator.language || "").toLowerCase().indexOf("ru") === 0;
-    var signed = hasAccount();
+    var text = errorText || "";
+    var personal = hasAccount() || guestState() === "personal";
     var box = document.createElement("div");
-    var text = document.createElement("div");
+    var line = document.createElement("div");
+    var body;
+
+    if (REGION.test(text)) {
+      body = isRussian
+        ? "\u041c\u043e\u0434\u0435\u043b\u044c \u043d\u0435 \u043e\u0431\u0441\u043b\u0443\u0436\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u0432 \u0432\u0430\u0448\u0435\u0439 \u0441\u0442\u0440\u0430\u043d\u0435 - \u044d\u0442\u043e \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430, \u0430\u043a\u043a\u0430\u0443\u043d\u0442 \u0435\u0433\u043e \u043d\u0435 \u0441\u043d\u0438\u043c\u0430\u0435\u0442. \u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044e \u043c\u043e\u0434\u0435\u043b\u044c."
+        : "The model is not served in your country - a server-side restriction no account removes. Pick another model.";
+    } else if (/freeusagelimit|free\s+usage|free[\s_-]?(?:usage|tier)/i.test(text)) {
+      // The same free-usage error means different things for the two guest states: the world-shared bucket for an
+      // anonymous profile, the personal allowance for one that runs its own account.
+      body = personal
+        ? (isRussian
+            ? "\u042d\u0442\u043e \u043b\u0438\u043c\u0438\u0442 \u0432\u0430\u0448\u0435\u0433\u043e \u043b\u0438\u0447\u043d\u043e\u0433\u043e \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u0430, \u0430 \u043d\u0435 \u043e\u0431\u0449\u0438\u0439. \u041f\u043e\u0434\u043e\u0436\u0434\u0438\u0442\u0435 \u0441\u0431\u0440\u043e\u0441\u0430, \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044e \u043c\u043e\u0434\u0435\u043b\u044c \u0438\u043b\u0438 \u043f\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435 \u043f\u043b\u0430\u043d \u0432 OpenCode."
+            : "This is your personal account's limit, not the shared one. Wait for the reset, pick another model, or top up your OpenCode plan.")
+        : (isRussian
+            ? "\u0411\u0435\u0437 \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u0430 \u0431\u0435\u0441\u043f\u043b\u0430\u0442\u043d\u044b\u0435 \u043c\u043e\u0434\u0435\u043b\u0438 - \u043e\u0431\u0449\u0438\u0439 \u043b\u0438\u043c\u0438\u0442 \u043d\u0430 \u0432\u0441\u0435\u0445 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u0439 OpenCode \u0432 \u043c\u0438\u0440\u0435, \u0438 \u043e\u043d \u043e\u0431\u044b\u0447\u043d\u043e \u0443\u0436\u0435 \u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d. \u0421\u0432\u043e\u0439 \u043b\u0438\u043c\u0438\u0442 \u0434\u0430\u0451\u0442 \u0442\u043e\u043b\u044c\u043a\u043e \u043b\u0438\u0447\u043d\u044b\u0439 \u0430\u043a\u043a\u0430\u0443\u043d\u0442: \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u0435 \u0435\u0433\u043e \u043a\u043d\u043e\u043f\u043a\u043e\u0439 \u043d\u0438\u0436\u0435."
+            : "Without an account the free models share one limit across all OpenCode users worldwide, and it is usually spent already. Only a personal account brings a limit of your own: connect it with the button below.");
+    } else {
+      body = isRussian
+        ? "\u0421\u043b\u0438\u0448\u043a\u043e\u043c \u043c\u043d\u043e\u0433\u043e \u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432 \u043f\u043e\u0434\u0440\u044f\u0434. \u041f\u043e\u0434\u043e\u0436\u0434\u0438\u0442\u0435 \u043d\u0435\u043c\u043d\u043e\u0433\u043e \u0438 \u043f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u0441\u043d\u043e\u0432\u0430, \u043b\u0438\u0431\u043e \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044e \u043c\u043e\u0434\u0435\u043b\u044c."
+        : "Too many requests in a row. Wait a little and try again, or pick another model.";
+    }
 
     box.setAttribute("data-oc-hint", "1");
     box.style.cssText =
       "margin:8px 0 2px;padding:10px 12px;border-radius:12px;background:rgba(127,127,127,.14);" +
       "font-size:13px;line-height:1.4";
-    text.textContent = signed
-      ? (isRussian
-          ? "\u042d\u0442\u043e \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430, \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0435\u0433\u043e \u043d\u0435 \u043c\u0435\u043d\u044f\u0435\u0442. \u0423 \u0432\u0430\u0448\u0435\u0433\u043e \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u0430 \u0441\u0432\u043e\u0439 \u043b\u0438\u0447\u043d\u044b\u0439 \u043b\u0438\u043c\u0438\u0442, \u0438 \u043e\u043d \u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d - \u043f\u043e\u0434\u043e\u0436\u0434\u0438\u0442\u0435 \u0441\u0431\u0440\u043e\u0441\u0430 \u0438\u043b\u0438 \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044e \u043c\u043e\u0434\u0435\u043b\u044c."
-          : "This is the server's own message; the app does not change it. Your account has a limit of its own and it is spent - wait for the reset or pick another model.")
-      : (isRussian
-          ? "\u042d\u0442\u043e \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430, \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0435\u0433\u043e \u043d\u0435 \u043c\u0435\u043d\u044f\u0435\u0442. \u0415\u0441\u043b\u0438 \u044d\u0442\u043e \u043b\u0438\u043c\u0438\u0442 \u0431\u0435\u0441\u043f\u043b\u0430\u0442\u043d\u044b\u0445 \u043c\u043e\u0434\u0435\u043b\u0435\u0439: \u0431\u0435\u0437 \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u0430 \u043e\u043d \u043e\u0431\u0449\u0438\u0439 \u0434\u043b\u044f \u0432\u0441\u0435\u0445, \u043a\u0442\u043e \u0441\u0438\u0434\u0438\u0442 \u0441 \u0432\u0430\u0448\u0438\u043c IP-\u0430\u0434\u0440\u0435\u0441\u043e\u043c, \u0441 \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u043e\u043c - \u0432\u0430\u0448 \u043b\u0438\u0447\u043d\u044b\u0439. \u041f\u043e\u0434\u043e\u0436\u0434\u0438\u0442\u0435 \u0441\u0431\u0440\u043e\u0441\u0430, \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043c\u043e\u0434\u0435\u043b\u044c \u0441\u043e \u0441\u0432\u043e\u0438\u043c \u043a\u043b\u044e\u0447\u043e\u043c \u0438\u043b\u0438 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u0435 \u0430\u043a\u043a\u0430\u0443\u043d\u0442."
-          : "This is the server's own message; the app does not change it. If it is the free-model limit: without an account it is shared by everyone behind your IP address, with an account it is your own. Wait for the reset, pick a model with your own key, or connect an account.");
-    box.appendChild(text);
+    line.textContent = body;
+    box.appendChild(line);
 
-    // A profile with a connected account has a personal quota: offering the sign-in again would only confuse.
-    if (!signed) box.appendChild(makeSignInButton(isRussian));
+    // A profile on its own account has nothing to connect: offering the sign-in again would only confuse.
+    if (!personal) box.appendChild(makeSignInButton(isRussian));
 
     return box;
   }
@@ -348,9 +379,9 @@
     if (next && next.hasAttribute("data-oc-hint")) return;
 
     // Inserted next to the error block, never inside it: React owns the children and would drop the hint on the
-    // next render. The original text stays untouched.
+    // next render. The original text stays untouched. The error text itself decides which hint applies.
     try {
-      parent.insertAdjacentElement("afterend", makeHint());
+      parent.insertAdjacentElement("afterend", makeHint(parent.textContent || ""));
     } catch (e) {}
   }
 

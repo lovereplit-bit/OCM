@@ -364,7 +364,14 @@ class ServerService : Service() {
         status(if (local) tr("Сервер работает: ", "Server is running: ") + profile.title else tr("Подключено к ", "Connected to ") + Urls.displayHost(base))
         acquireLocks()
 
-        watcher = EventWatcher(this, base, password, { app.prefs.notifyEnabled }, { app.inForeground }).also { it.start() }
+        watcher = EventWatcher(
+            this,
+            base,
+            password,
+            { app.prefs.notifyEnabled },
+            { app.inForeground },
+            { app.guest.isPersonal(profile.id) },
+        ).also { it.start() }
 
         if (local) {
             watchdog(my, base, password)

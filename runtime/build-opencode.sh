@@ -45,10 +45,12 @@ echo "Building $repo $version ($commit)"
 cd "$src"
 
 # Patches this project carries on top of the upstream tag, one per feature/fix.
-# runtime/patches/v2 applies to the 2.x line this app builds. Each patch is applied
-# once: a re-run on a dirty checkout recognises its own work and skips; a patch that
-# no longer fits the upstream tag fails the build loudly instead of shipping silently
-# unpatched.
+# runtime/patches/v2 applies to the 2.x line this app builds. The directory is empty on purpose right now: the
+# bundled server is a byte-for-byte copy of upstream's own client - the Zen identity included, because the gateway
+# meters the free (anonymous) capacity in one world-shared bucket that no client-side change can influence, and an
+# altered client identity only breaks the parity "the original answers, ours must too" depends on. Each patch is
+# applied once: a re-run on a dirty checkout recognises its own work and skips; a patch that no longer fits the
+# upstream tag fails the build loudly instead of shipping silently unpatched.
 patch_dir="$here/patches/v2"
 if [ -d "$patch_dir" ]; then
   for patch in "$patch_dir"/*.patch; do

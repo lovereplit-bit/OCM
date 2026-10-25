@@ -40,13 +40,13 @@ class LoginActivity : Activity() {
         }
 
         column.addView(Ui.icon(this, R.drawable.ic_user, palette.text, 40), Ui.params(Ui.dp(this, 40), Ui.dp(this, 40), bottom = Ui.dp(this, 16)))
-        column.addView(Ui.text(this, tr("Вход в аккаунт OpenCode", "Sign in to OpenCode"), 22f, palette.text, bold = true), Ui.params(bottom = Ui.dp(this, 8)))
+        column.addView(Ui.text(this, tr("Личный аккаунт OpenCode", "Your personal OpenCode account"), 22f, palette.text, bold = true), Ui.params(bottom = Ui.dp(this, 8)))
         column.addView(
             Ui.text(
                 this,
                 tr(
-                    "Аккаунт открывает Zen и платные модели. Откроется браузер: выберите Google и нужный аккаунт.",
-                    "The account unlocks Zen and paid models. Your browser opens: pick Google and the account you want.",
+                    "Бесплатные модели без аккаунта - общий лимит на всех пользователей OpenCode, он почти всегда исчерпан. Личный аккаунт даёт вашу собственную квоту, Zen и платные модели. Откроется браузер: выберите Google и нужный аккаунт. Можно пропустить.",
+                    "Without an account the free models share one limit among all OpenCode users, and it is nearly always spent. A personal account brings a quota of your own, plus Zen and paid models. Your browser opens: pick Google and the account you want. You can skip this.",
                 ),
                 14f,
                 palette.muted,
@@ -189,6 +189,9 @@ class LoginActivity : Activity() {
 
     private fun done() {
         app.prefs.signedIn = true
+        // The profile has a personal Console account now: record it before the sync names the account, so the
+        // quota hints switch from "the shared bucket" to "your own limit" right away.
+        app.guest.markPersonal(app.profiles.active.id, app.profiles.active.account)
         UiBus.reloadRequested = true
         app.syncAccountAsync()
         Ui.toast(this, tr("Вход выполнен", "Signed in"))
