@@ -9,9 +9,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 
 /**
- * Signs in to the OpenCode Console (the account behind Zen and Go). The sign-in page opens in the system browser, where
- * the person picks Google and then the Google account, or adds another one. This screen follows the attempt and
- * returns when it completes. It is only opened when the person asks to sign in; the first launch never forces it.
+ * Connects the profile's personal quota: a Console account (device-code sign-in in the browser) or the profile's own
+ * Zen API key, pasted right here. With either one every model request is sent under the profile's own credential
+ * instead of the world-shared anonymous token. Opened when the person asks for it; skippable with one tap.
  */
 class LoginActivity : Activity() {
     private val app: App get() = application as App
@@ -45,8 +45,8 @@ class LoginActivity : Activity() {
             Ui.text(
                 this,
                 tr(
-                    "Бесплатные модели без аккаунта - общий лимит на всех пользователей OpenCode, он почти всегда исчерпан. Личный аккаунт даёт вашу собственную квоту, Zen и платные модели. Откроется браузер: выберите Google и нужный аккаунт. Можно пропустить.",
-                    "Without an account the free models share one limit among all OpenCode users, and it is nearly always spent. A personal account brings a quota of your own, plus Zen and paid models. Your browser opens: pick Google and the account you want. You can skip this.",
+                    "Без аккаунта бесплатные модели делят один лимит на всех пользователей OpenCode, и он почти всегда исчерпан. Два способа получить личную квоту: войти в консоль (откроется браузер) или вставить свой API-ключ — тогда каждый запрос идёт под вашим персональным ключом даже без входа в аккаунт. Можно пропустить.",
+                    "Without an account the free models share one limit among all OpenCode users, and it is nearly always spent. Two ways to get a quota of your own: sign in to the console (your browser opens), or paste your own API key - then every request is sent under your personal key even without signing in. You can skip this.",
                 ),
                 14f,
                 palette.muted,
@@ -61,7 +61,7 @@ class LoginActivity : Activity() {
         codeBox.addView(Ui.text(this, tr("Если страница спросит код, он совпадает с этим.", "If the page asks for a code, it is this one."), 12f, palette.muted))
         column.addView(codeBox, Ui.params(bottom = Ui.dp(this, 16)))
 
-        status = Ui.text(this, tr("Ожидание сервера...", "Waiting for the server..."), 14f, palette.text)
+        status = Ui.text(this, tr("Выберите способ подключения личной квоты.", "Pick how to connect your personal quota."), 14f, palette.text)
         column.addView(status, Ui.params(bottom = Ui.dp(this, 16)))
 
         buttons = Ui.vertical(this)
@@ -89,7 +89,7 @@ class LoginActivity : Activity() {
 
     private fun onState(s: Snapshot) {
         when (s.phase) {
-            Phase.RUNNING -> if (!running && attempt == null) begin(s)
+            Phase.RUNNING -> if (attempt == null && !running) status.text = tr("Сервер работает. Выберите способ ниже.", "The server is up. Pick a way below.")
             Phase.FAILED -> {
                 status.text = tr("Сервер не запустился: ", "The server did not start: ") + s.error.orEmpty()
                 showButtons(retry = true)
@@ -198,6 +198,33 @@ class LoginActivity : Activity() {
         finish()
     }
 
+    /** Asks for the profile's own Zen API key and applies it: personal quota without a Console sign-in. */
+    private fun askForKey() {
+        Ui.input(
+            this,
+            tr("Ваш персональный API-ключ", "Your personal API key"),
+            tr("Ключ из консоли OpenCode", "A key from the OpenCode console"),
+            password = true,
+        ) { raw ->
+            val key = raw.trim()
+
+            if (key.isNotEmpty()) {
+                val id = app.profiles.active.id
+
+                // Every request of this profile now goes under this key: the server gets it as OPENCODE_API_KEY on the
+                // next start, which replaces the shared anonymous token (verified live on 2.1.4: auth errors instead of
+                // the shared free-limit error).
+                app.profiles.setZenApiKey(id, key)
+                app.guest.markPersonal(id, tr("личный API-ключ", "personal API key"))
+                app.prefs.signedIn = true
+                UiBus.reloadRequested = true
+                ServerService.send(this, ServerService.ACTION_RESTART)
+                Ui.toast(this, tr("Личный ключ подключён", "Personal key connected"))
+                finish()
+            }
+        }
+    }
+
     private fun showButtons(retry: Boolean = false) {
         buttons.removeAllViews()
 
@@ -223,6 +250,37 @@ class LoginActivity : Activity() {
             )
             buttons.addView(
                 Ui.button(this, tr("Другой аккаунт", "Another account"), palette) { Browser.open(this, current.url, private = true) },
+                Ui.params(bottom = Ui.dp(this, 8)),
+            )
+        } else {
+            buttons.addView(
+                Ui.button(this, tr("Войти через браузер", "Sign in via the browser"), palette, primary = true) {
+                    val s = ServerState.snapshot
+
+                    if (s.phase == Phase.RUNNING) begin(s) else ServerService.send(this, ServerService.ACTION_RESTART)
+                },
+                Ui.params(bottom = Ui.dp(this, 8)),
+            )
+        }
+
+        val hasKey = app.profiles.active.zenApiKey != null
+
+        buttons.addView(
+            Ui.button(this, tr("У меня есть API-ключ", "I have an API key"), palette) { askForKey() },
+            Ui.params(bottom = Ui.dp(this, 8)),
+        )
+
+        if (hasKey) {
+            buttons.addView(
+                Ui.button(this, tr("Убрать сохранённый ключ", "Remove the saved key"), palette) {
+                    val id = app.profiles.active.id
+
+                    app.profiles.setZenApiKey(id, null)
+                    app.guest.markAnonymous(id)
+                    ServerService.send(this, ServerService.ACTION_RESTART)
+                    UiBus.reloadRequested = true
+                    Ui.toast(this, tr("Ключ убран: снова общий лимит", "Key removed: back to the shared limit"))
+                },
                 Ui.params(bottom = Ui.dp(this, 8)),
             )
         }

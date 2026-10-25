@@ -33,6 +33,7 @@ class ServerProcess(private val paths: Paths) {
             bindSharedStorage = prefs.bindStorage,
             timeZone = java.util.TimeZone.getDefault().id,
             otaBinDir = otaDir?.path,
+            zenApiKey = profile.zenApiKey,
         )
     }
 
