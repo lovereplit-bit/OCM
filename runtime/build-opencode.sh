@@ -44,6 +44,27 @@ echo "Building $repo $version ($commit)"
 
 cd "$src"
 
+# Patches this project carries on top of the upstream tag, one per feature/fix.
+# runtime/patches/v2 applies to the 2.x line this app builds. Each patch is applied
+# once: a re-run on a dirty checkout recognises its own work and skips; a patch that
+# no longer fits the upstream tag fails the build loudly instead of shipping silently
+# unpatched.
+patch_dir="$here/patches/v2"
+if [ -d "$patch_dir" ]; then
+  for patch in "$patch_dir"/*.patch; do
+    [ -e "$patch" ] || continue
+    if git apply --check "$patch" 2>/dev/null; then
+      git apply "$patch"
+      echo "Applied $(basename "$patch")"
+    elif git apply --check --reverse "$patch" 2>/dev/null; then
+      echo "$(basename "$patch") already applied"
+    else
+      echo "Patch $(basename "$patch") does not apply to $ref" >&2
+      exit 1
+    fi
+  done
+fi
+
 python3 -m pip install --quiet --break-system-packages setuptools 2>/dev/null || true
 bun install --frozen-lockfile
 

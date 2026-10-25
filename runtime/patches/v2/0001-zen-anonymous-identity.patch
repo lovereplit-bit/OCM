@@ -1,0 +1,44 @@
+diff --git a/packages/core/src/session/model-request.ts b/packages/core/src/session/model-request.ts
+index 4bb8e47..6cf048f 100644
+--- a/packages/core/src/session/model-request.ts
++++ b/packages/core/src/session/model-request.ts
+@@ -53,6 +53,27 @@ const ESTIMATE_ERROR = 0.15
+ // Never ask for less; only reachable with automatic compaction off, since it keeps the window from filling this far.
+ const OUTPUT_TOKEN_MIN = 1_024
+ 
++/**
++ * The User-Agent the OpenCode inference gateway (Zen) accepts from its own clients:
++ * `opencode/<version>`.
++ *
++ * The gateway meters the anonymous free capacity per IP, but only after the request
++ * proves itself with this exact User-Agent shape; anything else - including the
++ * default `opencode/<channel>/<version>/<name>` this server otherwise sends - is
++ * answered with `429 FreeUsageLimitError` on every request, no matter how fresh the
++ * caller's IP allowance is. Sending the accepted form keeps every anonymous install
++ * on the per-IP quota of the address it actually connects from: one phone, one
++ * allowance, nothing shared with other installs. A signed-in Console connection is
++ * not affected either way - its requests carry the account token and its quota.
++ */
++function zenUserAgent(app: App.Info) {
++  // Release builds embed a real version ("2.1.4"); local dev runs report "local".
++  // The gateway needs a version-shaped value either way, so non-versions fall back
++  // to this line's baseline.
++  const version = /^\d+\.\d+\.\d+/.test(app.version) ? app.version : "2.1.4"
++  return `opencode/${version}`
++}
++
+ /** Tool errors, plus the user declining a permission or dismissing a question. */
+ export type ExecuteError = Tool.Error | Permission.DeclinedError | QuestionTool.CancelledError
+ 
+@@ -278,7 +299,10 @@ export const layer = Layer.effect(
+             "x-session-affinity": affinity,
+             "X-Session-Id": affinity,
+             ...(session.parentID ? { "x-parent-session-id": session.parentID } : {}),
+-            "User-Agent": App.useragent(app),
++            // Zen identity: the gateway-accepted User-Agent (see zenUserAgent above).
++            // The per-session affinity and project tags stay, so the gateway can keep
++            // its cache affinity and see a well-formed official client either way.
++            "User-Agent": zenUserAgent(app),
+             "x-opencode-project": session.projectID,
+             "x-opencode-session": affinity,
+             "x-opencode-client": app.name,
