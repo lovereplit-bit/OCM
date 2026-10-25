@@ -86,7 +86,10 @@ class App : Application() {
             runCatching {
                 repeat(3) {
                     try {
-                        val accounts = ConsoleLogin(HttpTransport(snap.baseUrl, prefs.password)).signedInAccounts()
+                        // A short warmup: the sync is background work, so it must not hold a thread for minutes
+                        // waiting for the plugin activation. If it is still warming up, the next onResume sync
+                        // finds the integration already registered and reads the account.
+                        val accounts = ConsoleLogin(HttpTransport(snap.baseUrl, prefs.password), warmupAttempts = 3).signedInAccounts()
 
                         profiles.setAccount(snap.profileId, accounts.firstOrNull()?.label)
 
