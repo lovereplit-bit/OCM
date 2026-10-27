@@ -13,8 +13,10 @@ set -euo pipefail
 
 PINNED_REPO="https://github.com/jasonxu114514/opencode2api.git"
 PINNED_COMMIT="b13bf6989ce4a8bd8dbd681d33dfdd3205e04b78"
-# sha256 of libopencode2api.so produced from the pinned commit (reproducible build, see above).
-PINNED_SHA256="78c645eba88fd4a9e76465e4409d4e51a87a4cdd20d2bb5547061a93820246aa"
+# sha256 of libopencode2api.so produced from the pinned commit by the pinned toolchain
+# (go 1.24.13, linux/arm64 host, same flags as below). The build is deterministic per toolchain:
+# change the Go version and the hash changes with it - re-pin both together.
+PINNED_SHA256="be87aec6d104b41b2400078bc61bcf70c2a5e15864620d4b76062cdd8edaafbe"
 
 out="${1:?usage: fetch-opencode2api.sh <out-dir>}"
 mkdir -p "$out"
