@@ -568,7 +568,13 @@ class MainActivity : Activity(), UiHost {
             else -> tr("нет в этой сборке", "not in this build")
         }
 
-        return tr("Zen-обход: включён, ", "Zen bypass: on, ") + state
+        // Whether the gateway serves this profile under its own key or anonymously matters: upstream may reject
+        // the shared anonymous credential outright from some regions, so the label says which lane is live.
+        val lane =
+            if (app.profiles.active.zenApiKey != null) tr("личный ключ", "personal key")
+            else tr("анонимно", "anonymous")
+
+        return tr("Zen-обход: включён, ", "Zen bypass: on, ") + state + " (" + lane + ")"
     }
 
     private fun toggleZenBypass() {

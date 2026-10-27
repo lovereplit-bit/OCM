@@ -8,9 +8,11 @@ import java.net.URL
 
 /**
  * The Zen bypass gateway: a local opencode2api process on 127.0.0.1 that stands between the bundled OpenCode
- * server and opencode.ai. Free models are served through the anonymous "public" credential and, when WARP is
- * on, every free-lane request leaves through a userspace Cloudflare WARP tunnel whose exit the gateway rotates
- * on rate limits (up to 8 exits per request), so one burnt-through IP no longer stops the chat.
+ * server and opencode.ai. Without a personal key free models ride the anonymous "public" credential (which
+ * opencode.ai may reject from some regions) and, when WARP is on, leave through a userspace Cloudflare WARP
+ * tunnel whose exit the gateway rotates on rate limits (up to 8 exits per request), so one burnt-through IP no
+ * longer stops the chat. With a personal key connected the anonymous lane is switched off: every request - free
+ * and paid - goes under that key, the same official credential path as OPENCODE_API_KEY or a Console sign-in.
  *
  * The gateway is independent of the Linux environment: it is a single static binary shipped as
  * libopencode2api.so, started before the server and stopped with the service.
@@ -43,10 +45,16 @@ class ZenBypass(private val context: Context, private val prefs: Prefs) {
     /** True when the toggle is on and the build actually carries the gateway binary. */
     fun available(): Boolean = prefs.zenBypass && binary() != null
 
-    /** Writes the gateway configuration. [zenApiKey] is the profile's personal key, kept for paid models. */
+    /**
+     * Writes the gateway configuration. [zenApiKey] is the profile's personal key; when present it becomes the
+     * only upstream credential (anonymous off), so free and paid models alike are served under the user's own
+     * quota instead of the world-shared anonymous token that upstream may reject outright from some regions.
+     */
     fun writeConfig(zenApiKey: String?) {
         val warp = if (prefs.zenBypassWarp) "true" else "false"
-        val zenKeys = if (zenApiKey.isNullOrBlank()) "[]" else "[${MiniJson.quote(zenApiKey)}]"
+        val hasKey = !zenApiKey.isNullOrBlank()
+        val zenKeys = if (hasKey) "[${MiniJson.quote(zenApiKey)}]" else "[]"
+        val anonymous = if (hasKey) "false" else "true"
 
         val json = """
             {
@@ -54,7 +62,7 @@ class ZenBypass(private val context: Context, private val prefs: Prefs) {
               "server_keys": [${MiniJson.quote(prefs.zenBypassKey)}],
               "zen_keys": $zenKeys,
               "go_keys": [],
-              "anonymous": true,
+              "anonymous": $anonymous,
               "warp": {"enabled": $warp, "pool_size": 2, "stack": "ipv6"},
               "proxies": ["direct"],
               "webui": {"enabled": false},
