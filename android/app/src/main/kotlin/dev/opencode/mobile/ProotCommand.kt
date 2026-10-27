@@ -27,6 +27,8 @@ data class ProotConfig(
     val zenBypassUrl: String? = null,
     /** The key the server presents to the bypass gateway; only read together with [zenBypassUrl]. */
     val zenBypassKey: String? = null,
+    /** The Console account signed in to this profile; null means the profile rides as a guest. */
+    val consoleAccount: String? = null,
 )
 
 data class Launch(val command: List<String>, val env: Map<String, String>)
@@ -110,24 +112,36 @@ object ProotCommand {
         env["OPENCODE_PASSWORD"] = c.password
         env["OPENCODE_CLIENT"] = "android"
         env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
-        env["OPENCODE_CONFIG_CONTENT"] = "{\"instructions\":[${MiniJson.quote(GUEST_INSTRUCTIONS)}]}"
         env["OPENCODE_ANDROID_BRIDGE"] = c.bridgeUrl
         env["OPENCODE_ANDROID_TOKEN"] = c.bridgeToken
         env["BROWSER"] = "/usr/local/bin/android-open"
 
-        // A personal Zen key of this profile: the server treats it as the profile's own credential and sends every
-        // model request under it instead of the world-shared anonymous token. Verified live on 2.1.4: with the
-        // variable set the server reports the env connection and the upstream "public" fallback is never applied.
+        // The server config: instructions, plus the providers this profile rides. A profile without any
+        // credential of its own (no personal key, no Console sign-in) is a guest; the built-in anonymous Zen
+        // lane shares one world bucket that stays drained around the clock, so guests also get the keyless
+        // free lane as their default model - the very first message works without opening the model picker.
+        val guest = c.zenApiKey.isNullOrBlank() && c.consoleAccount.isNullOrBlank()
+        val providers = ArrayList<String>()
+
         if (!c.zenBypassUrl.isNullOrBlank() && !c.zenBypassKey.isNullOrBlank()) {
             // The bypass gateway stands between the server and opencode.ai: the server talks to the gateway with
             // the gateway's own local key (the personal key, if any, lives in the gateway's upstream key pool),
             // and the provider override below moves the built-in Zen provider onto the loopback endpoint.
             env["OPENCODE_API_KEY"] = c.zenBypassKey
-            env["OPENCODE_CONFIG_CONTENT"] = ZenBypassConfig.configContent(GUEST_INSTRUCTIONS, c.zenBypassUrl)
-        } else {
-            if (!c.zenApiKey.isNullOrBlank()) env["OPENCODE_API_KEY"] = c.zenApiKey
-            env["OPENCODE_CONFIG_CONTENT"] = "{\"instructions\":[${MiniJson.quote(GUEST_INSTRUCTIONS)}]}"
+            providers += ZenBypassConfig.providerOverride(c.zenBypassUrl)
+        } else if (!c.zenApiKey.isNullOrBlank()) {
+            // A personal Zen key of this profile: the server treats it as the profile's own credential and sends
+            // every model request under it instead of the world-shared anonymous token. Verified live on 2.1.4.
+            env["OPENCODE_API_KEY"] = c.zenApiKey
         }
+
+        // The keyless lane rides alongside everywhere: a working-key profile keeps its own quota as the default
+        // and can switch to it when the key misbehaves; a guest starts on it. It goes straight to the upstream
+        // from the phone and never through the bypass gateway.
+        providers += GuestFreeLane.providerBlock()
+
+        env["OPENCODE_CONFIG_CONTENT"] =
+            GuestFreeLane.configContent(GUEST_INSTRUCTIONS, providers, guest)
 
         if (c.compat) {
             // Features that lean on native code or kernel interfaces Android may not allow.
@@ -180,6 +194,38 @@ object ProotCommand {
         command += args
 
         return Launch(command, hostEnv(c))
+    }
+}
+
+/**
+ * The keyless free lane: a config-declared provider that needs no credential at all, so a profile without a
+ * personal key or a Console sign-in still has a model that answers. OpenCode's own anonymous lane rides one
+ * world-shared bucket that stays drained around the clock (probed live again and again: 429 FreeUsageLimitError
+ * with a daily reset, the same answer from datacenter IPs and from every WARP exit), while this upstream serves
+ * its anonymous tier to anyone. Verified live through the real server on the 2.x line: the declared provider is
+ * picked up, the config "model" default routes new sessions to it, and the answer comes back streamed.
+ */
+object GuestFreeLane {
+    const val PROVIDER_ID = "pollinations"
+    const val MODEL_ID = "openai-fast"
+    const val DEFAULT_MODEL = "$PROVIDER_ID/$MODEL_ID"
+    const val BASE_URL = "https://text.pollinations.ai/openai"
+
+    /** The provider declaration as raw JSON inside the "provider" object (static values, nothing to escape). */
+    fun providerBlock(): String =
+        "\"pollinations\":{\"npm\":\"@opencode/ai/providers/openai-compatible\",\"name\":\"Free (no key)\"," +
+            "\"options\":{\"baseURL\":\"$BASE_URL\",\"apiKey\":\"public\"}," +
+            "\"models\":{\"openai-fast\":{\"name\":\"GPT-OSS 20B\"}}}"
+
+    /** The whole OPENCODE_CONFIG_CONTENT value: instructions, the guest default model and the provider blocks. */
+    fun configContent(instructionsPath: String, providerBlocks: List<String>, guest: Boolean): String {
+        val parts = ArrayList<String>()
+
+        parts += "\"instructions\":[${MiniJson.quote(instructionsPath)}]"
+        if (guest) parts += "\"model\":\"$DEFAULT_MODEL\""
+        if (providerBlocks.isNotEmpty()) parts += "\"provider\":{${providerBlocks.joinToString(",")}}"
+
+        return "{" + parts.joinToString(",") + "}"
     }
 }
 

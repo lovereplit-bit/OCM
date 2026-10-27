@@ -37,6 +37,7 @@ class ServerProcess(private val paths: Paths) {
             zenApiKey = profile.zenApiKey,
             zenBypassUrl = bypass?.baseUrl,
             zenBypassKey = bypass?.let { prefs.zenBypassKey },
+            consoleAccount = profile.account,
         )
     }
 
