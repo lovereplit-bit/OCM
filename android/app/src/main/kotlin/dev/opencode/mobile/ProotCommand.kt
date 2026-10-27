@@ -23,6 +23,10 @@ data class ProotConfig(
     val otaBinDir: String? = null,
     /** The profile's own Zen API key; null keeps the upstream default (the shared anonymous token). */
     val zenApiKey: String? = null,
+    /** The local Zen bypass gateway URL (http://127.0.0.1:<port>/v1); null talks to opencode.ai directly. */
+    val zenBypassUrl: String? = null,
+    /** The key the server presents to the bypass gateway; only read together with [zenBypassUrl]. */
+    val zenBypassKey: String? = null,
 )
 
 data class Launch(val command: List<String>, val env: Map<String, String>)
@@ -114,7 +118,16 @@ object ProotCommand {
         // A personal Zen key of this profile: the server treats it as the profile's own credential and sends every
         // model request under it instead of the world-shared anonymous token. Verified live on 2.1.4: with the
         // variable set the server reports the env connection and the upstream "public" fallback is never applied.
-        if (!c.zenApiKey.isNullOrBlank()) env["OPENCODE_API_KEY"] = c.zenApiKey
+        if (!c.zenBypassUrl.isNullOrBlank() && !c.zenBypassKey.isNullOrBlank()) {
+            // The bypass gateway stands between the server and opencode.ai: the server talks to the gateway with
+            // the gateway's own local key (the personal key, if any, lives in the gateway's upstream key pool),
+            // and the provider override below moves the built-in Zen provider onto the loopback endpoint.
+            env["OPENCODE_API_KEY"] = c.zenBypassKey
+            env["OPENCODE_CONFIG_CONTENT"] = ZenBypassConfig.configContent(GUEST_INSTRUCTIONS, c.zenBypassUrl)
+        } else {
+            if (!c.zenApiKey.isNullOrBlank()) env["OPENCODE_API_KEY"] = c.zenApiKey
+            env["OPENCODE_CONFIG_CONTENT"] = "{\"instructions\":[${MiniJson.quote(GUEST_INSTRUCTIONS)}]}"
+        }
 
         if (c.compat) {
             // Features that lean on native code or kernel interfaces Android may not allow.
@@ -168,6 +181,20 @@ object ProotCommand {
 
         return Launch(command, hostEnv(c))
     }
+}
+
+/**
+ * The provider override the Zen bypass feeds the server through OPENCODE_CONFIG_CONTENT: the built-in Zen
+ * provider keeps its model list from models.dev, but its requests move onto the local gateway. Verified live
+ * on the 2.x line: with this block the server sends Bearer <OPENCODE_API_KEY> to <baseURL>/chat/completions.
+ */
+object ZenBypassConfig {
+    fun providerOverride(baseURL: String): String =
+        "\"provider\":{\"opencode\":{\"options\":{\"baseURL\":${MiniJson.quote(baseURL)}}}}"
+
+    /** The whole OPENCODE_CONFIG_CONTENT value: the app instructions plus the provider override. */
+    fun configContent(instructionsPath: String, baseURL: String): String =
+        "{\"instructions\":[${MiniJson.quote(instructionsPath)}],${providerOverride(baseURL)}}"
 }
 
 /** Stand-ins for the /proc files Android denies to apps, bound over the real ones. */

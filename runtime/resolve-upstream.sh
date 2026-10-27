@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Resolves which OpenCode release to bundle into an app build.
 #
-# Usage: runtime/resolve-upstream.sh [tag]     (no tag: the newest vN.x.y tag of the pinned major line)
+# Usage: runtime/resolve-upstream.sh [tag]     (no tag: upstream.json's pin, else the newest vN.x.y tag of the pinned major line)
 # Outputs tag, version and commit to $GITHUB_OUTPUT (or stdout).
-# Environment: UPSTREAM_REPO, PINNED_MAJOR,  UPSTREAM_GIT_URL (default https://github.com/$UPSTREAM_REPO.git).
+# Environment: UPSTREAM_REPO, PINNED_MAJOR, PINNED_TAG (optional exact version to hold the interface steady),
+#              UPSTREAM_GIT_URL (default https://github.com/$UPSTREAM_REPO.git).
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -16,6 +17,12 @@ out="${GITHUB_OUTPUT:-/dev/stdout}"
 tag="${1:-}"
 
 die() { echo "resolve-upstream: $*" >&2; exit 1; }
+
+if [ -z "$tag" ]; then
+  # An exact pin (upstream.json: "pin") holds the bundled server - and with it the interface people know -
+  # steady across builds. Without it the newest tag of the pinned major line is taken.
+  tag="${PINNED_TAG:-}"
+fi
 
 if [ -z "$tag" ]; then
   # GitHub's "latest release" can be an older line (upstream keeps publishing 1.x next to 2.x): take the newest plain tag

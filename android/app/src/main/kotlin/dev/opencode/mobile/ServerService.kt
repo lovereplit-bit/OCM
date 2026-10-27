@@ -125,6 +125,7 @@ class ServerService : Service() {
         // The server belongs to this service; leaving it running without a notification would be a hidden process.
         Thread {
             runCatching { server.stop() }.onFailure { Log.w("service", "could not stop the server: ${it.message}") }
+            runCatching { app.zenBypass.stop() }
         }.start()
 
         super.onDestroy()
@@ -192,6 +193,11 @@ class ServerService : Service() {
 
         server.killOrphans()
 
+        // The Zen bypass gateway comes up before the server: the server's model requests then go through it
+        // (free models under the anonymous credential, optionally inside the gateway's WARP tunnel). A gateway
+        // that fails to start degrades to the direct route - the app keeps working exactly as without it.
+        if (app.prefs.zenBypass) app.zenBypass.start(profile.zenApiKey)
+
         // Every profile gets a port of its own. When something else on the phone already sits on it, the next
         // free port is taken and remembered, so the server starts anyway and the port stays individual.
         var port = pickPort(profile)
@@ -218,7 +224,7 @@ class ServerService : Service() {
         var shifts = 0
 
         while (true) {
-            val config = server.config(app.prefs, profile, bridgeUrl, otaDir)
+            val config = server.config(app.prefs, profile, bridgeUrl, otaDir, app.zenBypass)
             val process = try {
                 server.spawn(config)
             } catch (e: Exception) {
@@ -447,6 +453,7 @@ class ServerService : Service() {
         epoch++
         quiet()
         server.stop()
+        app.zenBypass.stop()
         bridge?.stop()
         bridge = null
         releaseLocks()

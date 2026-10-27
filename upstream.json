@@ -1,4 +1,5 @@
 {
   "repo": "anomalyco/opencode",
-  "major": 2
+  "major": 2,
+  "pin": "v2.1.4"
 }

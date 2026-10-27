@@ -106,7 +106,7 @@ jobs:
             echo "::warning::Requested ref '$req' is not a valid version tag; using latest release of pinned major instead."
             req=""
           fi
-          UPSTREAM_REPO="$repo" PINNED_MAJOR="$(jq -r .major upstream.json)" bash runtime/resolve-upstream.sh "$req"
+          UPSTREAM_REPO="$repo" PINNED_MAJOR="$(jq -r .major upstream.json)" PINNED_TAG="$(jq -r '.pin // ""' upstream.json)" bash runtime/resolve-upstream.sh "$req"
 
       - name: Fetch the OpenCode sources
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -140,6 +140,14 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq patchelf
           bash runtime/fetch-proot.sh out/jniLibs/arm64-v8a
+
+      - name: Zen bypass gateway (opencode2api, pinned)
+        uses: actions/setup-go@0aaccfd150d2cca3ecfc5bb53d41da8e5e42bb6d # v5.5.0
+        with:
+          go-version: "1.24.x"
+
+      - name: Build the Zen bypass gateway
+        run: bash runtime/fetch-opencode2api.sh out/jniLibs/arm64-v8a
 
       - name: Build date
         id: seq
@@ -197,7 +205,7 @@ jobs:
       - name: Version
         id: ver
         run: |
-          if [ "${GITHUB_REF_TYPE}" = tag ]; then name="${GITHUB_REF_NAME#v}"; else name="1.0.6"; fi
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then name="${GITHUB_REF_NAME#v}"; else name="1.1.1"; fi
           # Minutes since the epoch: always increases, and stays far below the 2^31 limit of a version code.
           code=$(( $(date +%s) / 60 ))
           echo "name=$name" >> "$GITHUB_OUTPUT"
@@ -253,7 +261,7 @@ jobs:
           echo "apk=$apk"
           # Read the listing once; matching it with grep -q in a loop is fragile and slow for a 250 MB APK.
           unzip -Z1 "$apk" > "$RUNNER_TEMP/apk-files.txt"
-          for want in assets/rootfs.tgz assets/rootfs.stamp assets/bridge.js lib/arm64-v8a/libproot.so lib/arm64-v8a/libproot-loader.so lib/arm64-v8a/libtalloc.so lib/arm64-v8a/libandroid-shmem.so; do
+          for want in assets/rootfs.tgz assets/rootfs.stamp assets/bridge.js lib/arm64-v8a/libproot.so lib/arm64-v8a/libproot-loader.so lib/arm64-v8a/libtalloc.so lib/arm64-v8a/libandroid-shmem.so lib/arm64-v8a/libopencode2api.so; do
             if grep -qxF "$want" "$RUNNER_TEMP/apk-files.txt"; then echo "ok: $want"; else echo "::error::missing from the APK: $want"; exit 1; fi
           done
           apksigner="$(ls "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/*/apksigner | sort -V | tail -1)"

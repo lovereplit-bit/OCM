@@ -304,6 +304,35 @@ class SettingsActivity : Activity() {
 
         card.divide()
         card.toggle(
+            tr("Zen-обход (бесплатные модели)", "Zen bypass (free models)"),
+            tr(
+                "Локальный шлюз обслуживает бесплатные модели через анонимный доступ, при лимитах меняет адрес выхода через WARP. Персональный ключ продолжает работать.",
+                "A local gateway serves free models through the anonymous lane and rotates its WARP exit on rate limits. A personal key keeps working.",
+            ),
+            app.prefs.zenBypass,
+        ) { value ->
+            app.prefs.zenBypass = value
+            ServerService.send(this, ServerService.ACTION_RESTART)
+            render()
+        }
+
+        if (app.prefs.zenBypass) {
+            card.toggle(
+                tr("WARP-туннель обхода", "Bypass WARP tunnel"),
+                tr(
+                    "Запросы бесплатных моделей выходят через туннель Cloudflare WARP со сменой адреса. Требует доступ по UDP.",
+                    "Free-model requests leave through a Cloudflare WARP tunnel with a rotating address. Needs outbound UDP.",
+                ),
+                app.prefs.zenBypassWarp,
+            ) { value ->
+                app.prefs.zenBypassWarp = value
+                ServerService.send(this, ServerService.ACTION_RESTART)
+                render()
+            }
+        }
+
+        card.divide()
+        card.toggle(
             tr("Режим совместимости", "Compatibility mode"),
             tr("Включите, если сервер падает при запуске. Работает медленнее.", "Turn on if the server crashes on start. Slower."),
             app.prefs.compat,

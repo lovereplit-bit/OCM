@@ -149,12 +149,12 @@ fun testTar(fixtures: File) {
     eq("sanitize root", TarGzExtractor.sanitize("/"), null)
 }
 
-fun cfg(compat: Boolean = false, ota: String? = null, zenKey: String? = null) = ProotConfig(
+fun cfg(compat: Boolean = false, ota: String? = null, zenKey: String? = null, bypassUrl: String? = null, bypassKey: String? = null) = ProotConfig(
     prootBin = "/data/app/lib/libproot.so", loader = "/data/app/lib/libproot-loader.so", nativeLibDir = "/data/app/lib",
     rootfs = "/data/files/rootfs", home = "/data/files/profiles/main/home", fakeProc = "/data/files/fakeproc",
     prootTmp = "/data/files/tmp", port = 4096, password = "s3cr\"et", bridgeUrl = "http://127.0.0.1:4090",
     bridgeToken = "tok", compat = compat, bindSharedStorage = true, timeZone = "Asia/Irkutsk", otaBinDir = ota,
-    zenApiKey = zenKey,
+    zenApiKey = zenKey, zenBypassUrl = bypassUrl, zenBypassKey = bypassKey,
 )
 
 fun testFs() {
@@ -229,6 +229,23 @@ fun testProot() {
 
     check("personal key env", keyed.command.contains("OPENCODE_API_KEY=oc-personal-key-1"))
     check("no key no env", ProotCommand.server(cfg()).command.none { it.startsWith("OPENCODE_API_KEY=") })
+
+    // The Zen bypass moves the built-in Zen provider onto the local gateway: the server talks to 127.0.0.1 with
+    // the gateway's local key, and OPENCODE_CONFIG_CONTENT carries the provider override next to the instructions.
+    val bypass = ProotCommand.server(cfg(bypassUrl = "http://127.0.0.1:9920/v1", bypassKey = "local-gw-key"))
+
+    check("bypass key env", bypass.command.contains("OPENCODE_API_KEY=local-gw-key"))
+    check(
+        "bypass config env",
+        bypass.command.any {
+            it.startsWith("OPENCODE_CONFIG_CONTENT=") &&
+                it.contains("\"provider\":{\"opencode\":{\"options\":{\"baseURL\":\"http://127.0.0.1:9920/v1\"}}}") &&
+                it.contains("/etc/opencode-android/AGENTS.md")
+        },
+    )
+    check("bypass config is valid json", MiniJson.parseOrNull(bypass.command.first { it.startsWith("OPENCODE_CONFIG_CONTENT=") }.removePrefix("OPENCODE_CONFIG_CONTENT=")) != null)
+    check("no bypass leaves config alone", ProotCommand.server(cfg(zenKey = "k")).command.any { it == "OPENCODE_CONFIG_CONTENT={\"instructions\":[\"/etc/opencode-android/AGENTS.md\"]}" })
+    eq("config content composition", ZenBypassConfig.configContent("/etc/ag.md", "http://127.0.0.1:1/v1"), "{\"instructions\":[\"/etc/ag.md\"],\"provider\":{\"opencode\":{\"options\":{\"baseURL\":\"http://127.0.0.1:1/v1\"}}}}")
 }
 
 fun testPortPicker() {

@@ -531,6 +531,18 @@ class MainActivity : Activity(), UiHost {
                 else tr("Подключить личный API-ключ", "Connect a personal API key")
             ) to { ApiKey.ask(this) }
 
+        // The Zen bypass: a local gateway that serves free models through the anonymous credential and, when its
+        // WARP tunnel is on, rotates the exit address on rate limits, so one burnt-through IP stops mattering.
+        items += zenBypassLabel() to { toggleZenBypass() }
+
+        if (app.prefs.zenBypass) {
+            items +=
+                (
+                    if (app.prefs.zenBypassWarp) tr("WARP туннеля обхода: включён", "Bypass WARP tunnel: on")
+                    else tr("WARP туннеля обхода: выключен", "Bypass WARP tunnel: off")
+                ) to { toggleZenWarp() }
+        }
+
         items += tr("Открыть адрес в окне предпросмотра", "Open an address in a preview window") to {
             Ui.input(this, tr("Адрес или порт", "Address or port"), "localhost:5173") { value -> if (value.isNotEmpty()) showPreview(value) }
         }
@@ -545,6 +557,38 @@ class MainActivity : Activity(), UiHost {
         items += tr("Настройки", "Settings") to { startActivity(Intent(this, SettingsActivity::class.java)) }
 
         Ui.choose(this, "OpenCode", items.map { it.first }) { items[it].second() }
+    }
+
+    private fun zenBypassLabel(): String {
+        if (!app.prefs.zenBypass) return tr("Zen-обход: выключен", "Zen bypass: off")
+
+        val state = when {
+            app.zenBypass.running() -> tr("работает", "running")
+            app.zenBypass.binary() != null -> tr("готов", "ready")
+            else -> tr("нет в этой сборке", "not in this build")
+        }
+
+        return tr("Zen-обход: включён, ", "Zen bypass: on, ") + state
+    }
+
+    private fun toggleZenBypass() {
+        app.prefs.zenBypass = !app.prefs.zenBypass
+        Ui.toast(
+            this,
+            if (app.prefs.zenBypass) tr("Zen-обход включён, сервер перезапустится", "Zen bypass on, the server will restart")
+            else tr("Zen-обход выключен, сервер перезапустится", "Zen bypass off, the server will restart"),
+        )
+        ServerService.send(this, ServerService.ACTION_RESTART)
+    }
+
+    private fun toggleZenWarp() {
+        app.prefs.zenBypassWarp = !app.prefs.zenBypassWarp
+        Ui.toast(
+            this,
+            if (app.prefs.zenBypassWarp) tr("WARP включён: выходы будут меняться при лимитах", "WARP on: exits will rotate on rate limits")
+            else tr("WARP выключен: обход идёт с текущего адреса", "WARP off: the bypass uses the current address"),
+        )
+        ServerService.send(this, ServerService.ACTION_RESTART)
     }
 
     private fun chooseProfile() {
