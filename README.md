@@ -105,9 +105,15 @@ android/            приложение (Kotlin, без AndroidX, только 
 runtime/            сборка серверной части: build-opencode.sh, build-rootfs.sh + Dockerfile, fetch-proot.sh,
                     package-ota.sh (упаковка и подпись), ota-plan.sh (правила выбора обновлений), contract-test.sh
 runtime/rootfs-overlay/   что кладётся поверх Ubuntu: preview, android-open, android-save, android-notify,
-                          android-widget, инструкции для агента
+                          android-widget, инструкции для агента,
+                          opencode-profile (изолированный профиль: свой HOME/логин/квота бесплатной линии,
+                          как отдельная установка Termux) и test-free-model (проверка изнутри окружения:
+                          отвечает ли бесплатная модель свежему профилю; коды выхода 0/10/11/12/13/3)
 tools/              проверки: check-static.py, check-kotlin.sh, test-jvm.sh, test-guest.sh, test-ota-plan.sh,
                     test-proot-fetch.sh, test-js/bridge.test.js
+                    free-lane-ab.sh (сравнение: официальный 1.x и наш 2.x на бесплатной линии Zen, запускать на телефоне),
+                    test-free-lane-ab.sh (его проверка без интернета). free-lane-ab.sh сам скачивает 1.x из npm
+                    и сверяет sha512, поэтому менять Accept-заголовок реестра нельзя (npm отвечает 406)
 upstream.json       откуда брать OpenCode: репозиторий, мажорная версия и точный закреплённый тег (сейчас v2.1.4 -
                     тот самый интерфейс 1.0.5; уберите "pin", чтобы снова брать новейший тег мажорной линии)
 runtime/fetch-opencode2api.sh   сборка Zen-обхода: шлюз opencode2api из закреплённого коммита под android/arm64

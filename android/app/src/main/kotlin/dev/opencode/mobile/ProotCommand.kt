@@ -117,11 +117,15 @@ object ProotCommand {
         env["BROWSER"] = "/usr/local/bin/android-open"
 
         // The server config: instructions, plus the providers this profile rides. A profile without any
-        // credential of its own (no personal key, no Console sign-in) is a guest. Guests start on the Zen
-        // free lane: the bypass gateway's WARP rotation keeps finding egress addresses whose shared daily
-        // quota is not spent yet (verified live: nine answers in a row through the gateway while the same
-        // host's direct requests all got 429), so the very first message answers with a real Zen model.
+        // credential of its own (no personal key, no Console sign-in) is a guest. A guest starts on a free Zen
+        // model only while the bypass gateway is really up: its WARP rotation keeps finding egress addresses
+        // whose shared daily quota is not spent yet. Without the gateway (the toggle is on by default, so
+        // this is the rare case where it could not start) a free Zen model goes straight into the
+        // world-shared bucket, which is drained around the clock, so the very first message of every guest
+        // would end in "quota exhausted". Then the guest starts on the keyless lane instead, which answers
+        // without any key or quota.
         val guest = c.zenApiKey.isNullOrBlank() && c.consoleAccount.isNullOrBlank()
+        val bypassActive = !c.zenBypassUrl.isNullOrBlank() && !c.zenBypassKey.isNullOrBlank()
         val providers = ArrayList<String>()
 
         if (!c.zenBypassUrl.isNullOrBlank() && !c.zenBypassKey.isNullOrBlank()) {
@@ -142,8 +146,10 @@ object ProotCommand {
         // from the phone and never through the bypass gateway.
         providers += GuestFreeLane.providerBlock()
 
+        val guestModel = if (bypassActive) ZenBypassConfig.GUEST_DEFAULT_MODEL else GuestFreeLane.FALLBACK_MODEL
+
         env["OPENCODE_CONFIG_CONTENT"] =
-            GuestFreeLane.configContent(GUEST_INSTRUCTIONS, providers, guest)
+            GuestFreeLane.configContent(GUEST_INSTRUCTIONS, providers, guest, guestModel)
 
         if (c.compat) {
             // Features that lean on native code or kernel interfaces Android may not allow.
@@ -219,12 +225,16 @@ object GuestFreeLane {
             "\"options\":{\"baseURL\":\"$BASE_URL\",\"apiKey\":\"public\"}," +
             "\"models\":{\"openai-fast\":{\"name\":\"GPT-OSS 20B\"}}}"
 
-    /** The whole OPENCODE_CONFIG_CONTENT value: instructions, the guest default model and the provider blocks. */
-    fun configContent(instructionsPath: String, providerBlocks: List<String>, guest: Boolean): String {
+    /**
+     * The whole OPENCODE_CONFIG_CONTENT value: instructions, the guest default model and the provider blocks.
+     * [defaultModel] is what a guest's new chats start on; it is the keyless lane unless the caller knows a
+     * free Zen model can really answer (the bypass gateway is up).
+     */
+    fun configContent(instructionsPath: String, providerBlocks: List<String>, guest: Boolean, defaultModel: String = FALLBACK_MODEL): String {
         val parts = ArrayList<String>()
 
         parts += "\"instructions\":[${MiniJson.quote(instructionsPath)}]"
-        if (guest) parts += "\"model\":\"${ZenBypassConfig.GUEST_DEFAULT_MODEL}\""
+        if (guest) parts += "\"model\":${MiniJson.quote(defaultModel)}"
         if (providerBlocks.isNotEmpty()) parts += "\"provider\":{${providerBlocks.joinToString(",")}}"
 
         return "{" + parts.joinToString(",") + "}"

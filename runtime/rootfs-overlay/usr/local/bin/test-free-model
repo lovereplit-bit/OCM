@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# test-free-model.sh: can a fresh profile get a real answer from a free model?
+#
+#   test-free-model.sh [profile] [model]
+#
+# Env: OCM_LAUNCHER (default opencode-profile), OCM_TIMEOUT seconds (default 90)
+# Exit: 0 answer received | 1 unknown failure | 3 no free model found
+#       10 free-usage limit (server side) | 11 free tier restricted (403)
+#       12 auth / model not supported | 13 timeout
+set -u
+
+launcher="${OCM_LAUNCHER:-opencode-profile}"
+profile="${1:-smoke-$$}"
+model="${2:-}"
+limit="${OCM_TIMEOUT:-90}"
+
+out="$(mktemp)"
+trap 'rm -f "$out"' EXIT
+
+if [[ -z "$model" ]]; then
+  model="$("$launcher" "$profile" models opencode 2>/dev/null | grep -i 'free' | head -n 1)"
+  if [[ -z "$model" ]]; then
+    echo "FAIL no_free_model: nothing with 'free' in its id was listed; pass a model explicitly"
+    exit 3
+  fi
+fi
+case "$model" in */*) ;; *) model="opencode/$model" ;; esac
+
+echo "profile=$profile model=$model"
+timeout "$limit" "$launcher" "$profile" run -m "$model" \
+  "What is the capital of France? Answer with one word." >"$out" 2>&1
+rc=$?
+head -n 30 "$out"
+echo "-----"
+
+# Errors are checked first: request bodies echoed in error logs must not look like an answer.
+if (( rc == 124 )); then
+  echo "FAIL timeout after ${limit}s"; exit 13
+fi
+if grep -qiE 'FreeUsageLimitError|Free usage exceeded|Rate limit exceeded' "$out"; then
+  echo "FAIL server_free_limit: free bucket exhausted on opencode.ai (not an app bug)"; exit 10
+fi
+if grep -qiE 'FreeTierError|free tier can only be used' "$out"; then
+  echo "FAIL free_tier_restricted: request not accepted as an official client"; exit 11
+fi
+if grep -qiE '\b401\b|unauthorized|not supported|invalid api key' "$out"; then
+  echo "FAIL auth_or_model"; exit 12
+fi
+if (( rc == 0 )) && grep -qi 'paris' "$out"; then
+  echo "OK got an answer"; exit 0
+fi
+echo "FAIL unknown (rc=$rc)"; exit 1

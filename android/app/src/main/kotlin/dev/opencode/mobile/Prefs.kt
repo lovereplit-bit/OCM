@@ -60,9 +60,15 @@ class Prefs(context: Context) {
      * Zen bypass: serve the bundled server's model requests from a local gateway (opencode2api) instead of
      * opencode.ai directly. Free models go through the anonymous "public" credential, optionally inside a
      * userspace Cloudflare WARP tunnel whose exit rotates, so a burnt-through IP stops mattering.
+     *
+     * On by default: a guest's default model is a free Zen model, and the world-shared anonymous bucket
+     * answers only when the gateway can rotate egress addresses (WARP). Without the gateway every guest's
+     * first message ends in the drained shared bucket's "quota exhausted". When the gateway cannot start,
+     * ServerProcess simply omits its override and the guest rides the keyless lane instead - the toggle's
+     * failure mode is a model change, never a dead chat.
      */
     var zenBypass: Boolean
-        get() = sp.getBoolean("zen_bypass", false)
+        get() = sp.getBoolean("zen_bypass", true)
         set(value) = sp.edit().putBoolean("zen_bypass", value).apply()
 
     /** Whether the gateway's free lane leaves through its own WARP tunnel (needs outbound UDP to work). */

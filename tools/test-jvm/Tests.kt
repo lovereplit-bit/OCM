@@ -203,7 +203,7 @@ fun testProot() {
     check("proot password env", c.contains("OPENCODE_PASSWORD=s3cr\"et"))
     check("proot config env", c.any {
         it.startsWith("OPENCODE_CONFIG_CONTENT={\"instructions\":[\"/etc/opencode-android/AGENTS.md\"]") &&
-            it.contains("\"model\":\"${ZenBypassConfig.GUEST_DEFAULT_MODEL}\"") && it.contains(GuestFreeLane.BASE_URL)
+            it.contains("\"model\":\"${GuestFreeLane.FALLBACK_MODEL}\"") && it.contains(GuestFreeLane.BASE_URL)
     })
     eq("proot serve tail", c.takeLast(5), listOf("serve", "--hostname", "127.0.0.1", "--port", "4096"))
     eq("proot default binary", c[c.size - 6], "/usr/local/bin/opencode")
@@ -234,18 +234,22 @@ fun testProot() {
     check("personal key env", keyed.command.contains("OPENCODE_API_KEY=oc-personal-key-1"))
     check("no key no env", ProotCommand.server(cfg()).command.none { it.startsWith("OPENCODE_API_KEY=") })
 
-    // The keyless free lane rides in every config as a manual fallback; a guest additionally starts on a free
-    // Zen model and gets a picker where every visible model can answer.
+    // The keyless free lane rides in every config as a manual fallback. A guest starts on it while the bypass
+    // gateway is off (the default): a free Zen model would go straight into the drained world-shared bucket.
+    // With the gateway up the guest starts on a free Zen model and gets a picker where every model can answer.
     val freeBlock = GuestFreeLane.providerBlock()
 
     check("free lane in guest config", ProotCommand.server(cfg()).command.any {
-        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && it.contains("\"model\":\"${ZenBypassConfig.GUEST_DEFAULT_MODEL}\"")
+        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && it.contains("\"model\":\"${GuestFreeLane.FALLBACK_MODEL}\"")
+    })
+    check("a guest without the gateway never starts on a Zen model", ProotCommand.server(cfg()).command.none {
+        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(ZenBypassConfig.GUEST_DEFAULT_MODEL)
     })
     check("free lane without default for a keyed profile", keyed.command.any {
-        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && !it.contains(ZenBypassConfig.GUEST_DEFAULT_MODEL)
+        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && !it.contains("\"model\":")
     })
     check("free lane without default for a signed-in profile", ProotCommand.server(cfg(account = "user@gmail.com")).command.any {
-        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && !it.contains(ZenBypassConfig.GUEST_DEFAULT_MODEL)
+        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && !it.contains("\"model\":")
     })
     check("guest config is valid json", MiniJson.parseOrNull(ProotCommand.server(cfg()).command.first { it.startsWith("OPENCODE_CONFIG_CONTENT=") }.removePrefix("OPENCODE_CONFIG_CONTENT=")) != null)
 
@@ -260,6 +264,13 @@ fun testProot() {
 
         return provider?.get("models") as? Map<*, *>
     }
+
+    check("a guest behind the gateway starts on a free Zen model", guestBypass.command.any {
+        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains("\"model\":\"${ZenBypassConfig.GUEST_DEFAULT_MODEL}\"")
+    })
+    check("a keyed profile behind the gateway has no default model", keyedBypass.command.none {
+        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains("\"model\":")
+    })
 
     val guestPicker = pickerMap(guestBypass.command)
 
@@ -285,7 +296,8 @@ fun testProot() {
     check("no bypass keeps the zen provider untouched", ProotCommand.server(cfg(zenKey = "k")).command.any {
         it.startsWith("OPENCODE_CONFIG_CONTENT=") && !it.contains("\"opencode\":{")
     })
-    eq("guest config composition", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), true), "{\"instructions\":[\"/etc/ag.md\"],\"model\":\"${ZenBypassConfig.GUEST_DEFAULT_MODEL}\",\"provider\":{$freeBlock}}")
+    eq("guest config composition", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), true), "{\"instructions\":[\"/etc/ag.md\"],\"model\":\"${GuestFreeLane.FALLBACK_MODEL}\",\"provider\":{$freeBlock}}")
+    eq("guest config composition with a Zen default", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), true, ZenBypassConfig.GUEST_DEFAULT_MODEL), "{\"instructions\":[\"/etc/ag.md\"],\"model\":\"${ZenBypassConfig.GUEST_DEFAULT_MODEL}\",\"provider\":{$freeBlock}}")
     eq("keyed config composition", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), false), "{\"instructions\":[\"/etc/ag.md\"],\"provider\":{$freeBlock}}")
     eq("bare config composition", GuestFreeLane.configContent("/etc/ag.md", emptyList(), false), "{\"instructions\":[\"/etc/ag.md\"]}")
     eq("zen provider override for a keyed line", ZenBypassConfig.providerOverride("http://127.0.0.1:1/v1", false), "\"opencode\":{\"options\":{\"baseURL\":\"http://127.0.0.1:1/v1\"}}")
