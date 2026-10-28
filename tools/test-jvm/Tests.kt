@@ -203,7 +203,7 @@ fun testProot() {
     check("proot password env", c.contains("OPENCODE_PASSWORD=s3cr\"et"))
     check("proot config env", c.any {
         it.startsWith("OPENCODE_CONFIG_CONTENT={\"instructions\":[\"/etc/opencode-android/AGENTS.md\"]") &&
-            it.contains(GuestFreeLane.DEFAULT_MODEL) && it.contains(GuestFreeLane.BASE_URL)
+            it.contains("\"model\":\"${ZenBypassConfig.GUEST_DEFAULT_MODEL}\"") && it.contains(GuestFreeLane.BASE_URL)
     })
     eq("proot serve tail", c.takeLast(5), listOf("serve", "--hostname", "127.0.0.1", "--port", "4096"))
     eq("proot default binary", c[c.size - 6], "/usr/local/bin/opencode")
@@ -234,19 +234,38 @@ fun testProot() {
     check("personal key env", keyed.command.contains("OPENCODE_API_KEY=oc-personal-key-1"))
     check("no key no env", ProotCommand.server(cfg()).command.none { it.startsWith("OPENCODE_API_KEY=") })
 
-    // The keyless free lane rides in every config; only a guest additionally gets it as the default model.
+    // The keyless free lane rides in every config as a manual fallback; a guest additionally starts on a free
+    // Zen model and gets a picker where every visible model can answer.
     val freeBlock = GuestFreeLane.providerBlock()
 
     check("free lane in guest config", ProotCommand.server(cfg()).command.any {
-        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && it.contains("\"model\":\"${GuestFreeLane.DEFAULT_MODEL}\"")
+        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && it.contains("\"model\":\"${ZenBypassConfig.GUEST_DEFAULT_MODEL}\"")
     })
     check("free lane without default for a keyed profile", keyed.command.any {
-        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && !it.contains(GuestFreeLane.DEFAULT_MODEL)
+        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && !it.contains(ZenBypassConfig.GUEST_DEFAULT_MODEL)
     })
     check("free lane without default for a signed-in profile", ProotCommand.server(cfg(account = "user@gmail.com")).command.any {
-        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && !it.contains(GuestFreeLane.DEFAULT_MODEL)
+        it.startsWith("OPENCODE_CONFIG_CONTENT=") && it.contains(freeBlock) && !it.contains(ZenBypassConfig.GUEST_DEFAULT_MODEL)
     })
     check("guest config is valid json", MiniJson.parseOrNull(ProotCommand.server(cfg()).command.first { it.startsWith("OPENCODE_CONFIG_CONTENT=") }.removePrefix("OPENCODE_CONFIG_CONTENT=")) != null)
+
+    // Guest line of the bypass: the picker is curated - removed, deprecated and paid models are disabled, the
+    // live free Zen models and the geo-limited four stay. The keyed line keeps the full catalog.
+    val guestBypass = ProotCommand.server(cfg(bypassUrl = "http://127.0.0.1:9920/v1", bypassKey = "local-gw-key"))
+    val keyedBypass = ProotCommand.server(cfg(zenKey = "k", bypassUrl = "http://127.0.0.1:9920/v1", bypassKey = "local-gw-key"))
+
+    fun pickerMap(command: List<String>): Map<*, *>? {
+        val text = command.first { it.startsWith("OPENCODE_CONFIG_CONTENT=") }.removePrefix("OPENCODE_CONFIG_CONTENT=")
+        val provider = (MiniJson.obj(text)?.get("provider") as? Map<*, *>)?.get("opencode") as? Map<*, *>
+
+        return provider?.get("models") as? Map<*, *>
+    }
+
+    val guestPicker = pickerMap(guestBypass.command)
+
+    check("guest picker hides the removed and the paid", guestPicker != null && guestPicker.containsKey("glm-4.7-free") && guestPicker.containsKey("deepseek-v4-flash-free") && guestPicker.containsKey("claude-sonnet-4-5"))
+    check("guest picker keeps the live free models", guestPicker != null && !guestPicker.containsKey("glm-5.3-flash-free") && !guestPicker.containsKey("beam-free") && !guestPicker.containsKey("big-pickle"))
+    check("keyed line keeps the full catalog", keyedBypass.command.none { it.contains("\"baseURL\":\"http://127.0.0.1:9920/v1\"},\"models\":{") })
 
     // The Zen bypass moves the built-in Zen provider onto the local gateway: the server talks to 127.0.0.1 with
     // the gateway's local key, and OPENCODE_CONFIG_CONTENT carries the provider override next to the instructions.
@@ -257,7 +276,7 @@ fun testProot() {
         "bypass config env",
         bypass.command.any {
             it.startsWith("OPENCODE_CONFIG_CONTENT=") &&
-                it.contains("\"opencode\":{\"options\":{\"baseURL\":\"http://127.0.0.1:9920/v1\"}}") &&
+                it.contains("\"options\":{\"baseURL\":\"http://127.0.0.1:9920/v1\"},\"models\":{") &&
                 it.contains(freeBlock) &&
                 it.contains("/etc/opencode-android/AGENTS.md")
         },
@@ -266,10 +285,15 @@ fun testProot() {
     check("no bypass keeps the zen provider untouched", ProotCommand.server(cfg(zenKey = "k")).command.any {
         it.startsWith("OPENCODE_CONFIG_CONTENT=") && !it.contains("\"opencode\":{")
     })
-    eq("guest config composition", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), true), "{\"instructions\":[\"/etc/ag.md\"],\"model\":\"pollinations/openai-fast\",\"provider\":{$freeBlock}}")
+    eq("guest config composition", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), true), "{\"instructions\":[\"/etc/ag.md\"],\"model\":\"${ZenBypassConfig.GUEST_DEFAULT_MODEL}\",\"provider\":{$freeBlock}}")
     eq("keyed config composition", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), false), "{\"instructions\":[\"/etc/ag.md\"],\"provider\":{$freeBlock}}")
     eq("bare config composition", GuestFreeLane.configContent("/etc/ag.md", emptyList(), false), "{\"instructions\":[\"/etc/ag.md\"]}")
-    eq("config content composition", ZenBypassConfig.configContent("/etc/ag.md", "http://127.0.0.1:1/v1"), "{\"instructions\":[\"/etc/ag.md\"],\"provider\":{\"opencode\":{\"options\":{\"baseURL\":\"http://127.0.0.1:1/v1\"}}}}")
+    eq("zen provider override for a keyed line", ZenBypassConfig.providerOverride("http://127.0.0.1:1/v1", false), "\"opencode\":{\"options\":{\"baseURL\":\"http://127.0.0.1:1/v1\"}}")
+    val zenGuest = MiniJson.obj("{\"provider\":{${ZenBypassConfig.providerOverride("http://127.0.0.1:1/v1", true)}}}")
+    val zenGuestModels = ((zenGuest?.get("provider") as? Map<*, *>)?.get("opencode") as? Map<*, *>)?.get("models") as? Map<*, *>
+
+    check("zen guest override carries the curated picker", zenGuestModels != null && zenGuestModels.containsKey("kimi-k2.5-free") && zenGuestModels.containsKey("grok-code") && !zenGuestModels.containsKey("deepseek-v4.1-flash-free"))
+    check("zen guest override is valid json", zenGuest != null)
 }
 
 fun testPortPicker() {

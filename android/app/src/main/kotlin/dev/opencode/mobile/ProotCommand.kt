@@ -117,18 +117,20 @@ object ProotCommand {
         env["BROWSER"] = "/usr/local/bin/android-open"
 
         // The server config: instructions, plus the providers this profile rides. A profile without any
-        // credential of its own (no personal key, no Console sign-in) is a guest; the built-in anonymous Zen
-        // lane shares one world bucket that stays drained around the clock, so guests also get the keyless
-        // free lane as their default model - the very first message works without opening the model picker.
+        // credential of its own (no personal key, no Console sign-in) is a guest. Guests start on the Zen
+        // free lane: the bypass gateway's WARP rotation keeps finding egress addresses whose shared daily
+        // quota is not spent yet (verified live: nine answers in a row through the gateway while the same
+        // host's direct requests all got 429), so the very first message answers with a real Zen model.
         val guest = c.zenApiKey.isNullOrBlank() && c.consoleAccount.isNullOrBlank()
         val providers = ArrayList<String>()
 
         if (!c.zenBypassUrl.isNullOrBlank() && !c.zenBypassKey.isNullOrBlank()) {
             // The bypass gateway stands between the server and opencode.ai: the server talks to the gateway with
             // the gateway's own local key (the personal key, if any, lives in the gateway's upstream key pool),
-            // and the provider override below moves the built-in Zen provider onto the loopback endpoint.
+            // and the provider override below moves the built-in Zen provider onto the loopback endpoint. On the
+            // guest line it also curates the picker: only models the anonymous lane can actually answer.
             env["OPENCODE_API_KEY"] = c.zenBypassKey
-            providers += ZenBypassConfig.providerOverride(c.zenBypassUrl)
+            providers += ZenBypassConfig.providerOverride(c.zenBypassUrl, guest)
         } else if (!c.zenApiKey.isNullOrBlank()) {
             // A personal Zen key of this profile: the server treats it as the profile's own credential and sends
             // every model request under it instead of the world-shared anonymous token. Verified live on 2.1.4.
@@ -199,16 +201,16 @@ object ProotCommand {
 
 /**
  * The keyless free lane: a config-declared provider that needs no credential at all, so a profile without a
- * personal key or a Console sign-in still has a model that answers. OpenCode's own anonymous lane rides one
- * world-shared bucket that stays drained around the clock (probed live again and again: 429 FreeUsageLimitError
- * with a daily reset, the same answer from datacenter IPs and from every WARP exit), while this upstream serves
- * its anonymous tier to anyone. Verified live through the real server on the 2.x line: the declared provider is
- * picked up, the config "model" default routes new sessions to it, and the answer comes back streamed.
+ * personal key or a Console sign-in still has a model that answers even when the Zen free bucket runs dry. It
+ * rides alongside everywhere as a manual fallback in the picker - the guest's default model itself is a free
+ * Zen model now (see [ZenBypassConfig.GUEST_DEFAULT_MODEL]). Verified live through the real server on the 2.x
+ * line: the declared provider is picked up, the config "model" default routes new sessions to it, and the
+ * answer comes back streamed.
  */
 object GuestFreeLane {
     const val PROVIDER_ID = "pollinations"
     const val MODEL_ID = "openai-fast"
-    const val DEFAULT_MODEL = "$PROVIDER_ID/$MODEL_ID"
+    const val FALLBACK_MODEL = "$PROVIDER_ID/$MODEL_ID"
     const val BASE_URL = "https://text.pollinations.ai/openai"
 
     /** The provider declaration as raw JSON inside the "provider" object (static values, nothing to escape). */
@@ -222,7 +224,7 @@ object GuestFreeLane {
         val parts = ArrayList<String>()
 
         parts += "\"instructions\":[${MiniJson.quote(instructionsPath)}]"
-        if (guest) parts += "\"model\":\"$DEFAULT_MODEL\""
+        if (guest) parts += "\"model\":\"${ZenBypassConfig.GUEST_DEFAULT_MODEL}\""
         if (providerBlocks.isNotEmpty()) parts += "\"provider\":{${providerBlocks.joinToString(",")}}"
 
         return "{" + parts.joinToString(",") + "}"
@@ -233,14 +235,170 @@ object GuestFreeLane {
  * The provider override the Zen bypass feeds the server through OPENCODE_CONFIG_CONTENT: the built-in Zen
  * provider keeps its model list from models.dev, but its requests move onto the local gateway. Verified live
  * on the 2.x line: with this block the server sends Bearer <OPENCODE_API_KEY> to <baseURL>/chat/completions.
+ *
+ * On the guest line (no personal key, no Console sign-in) the override also curates the model picker: new
+ * chats start on a free Zen model the upstream gate still serves, and the models it does not - removed,
+ * deprecated or paid ones - are disabled, so every model the picker offers can actually answer. Probed live
+ * on 2026-10-28: the gate answers 400-unavailable for 33 free models it removed, 410 for 2 deprecated ones,
+ * 403 RegionError for 4 geo-limited ones (those stay: the gateway rotates WARP exits on 403 too, so an exit
+ * in a served country gets through), and quota-limits the 7 it serves. Paid models have no credential on the
+ * anonymous lane at all. Regenerate the lists when the upstream gate changes.
  */
 object ZenBypassConfig {
-    fun providerOverride(baseURL: String): String =
-        "\"provider\":{\"opencode\":{\"options\":{\"baseURL\":${MiniJson.quote(baseURL)}}}}"
+    /** The model new guest chats start on: a free Zen model the anonymous gate still serves. */
+    const val GUEST_DEFAULT_MODEL = "opencode/glm-5.3-flash-free"
 
-    /** The whole OPENCODE_CONFIG_CONTENT value: the app instructions plus the provider override. */
-    fun configContent(instructionsPath: String, baseURL: String): String =
-        "{\"instructions\":[${MiniJson.quote(instructionsPath)}],${providerOverride(baseURL)}}"
+    /** Free models the anonymous gate answered on the 2026-10-28 probe (the geo-limited four included). */
+    val guestFreeModels = listOf(
+        "beam-free",
+        "big-pickle",
+        "cat-jam-free",
+        "deepseek-v4.1-flash-free",
+        "flint-40b-free",
+        "glm-5.3-flash-free",
+        "mimo-v2.6-flash-free",
+        "muse-spark-1.2-contributor-free",
+        "muse-spark-1.3-contributor-free",
+        "nemotron-3.5-lightning-free",
+        "nemotron-3.5-super-vl-free",
+    )
+
+    /**
+     * Models the guest picker hides: the gate removed them ("Model is unavailable"), upstream deprecated them,
+     * or they are paid - the anonymous lane has no credential for paid models, so they could only ever error.
+     */
+    private val guestHidden = setOf(
+        "claude-3-5-haiku",
+        "claude-fable-5",
+        "claude-fable-5-1",
+        "claude-haiku-4-5",
+        "claude-haiku-5-5",
+        "claude-opus-4-1",
+        "claude-opus-4-5",
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-opus-5-5",
+        "claude-sonnet-4",
+        "claude-sonnet-4-5",
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        "claude-sonnet-5-5",
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-free",
+        "deepseek-v4-flash-vision-exp",
+        "deepseek-v4-pro",
+        "deepseek-v4.1-flash",
+        "exo-free",
+        "fledge-alpha-free",
+        "gemini-3-flash",
+        "gemini-3-pro",
+        "gemini-3.1-pro",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.6-flash",
+        "gemini-3.7-flash",
+        "gemini-3.8-flash",
+        "gemini-4-argon",
+        "glm-4.6",
+        "glm-4.7",
+        "glm-4.7-free",
+        "glm-5",
+        "glm-5-free",
+        "glm-5.1",
+        "glm-5.2",
+        "glm-5.3",
+        "glm-5.3-flash",
+        "gpt-5",
+        "gpt-5-codex",
+        "gpt-5-nano",
+        "gpt-5.1",
+        "gpt-5.1-codex",
+        "gpt-5.1-codex-max",
+        "gpt-5.1-codex-mini",
+        "gpt-5.2",
+        "gpt-5.2-codex",
+        "gpt-5.3-codex",
+        "gpt-5.3-codex-spark",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-nano",
+        "gpt-5.4-pro",
+        "gpt-5.5",
+        "gpt-5.5-pro",
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "grok-4.5",
+        "grok-4.6",
+        "grok-4.7",
+        "grok-build-0.1",
+        "grok-code",
+        "hy3-free",
+        "hy3-preview-free",
+        "kimi-k2",
+        "kimi-k2-thinking",
+        "kimi-k2.5",
+        "kimi-k2.5-free",
+        "kimi-k2.6",
+        "kimi-k2.7-code",
+        "kimi-k3",
+        "laguna-s-2.1-free",
+        "ling-2.6-flash-free",
+        "ling-3.0-flash-fin-free",
+        "ling-3.0-flash-free",
+        "ling-3.0-tiny-free",
+        "ling-3.1-flash-free",
+        "ll-alpha-free",
+        "longcat-2.0-free",
+        "longcat-2.5-preview-free",
+        "mimo-v2-flash-free",
+        "mimo-v2-omni-free",
+        "mimo-v2-pro-free",
+        "mimo-v2.5-free",
+        "minimax-m2.1",
+        "minimax-m2.1-free",
+        "minimax-m2.5",
+        "minimax-m2.5-free",
+        "minimax-m2.7",
+        "minimax-m3",
+        "minimax-m3-free",
+        "minimax-m3.1-flash-free",
+        "mistral-large-4",
+        "muse-spark-1.2",
+        "muse-spark-1.3",
+        "muse-wonder-1.0",
+        "nemotron-3-super-free",
+        "nemotron-3-ultra-free",
+        "north-mini-code-free",
+        "qwen3-coder",
+        "qwen3.5-plus",
+        "qwen3.6-plus",
+        "qwen3.6-plus-free",
+        "qwen3.8-flash",
+        "qwen3.8-max",
+        "ring-2.6-1t-free",
+        "space-bunny-free",
+        "step-5-preview-free",
+        "trinity-large-preview-free",
+        "x-preview-f-free",
+    )
+
+    /** The "opencode" member of the config's "provider" object; [guest] adds the curated picker. */
+    fun providerOverride(baseURL: String, guest: Boolean): String {
+        val options = "\"options\":{\"baseURL\":${MiniJson.quote(baseURL)}}"
+
+        if (!guest) return "\"opencode\":{$options}"
+
+        val disabled = guestHidden.sorted().joinToString(",") { "\"$it\":{\"disabled\":true}" }
+
+        return "\"opencode\":{$options,\"models\":{$disabled}}"
+    }
 }
 
 /** Stand-ins for the /proc files Android denies to apps, bound over the real ones. */
