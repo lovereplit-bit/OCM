@@ -310,6 +310,11 @@ class SettingsActivity : Activity() {
             app.prefs.notifyEnabled,
         ) { app.prefs.notifyEnabled = it }
         card.toggle(
+            tr("Запускать сервер после перезагрузки", "Start the server after reboot"),
+            tr("Телефон включился — локальный сервер поднимается сам. Пока телефон выключен, приложение работать не может.", "The local server starts by itself after the phone boots. Nothing can run while the phone is powered off."),
+            app.prefs.startOnBoot,
+        ) { app.prefs.startOnBoot = it }
+        card.toggle(
             tr("Плавающая кнопка меню", "Floating menu button"),
             tr("Быстрый доступ к профилям, предпросмотру и настройкам.", "Quick access to profiles, preview and settings."),
             app.prefs.floatingMenu,

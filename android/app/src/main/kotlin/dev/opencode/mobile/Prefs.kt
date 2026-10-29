@@ -37,6 +37,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("notify", true)
         set(value) = sp.edit().putBoolean("notify", value).apply()
 
+    /** Start the local server after the phone reboots, without opening the app first. */
+    var startOnBoot: Boolean
+        get() = sp.getBoolean("start_on_boot", true)
+        set(value) = sp.edit().putBoolean("start_on_boot", value).apply()
+
     var otaAuto: Boolean
         get() = sp.getBoolean("ota_auto", true)
         set(value) = sp.edit().putBoolean("ota_auto", value).apply()

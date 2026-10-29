@@ -112,6 +112,7 @@ class EventWatcher(
                 key + "ok",
                 tr("Задача завершена", "Task finished"),
                 tr("OpenCode закончил работу. Откройте приложение, чтобы посмотреть результат.", "OpenCode has finished. Open the app to see the result."),
+                ActivityKind.DONE,
             )
             OcEvent.SESSION_FAILED -> {
                 // A limit failure gets its name said: a personal key limit and the free lane's limit have
@@ -131,6 +132,7 @@ class EventWatcher(
                     } else {
                         QuotaSignal.explanation(reason)
                     },
+                    if (reason == QuotaSignal.Reason.OTHER) ActivityKind.ATTENTION else ActivityKind.QUOTA,
                 )
             }
             OcEvent.PERMISSION_ASKED -> Notifier.activity(
@@ -138,6 +140,7 @@ class EventWatcher(
                 key + "perm",
                 tr("Нужно ваше разрешение", "Permission needed"),
                 tr("Агент ждёт ответа на запрос разрешения.", "The agent is waiting for you to answer a permission request."),
+                ActivityKind.ATTENTION,
             )
         }
     }

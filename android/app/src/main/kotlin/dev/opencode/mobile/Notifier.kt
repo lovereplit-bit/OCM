@@ -6,10 +6,18 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.net.Uri
+
+/** What a task notification is about; each kind has its own channel, sound and vibration. */
+enum class ActivityKind { INFO, DONE, ATTENTION, QUOTA }
 
 object Notifier {
     const val CH_SERVER = "server"
     const val CH_ACTIVITY = "activity"
+    const val CH_DONE = "activity_done_v2"
+    const val CH_ATTENTION = "activity_attention_v2"
+    const val CH_QUOTA = "activity_quota_v2"
     const val CH_UPDATES = "updates"
 
     const val ID_SERVER = 1
@@ -25,10 +33,41 @@ object Notifier {
                 setShowBadge(false)
             },
         )
+        // The old channel stays for link notifications and for channels that already exist on the phone.
         manager.createNotificationChannel(
             NotificationChannel(CH_ACTIVITY, tr("Задачи", "Tasks"), NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = tr("Завершение задач и запросы разрешений", "Finished tasks and permission requests")
             },
+        )
+        manager.createNotificationChannel(
+            soundChannel(
+                context,
+                CH_DONE,
+                tr("Задача выполнена", "Task finished"),
+                tr("Короткий сигнал, когда OpenCode закончил работу", "A short chime when OpenCode has finished"),
+                R.raw.task_done,
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ),
+        )
+        manager.createNotificationChannel(
+            soundChannel(
+                context,
+                CH_ATTENTION,
+                tr("Нужно действие", "Action needed"),
+                tr("Сигнал, когда агент ждёт разрешения", "A chime when the agent waits for permission"),
+                R.raw.attention,
+                NotificationManager.IMPORTANCE_HIGH,
+            ),
+        )
+        manager.createNotificationChannel(
+            soundChannel(
+                context,
+                CH_QUOTA,
+                tr("Закончилась квота", "Quota exhausted"),
+                tr("Сигнал, когда запрос остановлен лимитом", "A chime when a request is stopped by a limit"),
+                R.raw.quota,
+                NotificationManager.IMPORTANCE_HIGH,
+            ),
         )
         manager.createNotificationChannel(
             NotificationChannel(CH_UPDATES, tr("Обновления", "Updates"), NotificationManager.IMPORTANCE_LOW).apply {
@@ -36,6 +75,23 @@ object Notifier {
                 setShowBadge(false)
             },
         )
+    }
+
+    private fun soundChannel(context: Context, id: String, name: String, description: String, raw: Int, importance: Int): NotificationChannel {
+        val channel = NotificationChannel(id, name, importance)
+
+        channel.description = description
+        channel.setSound(
+            Uri.parse("android.resource://${context.packageName}/raw/$raw"),
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build(),
+        )
+        channel.enableVibration(true)
+        channel.vibrationPattern = longArrayOf(0, 90, 60, 90)
+
+        return channel
     }
 
     private fun open(context: Context): PendingIntent = PendingIntent.getActivity(
@@ -102,6 +158,14 @@ object Notifier {
 
     fun update(context: Context, text: String) = post(context, CH_UPDATES, ID_UPDATE, tr("Обновление OpenCode", "OpenCode update"), text)
 
-    fun activity(context: Context, key: String, title: String, text: String) =
-        post(context, CH_ACTIVITY, ID_ACTIVITY + (key.hashCode() and 0xFFF), title, text)
+    fun activity(context: Context, key: String, title: String, text: String, kind: ActivityKind = ActivityKind.INFO) {
+        val channel = when (kind) {
+            ActivityKind.DONE -> CH_DONE
+            ActivityKind.ATTENTION -> CH_ATTENTION
+            ActivityKind.QUOTA -> CH_QUOTA
+            ActivityKind.INFO -> CH_ACTIVITY
+        }
+
+        post(context, channel, ID_ACTIVITY + (key.hashCode() and 0xFFF), title, text)
+    }
 }
