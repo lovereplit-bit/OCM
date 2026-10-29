@@ -1,0 +1,1 @@
+Community-built mobile companion for your self-hosted OpenCode server.

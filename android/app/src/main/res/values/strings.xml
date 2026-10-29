@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">OpenCode</string>
-    <string name="shortcut_settings">Settings</string>
-    <string name="shortcut_restart">Restart server</string>
-    <string name="widget_description">A widget the OpenCode agent fills in itself</string>
-</resources>

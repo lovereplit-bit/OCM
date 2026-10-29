@@ -1,0 +1,69 @@
+Categories:
+  - Development
+  - Internet
+License: Apache-2.0
+AuthorName: Alvaro Lorente
+AuthorEmail: contact@alvarolorente.dev
+AuthorWebSite: https://getopencode.app/
+WebSite: https://getopencode.app/
+SourceCode: https://github.com/alvarolorentedev/opencode-mobile
+IssueTracker: https://github.com/alvarolorentedev/opencode-mobile/issues
+Changelog: https://github.com/alvarolorentedev/opencode-mobile/releases
+Donate: https://getopencode.app/support/
+
+AutoName: OpenCode Mobile
+
+RepoType: git
+Repo: https://github.com/alvarolorentedev/opencode-mobile
+
+Builds:
+  - versionName: 1.0.55
+    versionCode: 55
+    commit: 7ad8a78d6c188f1f2e2550a38111f15283658580
+    sudo:
+      - apt-get update
+      - apt-get install -y npm
+    init:
+      - npm ci
+      - rm -rf node_modules/expo-dev-client node_modules/expo-dev-launcher node_modules/expo-dev-menu
+        node_modules/expo-dev-menu-interface
+    output: android/app/build/outputs/apk/release/*.apk
+    srclibs:
+      - firebase-stub@ce90a956aacda17a85c60577ee443aeb83d876ef
+    prebuild:
+      - env FIREBASE_STUB_SRC_DIR=$$firebase-stub$$/firebase-messaging/src node scripts/foss-prepare.mjs
+      - npm pkg set 'expo.autolinking.android.buildFromSource[0]=.*'
+      - sed -i -e '/jvmToolchain\|JavaVersion\|JvmTarget.fromTarget/s/17/21/g' node_modules/@react-native/gradle-plugin/*/build.gradle.kts
+        node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/JdkConfiguratorUtils.kt
+        node_modules/react-native-reanimated/android/build.gradle.kts node_modules/react-native-worklets/android/build.gradle.kts
+      - env CI=1 EXPO_APP_VARIANT=foss EXPO_PUBLIC_FOSS=1 npx expo prebuild -p android
+        --clean
+      - sed -i -e '/signingConfig /d' android/app/build.gradle
+    scanignore:
+      - node_modules/hermes-compiler/hermesc/linux64-bin/hermesc
+      - node_modules/@react-native-async-storage/async-storage/android/build.gradle
+      - node_modules/@react-native-masked-view/masked-view/android/build.gradle
+      - node_modules/react-native-safe-area-context/android/build.gradle
+      - node_modules/react-native-screens/android/build.gradle
+    scandelete:
+      - node_modules
+    build:
+      - cd android/app
+      - env CI=1 EXPO_APP_VARIANT=foss EXPO_PUBLIC_FOSS=1 gradle assembleRelease -PreactNativeArchitectures=arm64-v8a
+    ndk: 27.1.12297006
+
+MaintainerNotes: |-
+  Expo generates android/ during prebuild, so subdir cannot be used: F-Droid
+  checks it exists before init. Gradle runs from android/app after generation.
+  The FOSS preparation script excludes Play Billing, Play Review and ML Kit,
+  replaces Firebase Messaging with the template's pinned firebase-stub source
+  library, and removes install-referrer.
+  Reproducible builds are not enabled: upstream uses JDK 17 and Expo prebuilts,
+  while F-Droid uses JDK 21 and builds Expo modules from source. Byte-identical
+  APKs have not been verified.
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v[0-9.]+$
+UpdateCheckData: app.config.ts|versionCode:\s*(\d+)|.|version:\s*'([\d.]+)'
+CurrentVersion: 1.0.55
+CurrentVersionCode: 55
