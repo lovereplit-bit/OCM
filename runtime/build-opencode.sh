@@ -72,9 +72,13 @@ bun install --frozen-lockfile
 
 export OPENCODE_CHANNEL=latest
 export OPENCODE_VERSION="$version"
+# 2.2.x reads the archive path and target from the environment; the older
+# --app-archive/--target flags are ignored there.
+export OPENCODE_APP_ARCHIVE="$src/.cache/app-archive.bin"
+export OPENCODE_TARGET=linux-arm64
 
-bun packages/cli/script/build-node.ts --app-archive-only --app-archive=.cache/app-archive.bin --skip-install
-bun packages/cli/script/build-node.ts --target=linux-arm64 --skip-install --outdir=dist/node --app-archive=.cache/app-archive.bin
+bun packages/cli/script/build-node.ts --app-archive-only --skip-install
+bun packages/cli/script/build-node.ts --skip-install --outdir=dist/node
 
 built="$src/packages/cli/dist/node/cli-node-linux-arm64/bin/opencode2-node"
 
