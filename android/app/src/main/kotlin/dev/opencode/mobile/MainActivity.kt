@@ -515,6 +515,7 @@ class MainActivity : Activity(), UiHost {
         items += (if (keys.showing()) tr("Скрыть клавиши терминала", "Hide terminal keys") else tr("Показать клавиши терминала", "Show terminal keys")) to {
             keys.force(if (keys.showing()) false else true)
         }
+        items += tr("Токены и квота", "Tokens and quota") to { UsageDialog.show(this) }
         items += tr("Обновить страницу", "Reload the page") to { retry() }
         items += tr("Перезапустить сервер", "Restart the server") to { ServerService.send(this, ServerService.ACTION_RESTART) }
         items += tr("Настройки", "Settings") to { startActivity(Intent(this, SettingsActivity::class.java)) }
