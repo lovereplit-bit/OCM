@@ -246,19 +246,22 @@ fun testProot() {
     val freeBlock = GuestFreeLane.providerBlock()
     val pickerBlock = FreeModels.providerBlock()
 
-    // A guest starts on a free Zen model the anonymous lane answers today, gets the keyless lane as a fallback,
-    // and the picker only offers models that can answer anonymously. No baseURL override and no shared gateway.
+    // A guest starts on the keyless GPT-OSS 20B lane, gets the eight free Zen models in the picker, and never
+    // sends the first message through the anonymous Zen quota. No baseURL override and no shared gateway.
     val guest = ProotCommand.server(cfg())
     val guestConfig = guest.command.first { it.startsWith("OPENCODE_CONFIG_CONTENT=") }.removePrefix("OPENCODE_CONFIG_CONTENT=")
 
     check("guest default model", guestConfig.contains("\"model\":\"${FreeModels.GUEST_DEFAULT_MODEL}\""))
+    check("guest default is keyless", FreeModels.GUEST_DEFAULT_MODEL == GuestFreeLane.FALLBACK_MODEL)
     check("guest config free lane", guestConfig.contains(freeBlock))
+    check("guest config v2 providers", guestConfig.contains("\"providers\":{") && !guestConfig.contains("\"provider\":{"))
+    check("guest config gpt-oss-20b", freeBlock.contains("\"gpt-oss-20b\"") && !freeBlock.contains("openai-fast"))
     check("guest config curated picker", guestConfig.contains(pickerBlock))
     check("guest config is valid json", MiniJson.parseOrNull(guestConfig) != null)
 
     fun pickerMap(command: List<String>): Map<*, *>? {
         val text = command.first { it.startsWith("OPENCODE_CONFIG_CONTENT=") }.removePrefix("OPENCODE_CONFIG_CONTENT=")
-        val provider = (MiniJson.obj(text)?.get("provider") as? Map<*, *>)?.get("opencode") as? Map<*, *>
+        val provider = (MiniJson.obj(text)?.get("providers") as? Map<*, *>)?.get("opencode") as? Map<*, *>
 
         return provider?.get("models") as? Map<*, *>
     }
@@ -266,6 +269,7 @@ fun testProot() {
     val picker = pickerMap(guest.command)
 
     check("guest picker exists", picker != null)
+    eq("guest free model count", FreeModels.guestFreeModels.size, 8)
     check("guest picker keeps the live free models", FreeModels.guestFreeModels.all { (picker?.get(it) as? Map<*, *>)?.get("disabled") != true })
     check("guest picker hides removed and paid", picker?.get("glm-4.7-free") != null && picker["claude-sonnet-4-5"] != null && picker["big-pickle"] == null)
 
@@ -277,9 +281,9 @@ fun testProot() {
     check("keyed config has no picker", !keyedConfig.contains("\"opencode\":{"))
     check("keyed config is valid json", MiniJson.parseOrNull(keyedConfig) != null)
 
-    eq("guest config composition", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), true), "{\"instructions\":[\"/etc/ag.md\"],\"model\":\"${GuestFreeLane.FALLBACK_MODEL}\",\"provider\":{$freeBlock}}")
-    eq("guest config composition with a Zen default", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), true, FreeModels.GUEST_DEFAULT_MODEL), "{\"instructions\":[\"/etc/ag.md\"],\"model\":\"${FreeModels.GUEST_DEFAULT_MODEL}\",\"provider\":{$freeBlock}}")
-    eq("keyed config composition", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), false), "{\"instructions\":[\"/etc/ag.md\"],\"provider\":{$freeBlock}}")
+    eq("guest config composition", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), true), "{\"instructions\":[\"/etc/ag.md\"],\"model\":\"${GuestFreeLane.FALLBACK_MODEL}\",\"providers\":{$freeBlock}}")
+    eq("guest config composition with an explicit model", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), true, "opencode/glm-5.3-flash-free"), "{\"instructions\":[\"/etc/ag.md\"],\"model\":\"opencode/glm-5.3-flash-free\",\"providers\":{$freeBlock}}")
+    eq("keyed config composition", GuestFreeLane.configContent("/etc/ag.md", listOf(freeBlock), false), "{\"instructions\":[\"/etc/ag.md\"],\"providers\":{$freeBlock}}")
     eq("bare config composition", GuestFreeLane.configContent("/etc/ag.md", emptyList(), false), "{\"instructions\":[\"/etc/ag.md\"]}")
 }
 

@@ -49,8 +49,8 @@ object QuotaSignal {
     /** The honest one-liner for [reason]: what happened and what actually helps. Shown under the server's own text. */
     fun explanation(reason: Reason): String = when (reason) {
         Reason.FREE_LIMIT -> tr(
-            "Лимит бесплатной модели исчерпан. Выберите другую бесплатную модель в списке (например, «Free (no key)») или подключите свой API-ключ в меню — тогда запросы пойдут под вашим личным лимитом.",
-            "The free model's limit is spent. Pick another free model in the list (for example \"Free (no key)\") or connect your own API key from the menu, so requests run under your personal limit.",
+            "Лимит бесплатной модели Zen исчерпан. Переключитесь на «Free (no key)» — GPT-OSS 20B: эта модель работает без ключа и без квоты Zen. Или подключите свой API-ключ в меню — тогда запросы пойдут под вашим личным лимитом.",
+            "The free Zen model's limit is spent. Switch to \"Free (no key)\" — GPT-OSS 20B: it runs without a key and without the Zen quota. Or connect your own API key from the menu, so requests run under your personal limit.",
         )
         Reason.PERSONAL_LIMIT -> tr(
             "Это лимит вашего API-ключа. Подождите сброса или пополните план в OpenCode.",

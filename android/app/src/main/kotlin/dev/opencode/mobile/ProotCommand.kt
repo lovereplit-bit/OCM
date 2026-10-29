@@ -111,10 +111,10 @@ object ProotCommand {
         env["BROWSER"] = "/usr/local/bin/android-open"
 
         // The server config: instructions, plus the providers this profile rides. A profile without a key of
-        // its own is a guest. It starts on a free Zen model the anonymous lane really serves; its picker hides
-        // the free models upstream has removed or region-locked, and every paid one. There is no shared key and
-        // no shared gateway here: each install talks to opencode.ai under its own anonymous identity, so one
-        // phone's usage never spends another's.
+        // its own is a guest. It starts on the keyless GPT-OSS 20B lane, so the first message never waits on
+        // the Zen free quota; its picker also keeps the eight free Zen models that still answer, while hiding
+        // the removed, region-locked and paid ones. There is no shared key and no shared gateway here: each
+        // install has its own HOME and anonymous identity, so one phone's usage never spends another's.
         val guest = c.zenApiKey.isNullOrBlank()
         val providers = ArrayList<String>()
 
@@ -128,8 +128,8 @@ object ProotCommand {
             providers += FreeModels.providerBlock()
         }
 
-        // The keyless lane rides alongside everywhere: a guest can switch to it when the free Zen lane is spent,
-        // and a keyed profile keeps it as a fallback. It goes straight to the upstream and needs no key at all.
+        // The keyless lane rides alongside everywhere: it is the guest default, so the free Zen quota is not on
+        // the first message, and a keyed profile can still pick it. It goes straight upstream and needs no key.
         providers += GuestFreeLane.providerBlock()
 
         env["OPENCODE_CONFIG_CONTENT"] =
@@ -191,33 +191,35 @@ object ProotCommand {
 
 /**
  * The keyless free lane: a config-declared provider that needs no credential at all, so a profile without a
- * personal key still has a model that answers even when the free Zen lane runs into a limit. It rides alongside
- * everywhere as a manual fallback in the picker - a guest's default model itself is a free Zen model. Verified
- * live through the real server on the 2.x line: the declared provider is picked up, the config "model" default
- * routes new sessions to it, and the answer comes back streamed.
+ * personal key still has a model that answers even when the free Zen lane runs into a limit. It is the guest
+ * default, not just a fallback: Pollinations exposes GPT-OSS 20B under the `gpt-oss-20b` alias and serves it
+ * anonymously. Verified live through the real server on the 2.1.4 line: the declared provider is picked up,
+ * the config "model" default routes new sessions to it, and the answer comes back streamed.
  */
 object GuestFreeLane {
     const val PROVIDER_ID = "pollinations"
-    const val MODEL_ID = "openai-fast"
+    const val MODEL_ID = "gpt-oss-20b"
     const val FALLBACK_MODEL = "$PROVIDER_ID/$MODEL_ID"
     const val BASE_URL = "https://text.pollinations.ai/openai"
 
-    /** The provider declaration as raw JSON inside the "provider" object (static values, nothing to escape). */
+    /** The provider declaration as raw JSON inside the v2 "providers" object (static values, nothing to escape). */
     fun providerBlock(): String =
-        "\"pollinations\":{\"npm\":\"@ai-sdk/openai-compatible\",\"name\":\"Free (no key)\"," +
-            "\"options\":{\"baseURL\":\"$BASE_URL\",\"apiKey\":\"public\"}," +
-            "\"models\":{\"openai-fast\":{\"name\":\"GPT-OSS 20B\"}}}"
+        "\"pollinations\":{\"name\":\"Free (no key)\",\"package\":\"@ai-sdk/openai-compatible\"," +
+            "\"settings\":{\"baseURL\":\"$BASE_URL\",\"apiKey\":\"public\"}," +
+            "\"models\":{\"gpt-oss-20b\":{\"name\":\"GPT-OSS 20B\"}}}"
 
     /**
      * The whole OPENCODE_CONFIG_CONTENT value: instructions, the guest default model and the provider blocks.
      * [defaultModel] is what a guest's new chats start on; a profile with its own key has no forced model.
+     * The blocks use the v2 "providers" shape: sibling "provider" entries do not merge "disabled" into the
+     * built-in catalog, so a guest would still see every paid model.
      */
     fun configContent(instructionsPath: String, providerBlocks: List<String>, guest: Boolean, defaultModel: String = FALLBACK_MODEL): String {
         val parts = ArrayList<String>()
 
         parts += "\"instructions\":[${MiniJson.quote(instructionsPath)}]"
         if (guest) parts += "\"model\":${MiniJson.quote(defaultModel)}"
-        if (providerBlocks.isNotEmpty()) parts += "\"provider\":{${providerBlocks.joinToString(",")}}"
+        if (providerBlocks.isNotEmpty()) parts += "\"providers\":{${providerBlocks.joinToString(",")}}"
 
         return "{" + parts.joinToString(",") + "}"
     }
@@ -226,25 +228,23 @@ object GuestFreeLane {
 /**
  * The curated free-model picker a guest gets through OPENCODE_CONFIG_CONTENT. The built-in Zen provider stays
  * exactly where it is - no base URL override, no local gateway - so each install talks to opencode.ai under its
- * own anonymous identity. New chats start on a free Zen model that the anonymous lane really serves today, and
- * the models it does not - removed, deprecated, paid or region-locked - are disabled, so every model the picker
- * offers can actually answer. Probed live on 2026-10-28. Regenerate the lists when upstream changes.
+ * own anonymous identity. New chats start on the keyless GPT-OSS 20B lane, so the Zen free quota is not on the
+ * first message; the eight free Zen models that the 2.1.4 catalog still serves stay selectable, and the models
+ * it does not - removed, deprecated, paid or region-locked - are disabled, so every model the picker offers can
+ * actually answer. Probed live on 2026-10-29. Regenerate the lists when upstream changes.
  */
 object FreeModels {
-    /** The model new guest chats start on: a free Zen model the anonymous lane answers today (verified 2026-10-28). */
-    const val GUEST_DEFAULT_MODEL = "opencode/big-pickle"
+    /** What new guest chats start on: the keyless lane, so no anonymous Zen quota is spent on the first message. */
+    const val GUEST_DEFAULT_MODEL = GuestFreeLane.FALLBACK_MODEL
 
-    /** Free models the anonymous gate answered on the 2026-10-28 probe (the geo-limited four included). */
+    /** The eight free Zen models the anonymous gate still answered on the 2026-10-29 probe. */
     val guestFreeModels = listOf(
         "beam-free",
         "big-pickle",
-        "cat-jam-free",
         "deepseek-v4.1-flash-free",
         "flint-40b-free",
         "glm-5.3-flash-free",
         "mimo-v2.6-flash-free",
-        "muse-spark-1.2-contributor-free",
-        "muse-spark-1.3-contributor-free",
         "nemotron-3.5-lightning-free",
         "nemotron-3.5-super-vl-free",
     )
@@ -254,6 +254,7 @@ object FreeModels {
      * or they are paid - the anonymous lane has no credential for paid models, so they could only ever error.
      */
     private val guestHidden = setOf(
+        "cat-jam-free",
         "claude-3-5-haiku",
         "claude-fable-5",
         "claude-fable-5-1",
@@ -357,7 +358,9 @@ object FreeModels {
         "minimax-m3.1-flash-free",
         "mistral-large-4",
         "muse-spark-1.2",
+        "muse-spark-1.2-contributor-free",
         "muse-spark-1.3",
+        "muse-spark-1.3-contributor-free",
         "muse-wonder-1.0",
         "nemotron-3-super-free",
         "nemotron-3-ultra-free",
@@ -375,7 +378,7 @@ object FreeModels {
         "x-preview-f-free",
     )
 
-    /** The "opencode" member of the guest config's "provider" object: the curated model picker. */
+    /** The "opencode" member of the guest config's v2 "providers" object: the curated model picker. */
     fun providerBlock(): String = guestPicker()
 
     /** The curated model picker itself. */
