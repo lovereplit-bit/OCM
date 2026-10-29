@@ -10,14 +10,13 @@ import java.security.SecureRandom
 data class Profile(
     val id: String,
     val name: String,
-    /** The Console account (usually a Google address) signed in to this profile, once known. */
-    val account: String?,
     val slot: Int,
     val createdAt: Long,
     /**
      * The profile's own Zen API key. When set, every model request of this profile is sent under this personal key
-     * (the server gets it as OPENCODE_API_KEY) instead of the world-shared anonymous token, so the profile has a
-     * quota of its own without a Console sign-in. Kept here because the profiles file lives in app-private storage.
+     * (the server gets it as OPENCODE_API_KEY), so the profile has a quota of its own. Without it the profile uses
+     * the anonymous free lane under its own install identity. Kept here because the profiles file lives in
+     * app-private storage.
      */
     val zenApiKey: String? = null,
     /**
@@ -27,7 +26,7 @@ data class Profile(
      */
     val port: Int = Profiles.BASE_PORT + slot,
 ) {
-    val title: String get() = account?.takeIf { it.isNotBlank() } ?: name
+    val title: String get() = name
 }
 
 /**
@@ -62,7 +61,7 @@ class Profiles(private val file: File, private val clock: () -> Long = System::c
 
         require(items.size < MAX_PROFILES) { "Too many profiles" }
 
-        val profile = Profile(newId(), name.trim().ifEmpty { "Profile ${items.size + 1}" }.take(40), null, slot, clock())
+        val profile = Profile(newId(), name.trim().ifEmpty { "Profile ${items.size + 1}" }.take(40), slot, clock())
 
         items += profile
         save()
@@ -72,10 +71,6 @@ class Profiles(private val file: File, private val clock: () -> Long = System::c
 
     fun rename(id: String, name: String) {
         update(id) { it.copy(name = name.trim().ifEmpty { it.name }.take(40)) }
-    }
-
-    fun setAccount(id: String, account: String?) {
-        update(id) { it.copy(account = account?.trim()?.takeIf { value -> value.isNotEmpty() }) }
     }
 
     /** Connects (or, with null, disconnects) the profile's own Zen API key. Takes effect on the next server start. */
@@ -129,7 +124,7 @@ class Profiles(private val file: File, private val clock: () -> Long = System::c
         items += list.distinctBy { it.id }.distinctBy { it.slot }
 
         if (items.isEmpty()) {
-            items += Profile(MAIN, "Main", null, 0, clock())
+            items += Profile(MAIN, "Main", 0, clock())
         }
 
         val wanted = root?.get("active") as? String
@@ -151,7 +146,6 @@ class Profiles(private val file: File, private val clock: () -> Long = System::c
         return Profile(
             id = id,
             name = (map["name"] as? String)?.takeIf { it.isNotBlank() } ?: id,
-            account = map["account"] as? String,
             slot = slot,
             createdAt = (map["createdAt"] as? Number)?.toLong() ?: 0L,
             port = port,
@@ -166,7 +160,6 @@ class Profiles(private val file: File, private val clock: () -> Long = System::c
             if (i > 0) out.append(',')
             out.append("{\"id\":").append(MiniJson.quote(p.id))
             out.append(",\"name\":").append(MiniJson.quote(p.name))
-            out.append(",\"account\":").append(if (p.account == null) "null" else MiniJson.quote(p.account))
             out.append(",\"zenApiKey\":").append(if (p.zenApiKey == null) "null" else MiniJson.quote(p.zenApiKey))
             out.append(",\"slot\":").append(p.slot)
             out.append(",\"port\":").append(p.port)

@@ -16,8 +16,8 @@ class EventWatcher(
     private val password: String,
     private val enabled: () -> Boolean,
     private val inForeground: () -> Boolean,
-    /** Whether the active profile runs its own Console account; separates personal limits from the shared bucket. */
-    private val hasAccount: () -> Boolean = { false },
+    /** Whether the active profile runs its own API key; separates personal limits from the free lane. */
+    private val hasKey: () -> Boolean = { false },
 ) {
     @Volatile
     private var running = false
@@ -114,9 +114,9 @@ class EventWatcher(
                 tr("OpenCode закончил работу. Откройте приложение, чтобы посмотреть результат.", "OpenCode has finished. Open the app to see the result."),
             )
             OcEvent.SESSION_FAILED -> {
-                // A quota failure gets its name said: the shared free bucket, a personal limit or a country block
-                // have different fixes, and "open the app to see what happened" hides which one applies.
-                val reason = QuotaSignal.decode(event.errorMessage.orEmpty(), event.errorType, hasAccount = hasAccount())
+                // A limit failure gets its name said: a personal key limit and the free lane's limit have
+                // different fixes, and "open the app to see what happened" hides which one applies.
+                val reason = QuotaSignal.decode(event.errorMessage.orEmpty(), event.errorType, hasKey = hasKey())
 
                 Notifier.activity(
                     context,

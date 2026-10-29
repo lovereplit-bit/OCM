@@ -15,7 +15,7 @@ object UiBus {
     @Volatile
     var bridgePort: Int = 0
 
-    /** Set by screens that change what the web UI shows (a new sign-in); the main screen reloads on return. */
+    /** Set by screens that change what the web UI shows (a new API key); the main screen reloads on return. */
     @Volatile
     var reloadRequested: Boolean = false
 }

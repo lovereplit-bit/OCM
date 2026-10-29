@@ -14,9 +14,8 @@ class ServerProcess(private val paths: Paths) {
     /** Where the server log stood when the running attempt started, so only that attempt is inspected on failure. */
     private var logMark: Long = 0
 
-    fun config(prefs: Prefs, profile: Profile, bridgeUrl: String, otaDir: File?, zenBypass: ZenBypass? = null): ProotConfig {
+    fun config(prefs: Prefs, profile: Profile, bridgeUrl: String, otaDir: File?): ProotConfig {
         val home = Profiles.homeDir(paths.profilesDir, profile)
-        val bypass = zenBypass?.takeIf { it.running() }
 
         return ProotConfig(
             prootBin = paths.prootBin,
@@ -35,9 +34,6 @@ class ServerProcess(private val paths: Paths) {
             timeZone = java.util.TimeZone.getDefault().id,
             otaBinDir = otaDir?.path,
             zenApiKey = profile.zenApiKey,
-            zenBypassUrl = bypass?.baseUrl,
-            zenBypassKey = bypass?.let { prefs.zenBypassKey },
-            consoleAccount = profile.account,
         )
     }
 

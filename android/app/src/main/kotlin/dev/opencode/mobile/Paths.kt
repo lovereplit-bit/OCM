@@ -25,9 +25,6 @@ class Paths(context: Context) {
 
     val profilesFile = File(files, "profiles.json")
 
-    /** The guest account store: one record per profile, the identity and its personal-account state. */
-    val guestsFile = File(files, "guests.json")
-
     val logs = File(files, "logs")
 
     val serverLog = File(logs, "server.log")

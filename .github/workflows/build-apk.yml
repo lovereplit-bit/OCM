@@ -142,15 +142,6 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq patchelf
           bash runtime/fetch-proot.sh out/jniLibs/arm64-v8a
 
-      - name: Zen bypass gateway (opencode2api, pinned)
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
-        with:
-          # Exact version: the gateway's sha256 pin follows the compiler too.
-          go-version: "1.24.13"
-
-      - name: Build the Zen bypass gateway
-        run: bash runtime/fetch-opencode2api.sh out/jniLibs/arm64-v8a
-
       - name: Build date
         id: seq
         run: echo "seq=$(date +%s)" >> "$GITHUB_OUTPUT"
@@ -263,7 +254,7 @@ jobs:
           echo "apk=$apk"
           # Read the listing once; matching it with grep -q in a loop is fragile and slow for a 250 MB APK.
           unzip -Z1 "$apk" > "$RUNNER_TEMP/apk-files.txt"
-          for want in assets/rootfs.tgz assets/rootfs.stamp assets/bridge.js lib/arm64-v8a/libproot.so lib/arm64-v8a/libproot-loader.so lib/arm64-v8a/libtalloc.so lib/arm64-v8a/libandroid-shmem.so lib/arm64-v8a/libopencode2api.so; do
+          for want in assets/rootfs.tgz assets/rootfs.stamp assets/bridge.js lib/arm64-v8a/libproot.so lib/arm64-v8a/libproot-loader.so lib/arm64-v8a/libtalloc.so lib/arm64-v8a/libandroid-shmem.so; do
             if grep -qxF "$want" "$RUNNER_TEMP/apk-files.txt"; then echo "ok: $want"; else echo "::error::missing from the APK: $want"; exit 1; fi
           done
           apksigner="$(ls "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/*/apksigner | sort -V | tail -1)"

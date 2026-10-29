@@ -21,14 +21,8 @@ data class ProotConfig(
     val locale: String = "C.UTF-8",
     /** Host directory holding an over-the-air runtime build (`opencode` inside); null runs the bundled one. */
     val otaBinDir: String? = null,
-    /** The profile's own Zen API key; null keeps the upstream default (the shared anonymous token). */
+    /** The profile's own Zen API key; null keeps the anonymous free lane. */
     val zenApiKey: String? = null,
-    /** The local Zen bypass gateway URL (http://127.0.0.1:<port>/v1); null talks to opencode.ai directly. */
-    val zenBypassUrl: String? = null,
-    /** The key the server presents to the bypass gateway; only read together with [zenBypassUrl]. */
-    val zenBypassKey: String? = null,
-    /** The Console account signed in to this profile; null means the profile rides as a guest. */
-    val consoleAccount: String? = null,
 )
 
 data class Launch(val command: List<String>, val env: Map<String, String>)
@@ -116,40 +110,30 @@ object ProotCommand {
         env["OPENCODE_ANDROID_TOKEN"] = c.bridgeToken
         env["BROWSER"] = "/usr/local/bin/android-open"
 
-        // The server config: instructions, plus the providers this profile rides. A profile without any
-        // credential of its own (no personal key, no Console sign-in) is a guest. A guest starts on a free Zen
-        // model only while the bypass gateway is really up: its WARP rotation keeps finding egress addresses
-        // whose shared daily quota is not spent yet. Without the gateway (the toggle is on by default, so
-        // this is the rare case where it could not start) a free Zen model goes straight into the
-        // world-shared bucket, which is drained around the clock, so the very first message of every guest
-        // would end in "quota exhausted". Then the guest starts on the keyless lane instead, which answers
-        // without any key or quota.
-        val guest = c.zenApiKey.isNullOrBlank() && c.consoleAccount.isNullOrBlank()
-        val bypassActive = !c.zenBypassUrl.isNullOrBlank() && !c.zenBypassKey.isNullOrBlank()
+        // The server config: instructions, plus the providers this profile rides. A profile without a key of
+        // its own is a guest. It starts on a free Zen model the anonymous lane really serves; its picker hides
+        // the free models upstream has removed or region-locked, and every paid one. There is no shared key and
+        // no shared gateway here: each install talks to opencode.ai under its own anonymous identity, so one
+        // phone's usage never spends another's.
+        val guest = c.zenApiKey.isNullOrBlank()
         val providers = ArrayList<String>()
 
-        if (!c.zenBypassUrl.isNullOrBlank() && !c.zenBypassKey.isNullOrBlank()) {
-            // The bypass gateway stands between the server and opencode.ai: the server talks to the gateway with
-            // the gateway's own local key (the personal key, if any, lives in the gateway's upstream key pool),
-            // and the provider override below moves the built-in Zen provider onto the loopback endpoint. On the
-            // guest line it also curates the picker: only models the anonymous lane can actually answer.
-            env["OPENCODE_API_KEY"] = c.zenBypassKey
-            providers += ZenBypassConfig.providerOverride(c.zenBypassUrl, guest)
-        } else if (!c.zenApiKey.isNullOrBlank()) {
-            // A personal Zen key of this profile: the server treats it as the profile's own credential and sends
-            // every model request under it instead of the world-shared anonymous token. Verified live on 2.1.4.
+        if (!c.zenApiKey.isNullOrBlank()) {
+            // A personal Zen key of this profile: the server sends every model request under it instead of the
+            // anonymous lane.
             env["OPENCODE_API_KEY"] = c.zenApiKey
+        } else {
+            // Curate the guest picker without moving the endpoint: the provider stays the official Zen one, so
+            // every model that stays visible can actually answer.
+            providers += FreeModels.providerBlock()
         }
 
-        // The keyless lane rides alongside everywhere: a working-key profile keeps its own quota as the default
-        // and can switch to it when the key misbehaves; a guest starts on it. It goes straight to the upstream
-        // from the phone and never through the bypass gateway.
+        // The keyless lane rides alongside everywhere: a guest can switch to it when the free Zen lane is spent,
+        // and a keyed profile keeps it as a fallback. It goes straight to the upstream and needs no key at all.
         providers += GuestFreeLane.providerBlock()
 
-        val guestModel = if (bypassActive) ZenBypassConfig.GUEST_DEFAULT_MODEL else GuestFreeLane.FALLBACK_MODEL
-
         env["OPENCODE_CONFIG_CONTENT"] =
-            GuestFreeLane.configContent(GUEST_INSTRUCTIONS, providers, guest, guestModel)
+            GuestFreeLane.configContent(GUEST_INSTRUCTIONS, providers, guest, FreeModels.GUEST_DEFAULT_MODEL)
 
         if (c.compat) {
             // Features that lean on native code or kernel interfaces Android may not allow.
@@ -207,11 +191,10 @@ object ProotCommand {
 
 /**
  * The keyless free lane: a config-declared provider that needs no credential at all, so a profile without a
- * personal key or a Console sign-in still has a model that answers even when the Zen free bucket runs dry. It
- * rides alongside everywhere as a manual fallback in the picker - the guest's default model itself is a free
- * Zen model now (see [ZenBypassConfig.GUEST_DEFAULT_MODEL]). Verified live through the real server on the 2.x
- * line: the declared provider is picked up, the config "model" default routes new sessions to it, and the
- * answer comes back streamed.
+ * personal key still has a model that answers even when the free Zen lane runs into a limit. It rides alongside
+ * everywhere as a manual fallback in the picker - a guest's default model itself is a free Zen model. Verified
+ * live through the real server on the 2.x line: the declared provider is picked up, the config "model" default
+ * routes new sessions to it, and the answer comes back streamed.
  */
 object GuestFreeLane {
     const val PROVIDER_ID = "pollinations"
@@ -221,14 +204,13 @@ object GuestFreeLane {
 
     /** The provider declaration as raw JSON inside the "provider" object (static values, nothing to escape). */
     fun providerBlock(): String =
-        "\"pollinations\":{\"npm\":\"@opencode/ai/providers/openai-compatible\",\"name\":\"Free (no key)\"," +
+        "\"pollinations\":{\"npm\":\"@ai-sdk/openai-compatible\",\"name\":\"Free (no key)\"," +
             "\"options\":{\"baseURL\":\"$BASE_URL\",\"apiKey\":\"public\"}," +
             "\"models\":{\"openai-fast\":{\"name\":\"GPT-OSS 20B\"}}}"
 
     /**
      * The whole OPENCODE_CONFIG_CONTENT value: instructions, the guest default model and the provider blocks.
-     * [defaultModel] is what a guest's new chats start on; it is the keyless lane unless the caller knows a
-     * free Zen model can really answer (the bypass gateway is up).
+     * [defaultModel] is what a guest's new chats start on; a profile with its own key has no forced model.
      */
     fun configContent(instructionsPath: String, providerBlocks: List<String>, guest: Boolean, defaultModel: String = FALLBACK_MODEL): String {
         val parts = ArrayList<String>()
@@ -242,21 +224,15 @@ object GuestFreeLane {
 }
 
 /**
- * The provider override the Zen bypass feeds the server through OPENCODE_CONFIG_CONTENT: the built-in Zen
- * provider keeps its model list from models.dev, but its requests move onto the local gateway. Verified live
- * on the 2.x line: with this block the server sends Bearer <OPENCODE_API_KEY> to <baseURL>/chat/completions.
- *
- * On the guest line (no personal key, no Console sign-in) the override also curates the model picker: new
- * chats start on a free Zen model the upstream gate still serves, and the models it does not - removed,
- * deprecated or paid ones - are disabled, so every model the picker offers can actually answer. Probed live
- * on 2026-10-28: the gate answers 400-unavailable for 33 free models it removed, 410 for 2 deprecated ones,
- * 403 RegionError for 4 geo-limited ones (those stay: the gateway rotates WARP exits on 403 too, so an exit
- * in a served country gets through), and quota-limits the 7 it serves. Paid models have no credential on the
- * anonymous lane at all. Regenerate the lists when the upstream gate changes.
+ * The curated free-model picker a guest gets through OPENCODE_CONFIG_CONTENT. The built-in Zen provider stays
+ * exactly where it is - no base URL override, no local gateway - so each install talks to opencode.ai under its
+ * own anonymous identity. New chats start on a free Zen model that the anonymous lane really serves today, and
+ * the models it does not - removed, deprecated, paid or region-locked - are disabled, so every model the picker
+ * offers can actually answer. Probed live on 2026-10-28. Regenerate the lists when upstream changes.
  */
-object ZenBypassConfig {
-    /** The model new guest chats start on: a free Zen model the anonymous gate still serves. */
-    const val GUEST_DEFAULT_MODEL = "opencode/glm-5.3-flash-free"
+object FreeModels {
+    /** The model new guest chats start on: a free Zen model the anonymous lane answers today (verified 2026-10-28). */
+    const val GUEST_DEFAULT_MODEL = "opencode/big-pickle"
 
     /** Free models the anonymous gate answered on the 2026-10-28 probe (the geo-limited four included). */
     val guestFreeModels = listOf(
@@ -399,15 +375,14 @@ object ZenBypassConfig {
         "x-preview-f-free",
     )
 
-    /** The "opencode" member of the config's "provider" object; [guest] adds the curated picker. */
-    fun providerOverride(baseURL: String, guest: Boolean): String {
-        val options = "\"options\":{\"baseURL\":${MiniJson.quote(baseURL)}}"
+    /** The "opencode" member of the guest config's "provider" object: the curated model picker. */
+    fun providerBlock(): String = guestPicker()
 
-        if (!guest) return "\"opencode\":{$options}"
-
+    /** The curated model picker itself. */
+    fun guestPicker(): String {
         val disabled = guestHidden.sorted().joinToString(",") { "\"$it\":{\"disabled\":true}" }
 
-        return "\"opencode\":{$options,\"models\":{$disabled}}"
+        return "\"opencode\":{\"models\":{$disabled}}"
     }
 }
 

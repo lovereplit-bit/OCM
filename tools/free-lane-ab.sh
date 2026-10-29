@@ -158,9 +158,9 @@ elif [ "$r1" = OK ] && [ "$r2a" != OK ] && [ "$r2b" = OK ]; then
 elif [ "$r1" = OK ] && [ "$r2a" != OK ] && [ "$r2b" != OK ]; then
   verdict="only the official 1.x answers from this network: the free lane depends on the client version, so the server needs the 1.x runtime."
 elif [ "$r1" = OK ]; then
-  verdict="1.x and 2.x both answer from this network: the bundled server is fine, look at the app's config (default model, gateway, keys)."
+  verdict="1.x and 2.x both answer from this network: the bundled server is fine, look at the app's config (default model, keys)."
 elif [ "$r1" = server_free_limit ] && [ "$r2a" = server_free_limit ] && [ "$r2b" = server_free_limit ]; then
-  verdict="every client gets the free-limit answer: the shared bucket is empty right now and no client change helps. Use a Console account, a personal key or the keyless lane."
+  verdict="every client gets the free-limit answer: the free lane is empty right now and no client change helps. Use another free model, the keyless lane, or a personal key."
 else
   verdict="inconclusive ($r1 / $r2a / $r2b): read the outputs below."
 fi

@@ -95,11 +95,6 @@ check "web interface looks like a page" grep -qi '<html' "$work/page.html"
 curl -s -N -D "$work/sse.headers" -o /dev/null --max-time 4 -u "$auth" "$base/api/event" || true
 check "event stream opens" bash -c "head -1 '$work/sse.headers' | grep -q ' 200' && grep -qi '^content-type: *text/event-stream' '$work/sse.headers'"
 
-# Sign-in with a Console account (device code flow) needs these routes to exist.
-integration="$(status -u "$auth" "$base/api/integration/opencode" || true)"
-if [ "$integration" = 404 ]; then integration="$(status -u "$auth" "$base/api/integration" || true)"; fi
-if [ "$integration" = 200 ]; then pass "console integration is listed"; else fail "console integration is listed (HTTP $integration)"; fi
-
 # Where the app looks for data to back up before an update.
 check "data directory is where the app expects" test -d "$work/home/.local/share/opencode"
 if ls "$work/home/.local/share/opencode"/*.db >/dev/null 2>&1; then pass "database file is created"; else warn "no .db file yet (created on first use?)"; fi

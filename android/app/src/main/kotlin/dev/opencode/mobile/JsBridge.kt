@@ -45,34 +45,24 @@ class JsBridge(private val activity: MainActivity) {
     }
 
     /**
-     * True when this profile itself runs on a personal credential - a Console account or the profile's own
-     * API key - so the web UI must not offer the sign-in again under a limit error. Strictly per profile: the
-     * old global "signed in once on this install" flag made every other profile claim a personal quota it did
-     * not have. Read on the WebView's thread: both sources are cheap.
+     * True when the active profile runs on its own API key. Lets the web UI word a limit error correctly: a key's
+     * limit is personal, the free lane's limit is fixed by switching models or adding a key.
      */
     @JavascriptInterface
-    fun hasAccount(): Boolean {
+    fun hasKey(): Boolean {
         val app = activity.applicationContext as App
 
-        return app.guest.isPersonal(app.profiles.active.id) || app.profiles.active.account != null
+        return !app.profiles.active.zenApiKey.isNullOrBlank()
     }
 
-    /**
-     * The guest-account state of the active profile: `personal` when it runs its own Console account or API
-     * key, `anonymous` while its requests fall into the world-shared free bucket. Lets the page name the real
-     * reason under a limit error instead of guessing. Older app builds without the method read as `anonymous`.
-     */
+    /** The limit offer shown instead of a raw quota error opens the native API-key dialog. */
     @JavascriptInterface
-    fun guestState(): String = if (hasAccount()) "personal" else "anonymous"
-
-    /** The sign-in offer shown instead of a raw quota error opens the native sign-in screen. */
-    @JavascriptInterface
-    fun openLogin() {
+    fun openApiKey() {
         activity.runOnUiThread {
             try {
-                activity.startActivity(android.content.Intent(activity, LoginActivity::class.java))
+                ApiKey.ask(activity)
             } catch (e: Exception) {
-                Log.w("bridge", "could not open the sign-in: ${e.message}")
+                Log.w("bridge", "could not open the API-key dialog: ${e.message}")
             }
         }
     }

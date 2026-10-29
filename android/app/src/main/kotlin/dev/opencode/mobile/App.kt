@@ -15,16 +15,10 @@ class App : Application() {
     lateinit var profiles: Profiles
         private set
 
-    lateinit var guest: GuestAccounts
-        private set
-
     lateinit var runtime: RuntimeInstaller
         private set
 
     lateinit var ota: OtaManager
-        private set
-
-    lateinit var zenBypass: ZenBypass
         private set
 
     private var started = 0
@@ -52,14 +46,10 @@ class App : Application() {
         prefs = Prefs(this)
         Log.setStage("Application.onCreate: loading profiles")
         profiles = Profiles(paths.profilesFile)
-        Log.setStage("Application.onCreate: loading guest accounts")
-        guest = GuestAccounts(paths.guestsFile)
         Log.setStage("Application.onCreate: initializing runtime installer")
         runtime = RuntimeInstaller(this, paths)
         Log.setStage("Application.onCreate: initializing OTA state")
         ota = OtaManager(this, paths, prefs)
-        Log.setStage("Application.onCreate: initializing the Zen bypass gateway")
-        zenBypass = ZenBypass(this, prefs)
         // A device with a broken notification service must still let the app open; startForeground failures are
         // handled where they happen.
         Log.setStage("Application.onCreate: initializing notifications")
@@ -85,55 +75,6 @@ class App : Application() {
         } else {
             runCatching { java.io.File("/proc/self/cmdline").readText().trim('\u0000') }.getOrDefault("")
         }
-
-    /**
-     * Reads the signed-in Console account from the running server and records it as the active profile's name.
-     *
-     * The lookup is careful in both directions. While the server warms up its registry it answers without the
-     * integration; treating that as "nobody is signed in" once wiped the account name and put a just-signed-in
-     * profile back onto the shared bucket, so every limit error then claimed the person had no account (fresh
-     * Console accounts included). The saved state may only change when the lookup itself has completed.
-     */
-    fun syncAccountAsync() {
-        val snap = ServerState.snapshot
-
-        if (snap.phase != Phase.RUNNING || snap.profileId.isEmpty() || prefs.remote) return
-
-        Thread({
-            runCatching {
-                repeat(3) {
-                    try {
-                        // A short warmup: the sync is background work, so it must not hold a thread for minutes
-                        // waiting for the plugin activation. If it is still warming up, the next onResume sync
-                        // finds the integration already registered and reads the account.
-                        val login = ConsoleLogin(HttpTransport(snap.baseUrl, prefs.password), warmupAttempts = 3)
-                        val info = login.info() ?: return@Thread
-
-                        val accounts = login.signedInAccounts(info)
-
-                        if (accounts.isNotEmpty()) {
-                            // The integration is registered and stores a sign-in: name the profile after it.
-                            profiles.setAccount(snap.profileId, accounts.first().label)
-                            prefs.signedIn = true
-                            // The profile runs on its own Console account now: its quota is its own, not the
-                            // world-shared anonymous bucket.
-                            guest.markPersonal(snap.profileId, accounts.first().label)
-                        } else {
-                            // The integration answered with no stored sign-in: a fact (a real sign-out),
-                            // not a warm-up race, so it is safe to record.
-                            profiles.setAccount(snap.profileId, null)
-                            guest.markAnonymous(snap.profileId)
-                        }
-
-                        return@Thread
-                    } catch (e: Exception) {
-                        Log.w("account", "sync failed: ${e.message}")
-                        Thread.sleep(3000)
-                    }
-                }
-            }
-        }, "account-sync").apply { isDaemon = true; start() }
-    }
 
     companion object {
         lateinit var instance: App

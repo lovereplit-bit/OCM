@@ -249,40 +249,29 @@
   (document.head || document.documentElement).appendChild(composerStyle);
   // Limit and rate-limit answers come from the provider and are shown exactly as received: this script never
   // rewrites an error. Under the error block it only adds a short hint (data-oc-hint) that names the real cause
-  // and offers the app's own sign-in. The scan skips the hint itself, so the hint can never feed back into it.
-  // The wording mirrors what OpenCode Zen actually sends (verified live, October 2026): "FreeUsageLimitError" on
-  // the world-shared anonymous bucket, "RegionError - not available in your country", plain rate limits, and the
-  // personal-account limits.
+  // and offers a personal API key. The scan skips the hint itself, so the hint can never feed back into it.
+  // The wording mirrors what OpenCode Zen actually sends (verified live, October 2026): "FreeUsageLimitError",
+  // "RegionError - not available in your country" and plain rate limits.
   var QUOTA = /(rate[\s_-]?limit(?:ed)?|too\s+many\s+requests|(?:status|code|http)\s*:?\s*429\b|insufficient[_ ]?quota|quota\s*(?:exceeded|exhausted|has been exceeded|will run out|is exhausted)|exceeded\s+your\s+current\s+quota|exceeded\s*(?:your|the|its)?\s*(?:usage|quota|free)|plan\s+and\s+billing|(?:free|usage|request)\s*(?:quota|limit)|usage[\s_-]?limit|free[\s_-]?(?:usage|tier)|freeusagelimit|gousagelimit|creditlimit|(?:credit|credits?|tokens?)\s*(?:exhausted|used up)|(?:^|[^\u0400-\u04ff])\u043a\u0432\u043e\u0442[\u0400-\u04ff]*\s*(?:\u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d[\u0400-\u04ff]*|\u043f\u0440\u0435\u0432\u044b\u0448\u0435\u043d[\u0400-\u04ff]*|\u0437\u0430\u043a\u043e\u043d\u0447\u0438\u043b[\u0400-\u04ff]*)|(?:^|[^\u0400-\u04ff])\u043b\u0438\u043c\u0438\u0442[\u0400-\u04ff]*\s*(?:\u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d[\u0400-\u04ff]*|\u043f\u0440\u0435\u0432\u044b\u0448\u0435\u043d[\u0400-\u04ff]*|\u0437\u0430\u043a\u043e\u043d\u0447\u0438\u043b[\u0400-\u04ff]*)|(?:\u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d[\u0400-\u04ff]*|\u0437\u0430\u043a\u043e\u043d\u0447\u0438\u043b[\u0400-\u04ff]*)\s*(?:\u043b\u0438\u043c\u0438\u0442[\u0400-\u04ff]*|\u043a\u0432\u043e\u0442[\u0400-\u04ff]*))/i;
   var REGION = /(regionerror|not\s+available\s+in\s+your\s+country|\u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0430\s+\u0432\s+\u0432\u0430\u0448\u0435\u0439\s+\u0441\u0442\u0440\u0430\u043d\u0435)/i;
   var quotaHandled = new WeakSet();
 
-  // The sign-in offer only makes sense when this profile has no Console account yet; the native side knows the
-  // state and the page cannot see it. Older app builds without the method read as "no account".
-  function hasAccount() {
+  // Whether this profile already runs on its own API key: the native side knows, the page cannot see it.
+  // Older app builds without the method read as "no key", which only offers the key dialog a little too eagerly.
+  function hasKey() {
     try {
-      return !!(native.hasAccount && native.hasAccount());
+      return !!(native.hasKey && native.hasKey());
     } catch (e) {
       return false;
     }
   }
 
-  // `personal` once the profile runs its own Console account, `anonymous` while its requests fall into the
-  // world-shared free bucket. Older app builds without the method read as "anonymous".
-  function guestState() {
-    try {
-      return (native.guestState && native.guestState()) || "anonymous";
-    } catch (e) {
-      return "anonymous";
-    }
-  }
-
-  function makeSignInButton(isRussian) {
+  function makeKeyButton(isRussian) {
     var button = document.createElement("button");
 
     button.type = "button";
-    button.setAttribute("data-oc-signin", "1");
-    button.textContent = isRussian ? "\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0430\u043a\u043a\u0430\u0443\u043d\u0442 \u0438\u043b\u0438 \u043a\u043b\u044e\u0447" : "Connect account or key";
+    button.setAttribute("data-oc-key", "1");
+    button.textContent = isRussian ? "\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0441\u0432\u043e\u0439 API-\u043a\u043b\u044e\u0447" : "Connect your API key";
     button.style.cssText =
       "display:inline-block;margin:10px 0 2px;padding:10px 22px;border:0;border-radius:12px;" +
       "background:#161616;color:#fafafa;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer";
@@ -294,7 +283,7 @@
         event.stopPropagation();
 
         try {
-          native.openLogin();
+          native.openApiKey();
         } catch (e) {}
       },
       true,
@@ -317,31 +306,30 @@
     return !!host.closest('[role="alert"], [class*="error"], [class*="Error"], [data-error], [class*="danger"]');
   }
 
-  // The hint names the real cause. Verified against the live gateway (October 2026): the anonymous free capacity
-  // is ONE bucket shared by every OpenCode user in the world - not per IP, not per install - so without an account
-  // the honest answer is "the shared bucket is spent; a personal account is the only way to a quota of your own".
+  // The hint names the real cause. The app ships no shared credential or account, so the free lane's limit is the
+  // provider's own: another free model or a personal API key is the way out.
   function makeHint(errorText) {
     var isRussian = (document.documentElement.lang || navigator.language || "").toLowerCase().indexOf("ru") === 0;
     var text = errorText || "";
-    var personal = hasAccount() || guestState() === "personal";
+    var personal = hasKey();
     var box = document.createElement("div");
     var line = document.createElement("div");
     var body;
 
     if (REGION.test(text)) {
       body = isRussian
-        ? "\u041c\u043e\u0434\u0435\u043b\u044c \u043d\u0435 \u043e\u0431\u0441\u043b\u0443\u0436\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u0432 \u0432\u0430\u0448\u0435\u0439 \u0441\u0442\u0440\u0430\u043d\u0435 - \u044d\u0442\u043e \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430, \u0430\u043a\u043a\u0430\u0443\u043d\u0442 \u0435\u0433\u043e \u043d\u0435 \u0441\u043d\u0438\u043c\u0430\u0435\u0442. \u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044e \u043c\u043e\u0434\u0435\u043b\u044c."
-        : "The model is not served in your country - a server-side restriction no account removes. Pick another model.";
+        ? "\u041c\u043e\u0434\u0435\u043b\u044c \u043d\u0435 \u043e\u0431\u0441\u043b\u0443\u0436\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u0432 \u0432\u0430\u0448\u0435\u0439 \u0441\u0442\u0440\u0430\u043d\u0435 \u2014 \u044d\u0442\u043e \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u0435 \u0441\u0435\u0440\u0432\u0435\u0440\u0430, \u043a\u043b\u044e\u0447 \u0435\u0433\u043e \u043d\u0435 \u0441\u043d\u0438\u043c\u0430\u0435\u0442. \u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044e \u043c\u043e\u0434\u0435\u043b\u044c."
+        : "The model is not served in your country - a server-side restriction no key removes. Pick another model.";
     } else if (/freeusagelimit|free\s+usage|free[\s_-]?(?:usage|tier)/i.test(text)) {
-      // The same free-usage error means different things for the two guest states: the world-shared bucket for an
-      // anonymous profile, the personal allowance for one that runs its own account.
+      // The same free-usage error means different things: the free lane's limit for a profile without a key,
+      // the key's own allowance for one that runs on a personal key.
       body = personal
         ? (isRussian
-            ? "\u042d\u0442\u043e \u043b\u0438\u043c\u0438\u0442 \u0432\u0430\u0448\u0435\u0433\u043e \u043b\u0438\u0447\u043d\u043e\u0433\u043e \u0430\u043a\u043a\u0430\u0443\u043d\u0442\u0430, \u0430 \u043d\u0435 \u043e\u0431\u0449\u0438\u0439. \u041f\u043e\u0434\u043e\u0436\u0434\u0438\u0442\u0435 \u0441\u0431\u0440\u043e\u0441\u0430, \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044e \u043c\u043e\u0434\u0435\u043b\u044c \u0438\u043b\u0438 \u043f\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435 \u043f\u043b\u0430\u043d \u0432 OpenCode."
-            : "This is your personal account's limit, not the shared one. Wait for the reset, pick another model, or top up your OpenCode plan.")
+            ? "\u042d\u0442\u043e \u043b\u0438\u043c\u0438\u0442 \u0432\u0430\u0448\u0435\u0433\u043e API-\u043a\u043b\u044e\u0447\u0430. \u041f\u043e\u0434\u043e\u0436\u0434\u0438\u0442\u0435 \u0441\u0431\u0440\u043e\u0441\u0430 \u0438\u043b\u0438 \u043f\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435 \u043f\u043b\u0430\u043d \u0432 OpenCode."
+            : "This is your API key's limit. Wait for the reset, pick another model, or top up your OpenCode plan.")
         : (isRussian
-            ? "\u0411\u0435\u0437 \u0441\u0432\u043e\u0435\u0433\u043e \u043a\u043b\u044e\u0447\u0430 \u0431\u0435\u0441\u043f\u043b\u0430\u0442\u043d\u044b\u0435 \u043c\u043e\u0434\u0435\u043b\u0438 - \u043e\u0431\u0449\u0438\u0439 \u043b\u0438\u043c\u0438\u0442 \u043d\u0430 \u0432\u0441\u0435\u0445 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u0439 OpenCode \u0432 \u043c\u0438\u0440\u0435, \u0438 \u043e\u043d \u043e\u0431\u044b\u0447\u043d\u043e \u0443\u0436\u0435 \u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d. \u0421\u0432\u043e\u0439 \u043b\u0438\u043c\u0438\u0442 \u0434\u0430\u0451\u0442 \u043b\u0438\u0447\u043d\u044b\u0439 \u0430\u043a\u043a\u0430\u0443\u043d\u0442 \u0438\u043b\u0438 \u043f\u0435\u0440\u0441\u043e\u043d\u0430\u043b\u044c\u043d\u044b\u0439 API-\u043a\u043b\u044e\u0447: \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u0435 \u043b\u044e\u0431\u043e\u0439 \u043a\u043d\u043e\u043f\u043a\u043e\u0439 \u043d\u0438\u0436\u0435."
-            : "Without a key of your own the free models share one limit across all OpenCode users worldwide, and it is usually spent already. A personal account or a personal API key brings a limit of your own: connect either with the button below.");
+            ? "\u041b\u0438\u043c\u0438\u0442 \u0431\u0435\u0441\u043f\u043b\u0430\u0442\u043d\u043e\u0439 \u043c\u043e\u0434\u0435\u043b\u0438 \u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d. \u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044e \u0431\u0435\u0441\u043f\u043b\u0430\u0442\u043d\u0443\u044e \u043c\u043e\u0434\u0435\u043b\u044c \u0432 \u0441\u043f\u0438\u0441\u043a\u0435 \u0438\u043b\u0438 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u0435 \u0441\u0432\u043e\u0439 API-\u043a\u043b\u044e\u0447 \u2014 \u0442\u043e\u0433\u0434\u0430 \u0437\u0430\u043f\u0440\u043e\u0441\u044b \u043f\u043e\u0439\u0434\u0443\u0442 \u043f\u043e\u0434 \u0432\u0430\u0448\u0438\u043c \u043b\u0438\u043c\u0438\u0442\u043e\u043c."
+            : "The free model's limit is spent. Pick another free model in the list, or connect your own API key so requests run under your personal limit.");
     } else {
       body = isRussian
         ? "\u0421\u043b\u0438\u0448\u043a\u043e\u043c \u043c\u043d\u043e\u0433\u043e \u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432 \u043f\u043e\u0434\u0440\u044f\u0434. \u041f\u043e\u0434\u043e\u0436\u0434\u0438\u0442\u0435 \u043d\u0435\u043c\u043d\u043e\u0433\u043e \u0438 \u043f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u0441\u043d\u043e\u0432\u0430, \u043b\u0438\u0431\u043e \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0440\u0443\u0433\u0443\u044e \u043c\u043e\u0434\u0435\u043b\u044c."
@@ -355,13 +343,13 @@
     line.textContent = body;
     box.appendChild(line);
 
-    // A profile on its own account has nothing to connect: offering the sign-in again would only confuse.
-    if (!personal) box.appendChild(makeSignInButton(isRussian));
+    // A profile on its own key has nothing to connect: offering the key dialog again would only confuse.
+    if (!personal) box.appendChild(makeKeyButton(isRussian));
 
     return box;
   }
 
-  function offerSignIn(node) {
+  function offerKey(node) {
     var text = node.nodeValue || "";
 
     if (!text || text.length > 400 || !QUOTA.test(text)) return;
@@ -413,7 +401,7 @@
 
       while (current && left > 0) {
         left--;
-        offerSignIn(current);
+        offerKey(current);
         current = walker.nextNode();
       }
     } catch (e) {}

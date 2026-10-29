@@ -135,8 +135,6 @@ class MainActivity : Activity(), UiHost {
 
             if (snap.phase == Phase.RUNNING) web.open(snap.baseUrl, currentPassword())
         }
-
-        app.syncAccountAsync()
     }
 
     override fun onStop() {
@@ -213,11 +211,8 @@ class MainActivity : Activity(), UiHost {
     }
 
     /**
-     * Prompts shown once. The battery one keeps the server alive; the guest-account one walks every new profile to
-     * a personal Console account, because the anonymous free capacity of the gateway is one bucket shared by every
-     * OpenCode user in the world and is usually spent already - only a personal account brings a quota of one's own.
-     * The drive opens the sign-in screen once (it mints the code itself and can be skipped with one tap); it never
-     * blocks the first launch and never repeats after that.
+     * Prompts shown once. The battery one keeps the server alive. There is no sign-in prompt: the app answers
+     * out of the box on the free models, and a personal API key is an optional upgrade offered in the menu.
      */
     private fun firstRun() {
         if (!app.prefs.seen("battery") && !Permissions.batteryUnrestricted(this)) {
@@ -231,14 +226,6 @@ class MainActivity : Activity(), UiHost {
                 ),
                 tr("Разрешить", "Allow"),
             ) { Permissions.requestBatteryUnrestricted(this) }
-        }
-
-        val profile = app.profiles.active
-
-        if (!app.prefs.seen("guest_drive") && !app.guest.isPersonal(profile.id) && !app.prefs.remote) {
-            app.prefs.markSeen("guest_drive")
-            app.guest.identity(profile.id)
-            startActivity(android.content.Intent(this, LoginActivity::class.java))
         }
     }
 
@@ -511,37 +498,13 @@ class MainActivity : Activity(), UiHost {
 
         items += tr("Профиль: ", "Profile: ") + profileTitle to { chooseProfile() }
 
-        val account = app.profiles.active.account
-
-        when {
-            !account.isNullOrBlank() ->
-                items += tr("Аккаунт: ", "Account: ") + account to { startActivity(Intent(this, SettingsActivity::class.java)) }
-            // A profile on its own pasted key is on a personal quota already: offering a sign-in would only confuse.
-            app.profiles.active.zenApiKey != null ->
-                items += tr("Личный API-ключ подключён", "Personal API key connected") to { startActivity(Intent(this, SettingsActivity::class.java)) }
-            else ->
-                items += tr("Войти через Google", "Sign in with Google") to { startActivity(Intent(this, LoginActivity::class.java)) }
-        }
-
-        // A direct entrance to the profile's own key right from the menu: no detour through settings or the login
-        // screen, and it works even when a Console account is already connected (the key and the account coexist).
+        // A profile on its own pasted key has a personal quota; a profile without one rides the free lane.
+        // There is nothing to sign into: the key is the only credential, and it is optional.
         items +=
             (
                 if (app.profiles.active.zenApiKey != null) tr("Сменить личный API-ключ", "Change the personal API key")
                 else tr("Подключить личный API-ключ", "Connect a personal API key")
             ) to { ApiKey.ask(this) }
-
-        // The Zen bypass: a local gateway that serves free models through the anonymous credential and, when its
-        // WARP tunnel is on, rotates the exit address on rate limits, so one burnt-through IP stops mattering.
-        items += zenBypassLabel() to { toggleZenBypass() }
-
-        if (app.prefs.zenBypass) {
-            items +=
-                (
-                    if (app.prefs.zenBypassWarp) tr("WARP туннеля обхода: включён", "Bypass WARP tunnel: on")
-                    else tr("WARP туннеля обхода: выключен", "Bypass WARP tunnel: off")
-                ) to { toggleZenWarp() }
-        }
 
         items += tr("Открыть адрес в окне предпросмотра", "Open an address in a preview window") to {
             Ui.input(this, tr("Адрес или порт", "Address or port"), "localhost:5173") { value -> if (value.isNotEmpty()) showPreview(value) }
@@ -559,49 +522,11 @@ class MainActivity : Activity(), UiHost {
         Ui.choose(this, "OpenCode", items.map { it.first }) { items[it].second() }
     }
 
-    private fun zenBypassLabel(): String {
-        if (!app.prefs.zenBypass) return tr("Zen-обход: выключен", "Zen bypass: off")
-
-        val state = when {
-            app.zenBypass.running() -> tr("работает", "running")
-            app.zenBypass.binary() != null -> tr("готов", "ready")
-            else -> tr("нет в этой сборке", "not in this build")
-        }
-
-        // Whether the gateway serves this profile under its own key or anonymously matters: upstream may reject
-        // the shared anonymous credential outright from some regions, so the label says which lane is live.
-        val lane =
-            if (app.profiles.active.zenApiKey != null) tr("личный ключ", "personal key")
-            else tr("анонимно", "anonymous")
-
-        return tr("Zen-обход: включён, ", "Zen bypass: on, ") + state + " (" + lane + ")"
-    }
-
-    private fun toggleZenBypass() {
-        app.prefs.zenBypass = !app.prefs.zenBypass
-        Ui.toast(
-            this,
-            if (app.prefs.zenBypass) tr("Zen-обход включён, сервер перезапустится", "Zen bypass on, the server will restart")
-            else tr("Zen-обход выключен, сервер перезапустится", "Zen bypass off, the server will restart"),
-        )
-        ServerService.send(this, ServerService.ACTION_RESTART)
-    }
-
-    private fun toggleZenWarp() {
-        app.prefs.zenBypassWarp = !app.prefs.zenBypassWarp
-        Ui.toast(
-            this,
-            if (app.prefs.zenBypassWarp) tr("WARP включён: выходы будут меняться при лимитах", "WARP on: exits will rotate on rate limits")
-            else tr("WARP выключен: обход идёт с текущего адреса", "WARP off: the bypass uses the current address"),
-        )
-        ServerService.send(this, ServerService.ACTION_RESTART)
-    }
-
     private fun chooseProfile() {
         val list = app.profiles.all
         val labels = list.map { (if (it.id == app.profiles.active.id) "• " else "   ") + it.title }.toMutableList()
 
-        labels += tr("Профили и вход через Google...", "Profiles and Google sign-in...")
+        labels += tr("Профили...", "Profiles...")
 
         Ui.choose(this, tr("Профили", "Profiles"), labels) { index ->
             if (index == list.size) {

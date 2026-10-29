@@ -56,38 +56,8 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("floating_menu", true)
         set(value) = sp.edit().putBoolean("floating_menu", value).apply()
 
-    /**
-     * Zen bypass: serve the bundled server's model requests from a local gateway (opencode2api) instead of
-     * opencode.ai directly. Free models go through the anonymous "public" credential, optionally inside a
-     * userspace Cloudflare WARP tunnel whose exit rotates, so a burnt-through IP stops mattering.
-     *
-     * On by default: a guest's default model is a free Zen model, and the world-shared anonymous bucket
-     * answers only when the gateway can rotate egress addresses (WARP). Without the gateway every guest's
-     * first message ends in the drained shared bucket's "quota exhausted". When the gateway cannot start,
-     * ServerProcess simply omits its override and the guest rides the keyless lane instead - the toggle's
-     * failure mode is a model change, never a dead chat.
-     */
-    var zenBypass: Boolean
-        get() = sp.getBoolean("zen_bypass", true)
-        set(value) = sp.edit().putBoolean("zen_bypass", value).apply()
-
-    /** Whether the gateway's free lane leaves through its own WARP tunnel (needs outbound UDP to work). */
-    var zenBypassWarp: Boolean
-        get() = sp.getBoolean("zen_bypass_warp", true)
-        set(value) = sp.edit().putBoolean("zen_bypass_warp", value).apply()
-
-    /** The loopback port the gateway listens on. 0 until the first start picked a free one. */
-    var zenBypassPort: Int
-        get() = sp.getInt("zen_bypass_port", 0)
-        set(value) = sp.edit().putInt("zen_bypass_port", value).apply()
-
     /** One-time prompts: true once [key] has been shown. */
     fun seen(key: String) = sp.getBoolean("seen_$key", false)
-
-    /** True once the person has signed in with a Google account on the first launch. */
-    var signedIn: Boolean
-        get() = sp.getBoolean("signed_in", false)
-        set(value) = sp.edit().putBoolean("signed_in", value).apply()
 
     fun markSeen(key: String) = sp.edit().putBoolean("seen_$key", true).apply()
 
@@ -102,9 +72,6 @@ class Prefs(context: Context) {
 
     /** The token commands in the Linux environment present to the app's loopback bridge. */
     val bridgeToken: String get() = secret("bridge_token", 16)
-
-    /** The local key the bundled server presents to the Zen bypass gateway on 127.0.0.1. */
-    val zenBypassKey: String get() = secret("zen_bypass_key", 16)
 
     private fun secret(key: String, bytes: Int): String {
         sp.getString(key, null)?.let { return it }

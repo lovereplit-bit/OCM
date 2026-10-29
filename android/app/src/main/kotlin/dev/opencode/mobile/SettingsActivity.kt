@@ -1,7 +1,6 @@
 package dev.opencode.mobile
 
 import android.app.Activity
-import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -15,7 +14,7 @@ import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
-/** Native settings: profiles and sign-in, server, updates, permissions, diagnostics. */
+/** Native settings: profiles and keys, server, updates, permissions, diagnostics. */
 class SettingsActivity : Activity() {
     private val app: App get() = application as App
     private lateinit var palette: Palette
@@ -132,15 +131,15 @@ class SettingsActivity : Activity() {
     }
 
     private fun profilesSection() {
-        val card = section(tr("Профили и вход", "Profiles and sign-in"))
+        val card = section(tr("Профили", "Profiles"))
         val active = app.profiles.active
 
         card.addView(
             Ui.text(
                 this,
                 tr(
-                    "Каждый профиль хранит свои сессии, ключи, коннекторы и плагины отдельно. Обычно профиль соответствует одному аккаунту Google.",
-                    "Each profile keeps its own sessions, keys, connectors and plugins. A profile usually matches one Google account.",
+                    "Каждый профиль хранит свои сессии, ключи, коннекторы и плагины отдельно. Вход не нужен: без ключа профиль работает на бесплатных моделях, а свой ключ можно добавить в любой момент.",
+                    "Each profile keeps its own sessions, keys, connectors and plugins. No sign-in is needed: without a key a profile runs on the free models, and a personal key can be added at any time.",
                 ),
                 12f,
                 palette.muted,
@@ -151,13 +150,9 @@ class SettingsActivity : Activity() {
         for (profile in app.profiles.all) {
             val current = profile.id == active.id && !app.prefs.remote
             val badge = if (current) state(tr("Активен", "Active"), true) else null
-            // The subtitle must tell how this profile reaches its personal quota: an account, a pasted key,
-            // or neither. A key-connected profile used to read "no account connected".
-            val subtitle = when {
-                profile.account != null -> profile.name
-                profile.zenApiKey != null -> tr("Личный API-ключ подключён", "Personal API key connected")
-                else -> tr("Аккаунт не подключён", "No account connected")
-            }
+            val subtitle =
+                if (profile.zenApiKey != null) tr("Личный API-ключ подключён", "Personal API key connected")
+                else tr("Бесплатный режим, ключ не нужен", "Free mode, no key needed")
 
             card.line(profile.title, subtitle, badge) {
                 profileMenu(profile)
@@ -166,9 +161,6 @@ class SettingsActivity : Activity() {
 
         card.divide()
         card.action(tr("Добавить профиль", "Add a profile"), primary = true) { addProfile() }
-        card.action(tr("Добавить ещё один аккаунт в этот профиль", "Add another account to this profile")) {
-            startActivity(Intent(this, LoginActivity::class.java))
-        }
     }
 
     private fun profileMenu(profile: Profile) {
@@ -177,12 +169,8 @@ class SettingsActivity : Activity() {
 
         if (!isActive) items += tr("Переключиться", "Switch to it") to { switchTo(profile) }
 
-        items += tr("Войти через Google в этом профиле", "Sign in with Google in this profile") to {
-            if (isActive) startActivity(Intent(this, LoginActivity::class.java)) else switchTo(profile, thenLogin = true)
-        }
-
         if (isActive) {
-            // The profile's own key right from the profile menu: connect, change or drop it without the login screen.
+            // The profile's own key right from the profile menu: connect, change or drop it at any time.
             items +=
                 (
                     if (profile.zenApiKey != null) tr("Сменить личный API-ключ", "Change the personal API key")
@@ -224,11 +212,9 @@ class SettingsActivity : Activity() {
         }
     }
 
-    private fun switchTo(profile: Profile, thenLogin: Boolean = false, confirm: Boolean = true) {
+    private fun switchTo(profile: Profile, confirm: Boolean = true) {
         val go = {
             ServerService.send(this, ServerService.ACTION_SWITCH, profile.id)
-
-            if (thenLogin) startActivity(Intent(this, LoginActivity::class.java))
 
             finish()
         }
@@ -299,35 +285,6 @@ class SettingsActivity : Activity() {
                     app.prefs.remotePassword = value
                     render()
                 }
-            }
-        }
-
-        card.divide()
-        card.toggle(
-            tr("Zen-обход (бесплатные модели)", "Zen bypass (free models)"),
-            tr(
-                "Локальный шлюз обслуживает бесплатные модели через анонимный доступ, при лимитах меняет адрес выхода через WARP. Персональный ключ продолжает работать.",
-                "A local gateway serves free models through the anonymous lane and rotates its WARP exit on rate limits. A personal key keeps working.",
-            ),
-            app.prefs.zenBypass,
-        ) { value ->
-            app.prefs.zenBypass = value
-            ServerService.send(this, ServerService.ACTION_RESTART)
-            render()
-        }
-
-        if (app.prefs.zenBypass) {
-            card.toggle(
-                tr("WARP-туннель обхода", "Bypass WARP tunnel"),
-                tr(
-                    "Запросы бесплатных моделей выходят через туннель Cloudflare WARP со сменой адреса. Требует доступ по UDP.",
-                    "Free-model requests leave through a Cloudflare WARP tunnel with a rotating address. Needs outbound UDP.",
-                ),
-                app.prefs.zenBypassWarp,
-            ) { value ->
-                app.prefs.zenBypassWarp = value
-                ServerService.send(this, ServerService.ACTION_RESTART)
-                render()
             }
         }
 
