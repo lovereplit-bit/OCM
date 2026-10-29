@@ -276,7 +276,7 @@ for (const config of [production, development]) {
 // Play Billing / ML Kit barcode plugins.
 const foss = appConfig('foss');
 assert.equal(foss.extra.foss, true);
-assert.equal(foss.android.package, 'app.getopencode.fdroid');
+assert.equal(foss.android.package, 'dev.opencode.mobile.fdroid');
 assert.ok(!foss.plugins.some((plugin: any) => Array.isArray(plugin) && plugin[0] === 'expo-camera'), 'FOSS build must not configure the camera/ML Kit plugin.');
 assert.ok(!foss.plugins.includes('expo-iap'), 'FOSS build must not configure the Play Billing plugin.');
 {
