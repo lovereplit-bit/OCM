@@ -1,5 +1,0 @@
-#!/bin/sh
-# Posts a notification on the phone: android-notify "Title" "Text"
-. /usr/local/lib/opencode-android/bridge.sh
-
-bridge /notify --get --data-urlencode "title=${1:-OpenCode}" --data-urlencode "text=${2:-}" >/dev/null

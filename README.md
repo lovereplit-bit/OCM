@@ -1,137 +1,66 @@
 <p align="center">
-  <a href="https://t.me/OpenCodeMob">
-    <picture>
-      <source srcset=".github/assets/banner-dark.svg" media="(prefers-color-scheme: dark)">
-      <img src=".github/assets/banner-light.svg" alt="OpenCodeMob — настоящий OpenCode на Android-телефоне">
-    </picture>
-  </a>
+  <img src="docs/logo.svg" alt="OpenCode logo" width="96">
 </p>
-<p align="center">Настоящий OpenCode на Android-телефоне. Без root и без отдельного компьютера.</p>
+<p align="center">The open source AI coding agent, on your phone.</p>
 <p align="center">
-  <a href="https://t.me/OpenCodeMob"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-%40OpenCodeMob-26A5E4?style=flat-square&logo=telegram&logoColor=white" /></a>
-  <a href="https://github.com/lovereplit-bit/OCM/releases"><img alt="Releases" src="https://img.shields.io/github/v/release/lovereplit-bit/OCM?style=flat-square" /></a>
-  <a href="https://github.com/lovereplit-bit/OCM/actions/workflows/build-apk.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/lovereplit-bit/OCM/build-apk.yml?style=flat-square&branch=main" /></a>
+  <a href="https://github.com/samartsevmaksim5-ops/OpenCode-Mobile/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/samartsevmaksim5-ops/OpenCode-Mobile?style=flat-square" /></a>
+  <a href="https://github.com/samartsevmaksim5-ops/OpenCode-Mobile/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/samartsevmaksim5-ops/OpenCode-Mobile/build.yml?style=flat-square&branch=main" /></a>
+  <a href="https://t.me/OpenCodeMob"><img alt="Telegram" src="https://img.shields.io/badge/telegram-OpenCodeMob-blue?style=flat-square" /></a>
 </p>
 
 ---
 
-### Установка
+### Installation
 
-| Платформа | Скачать |
-| --- | --- |
-| Android 8.0+ (arm64) | [`opencode-android-*.apk`](https://github.com/lovereplit-bit/OCM/releases) — из последнего релиза |
+Download the latest `OpenCode-<version>-<build>.apk` from the
+[Releases](https://github.com/samartsevmaksim5-ops/OpenCode-Mobile/releases/latest) page and install it.
 
-APK собирает и публикует в **Releases** workflow **Build APK** полностью автоматически: при каждом пуше в `main`, при теге `v*` и при ручном запуске (вкладка Actions → **Run workflow**). Workflow сам собирает свежий сервер OpenCode на arm64, упаковывает его вместе с Linux-окружением, подписывает и выкладывает релиз `ota-app-…` с файлом `opencode-android-….apk`. Туда же попадают `manifest.json` и `manifest.json.sig` — по ним уже установленные копии приложения обновляются без переустановки.
+- Android 11 or newer, 64-bit ARM (arm64-v8a)
+- The first launch unpacks a full Linux environment (a few minutes, once)
+- Sign in with your Google account; every account gets its own private workspace
+- Later updates arrive over the air: **Settings > Updates**
 
-> [!TIP]
-> APK большой (300–500 МБ), потому что внутри целый Linux. Для установки нужно примерно вдвое больше свободного места.
+Current app version: **1.0.6**. It runs the **OpenCode 1.x** line.
 
-Первый запуск распаковывает Linux-окружение (около минуты) и запускает сервер. Приложение попросит разрешения на уведомления и на отключение ограничений батареи — иначе Android усыпляет сервер в фоне.
+### What is inside
 
-### Как это устроено
+OpenCode Mobile is an Android app that bundles a complete Linux userland, `proot`
+and the OpenCode 1.x terminal agent. The interface is built into the app: you do not open a
+website, and chats stay readable without a network connection.
 
-Идея простая: запустить настоящий OpenCode на телефоне, а не делать его упрощённый клон с другим интерфейсом. В основе — оригинальный сервер OpenCode и его стандартный веб-интерфейс, поэтому привычные чаты, модели, агенты и настройки остаются такими, какими их выпускает upstream-проект. Со стороны Android добавлено то, что нужно именно на телефоне: запуск Linux-окружения, фоновая работа, мобильная клавиатурная панель, сохранение файлов, плавающие окна и обновления.
+- Everything from the terminal works on the phone: `/init`, `/connect`, `/models`, `/undo`, `/share`
+  and every other command
+- MCP servers and plugins, configured the same way as on desktop
+- Chat with the agent, live terminal output and the project file tree, with language icons next to files
+- Portrait and landscape layouts
+- Sounds and notifications when a task finishes, when the agent needs you, and when a quota runs out
+- Runs in the background as a foreground service so it is not killed
+- Upload `AGENTS.md` and agent `.md` files from the phone's file picker in **Settings > Agents**
+- Access to `/storage/emulated/0` and `Download` from inside the Linux environment
+- Per-user isolation: private home folder, own local port and own random password on every install
 
-Внутри приложения запускается Linux-окружение Ubuntu 24.04 (arm64) через `proot`. В нём работает `opencode serve`, а приложение показывает стандартный веб-интерфейс OpenCode в WebView. Root-доступ не нужен.
+### Agents
 
-```
-Приложение Android (Kotlin) ── WebView с интерфейсом OpenCode
-              │                         ▲
-              ▼                         │ http://127.0.0.1:4096
-        Фоновая служба ── proot ── Ubuntu 24.04 arm64
-                                ├─ opencode serve
-                                ├─ node, npm, python3, uv, git, ripgrep, curl
-                                └─ команды preview, android-open, android-save, android-notify, android-widget
-```
+OpenCode includes two built-in agents you can switch between in the prompt bar.
 
-### Возможности
+- **build** - Default, full-access agent for development work
+- **plan** - Read-only agent for analysis and code exploration
+  - Denies file edits by default
+  - Asks permission before running bash commands
+  - Ideal for exploring unfamiliar codebases or planning changes
 
-- **Оригинальный интерфейс OpenCode.** Сервер и веб-интерфейс берутся из upstream-проекта, а не самодельный чат: агенты `build`/`plan`, вывод Markdown и LaTeX, MCP и плагины, модели — всё как в оригинале.
-- **Работает сразу, без входа.** Ни экрана логина, ни обязательного аккаунта: первый запуск открывает чат, а бесплатные модели отвечают без ключа.
-- **Несколько профилей.** У каждого отдельные данные, проекты, история, сеансы и **свой личный API-ключ**, если он подключён: ключи профилей не пересекаются. Переключение в настройках и через плавающую кнопку.
-- **Окна для локальных страниц.** Команда `preview 5173` или `preview index.html` открывает страницу в отдельном окне: развернуть, свернуть, переместить, держать несколько окон.
-- **Файлы в Downloads.** Сохранение в `/storage/emulated/0/Download` напрямую или командой `android-save`; загрузки из интерфейса тоже попадают туда.
-- **Виджеты, которые агент создаёт сам.** Список задач, статус сборки, заметка — прямо на домашнем экране, включая целые HTML-страницы (см. ниже).
-- **Работа в фоне.** Сервер живёт в foreground-службе: удержание процессора и Wi-Fi по настройкам, уведомления о задачах и разрешениях.
-- **Обновления по OTA.** Новые сборки сервера ставятся без переустановки APK, с проверкой подписи и автоматическим откатом.
-- **Удобства для Android.** Дополнительный ряд клавиш для терминала, плавающая кнопка меню, ярлыки, оформление системных панелей под тему, адаптация под небольшой экран.
-
-### Без входа: бесплатные модели и свой ключ
-
-Приложение не требует входа в GitHub, консоль OpenCode или какой-либо аккаунт. В нём нет общего вшитого ключа и общего шлюза: каждый профиль — это отдельный HOME со своей историей, настройками и идентичностью, как отдельная установка OpenCode. Поэтому все пользователи не сидят на одном аккаунте, а первый запуск сразу пригоден для чата.
-
-- **Бесплатно по умолчанию.** Профиль без ключа стартует на безключевой модели **GPT-OSS 20B** (`pollinations/gpt-oss-20b`), которая работает без аккаунта и без квоты Zen, — первый же запрос получает ответ. В списке также остаются **8 бесплатных моделей Zen**: `beam-free`, `big-pickle`, `deepseek-v4.1-flash-free`, `flint-40b-free`, `glm-5.3-flash-free`, `mimo-v2.6-flash-free`, `nemotron-3.5-lightning-free`, `nemotron-3.5-super-vl-free`. Лишние платные, снятые и заведомо недоступные модели скрыты, чтобы не путать.
-- **Безключевая линия по умолчанию.** **«Free (no key)» — GPT-OSS 20B** через безключевой эндпоинт Pollinations не зависит ни от Zen, ни от аккаунта и не расходует общий лимит. Если бесплатная модель Zen всё-таки упрётся в квоту, приложение предложит переключиться на неё.
-- **Свой ключ по желанию.** Персональный API-ключ из консоли OpenCode вставляется за один ввод, после чего сервер этого профиля отправляет запросы под ним (`OPENCODE_API_KEY`): своя квота, свой счётчик, никакого деления с другими. Подключить или сменить ключ можно из плавающего меню, из меню профиля в Настройках или кнопкой в подсказке о лимите. Вход в браузере для этого не нужен.
-- **Понятные лимиты.** Если бесплатная модель упёрлась в лимит, приложение называет причину — бесплатный лимит, личный лимит ключа, региональный запрет или слишком частые запросы — и предлагает сменить модель либо подключить свой ключ.
-
-### Виджеты
-
-Агент внутри OpenCode может сам создавать виджеты приложения и держать их в актуальном состоянии: список задач, статус сборки, заметка для вас. Содержимое задаёт команда, а рисует его виджет «OpenCode» на домашнем экране.
-
-```
-android-widget set build "Сборка" "Тесты прошли, 252 из 252" --url 5173
-android-widget list
-android-widget remove build
-```
-
-* `set` создаёт виджет или обновляет существующий с тем же именем (1–32 символа: буквы, цифры, `-`, `_`); при первом создании лаунчер просит подтвердить размещение, а `--no-pin` меняет содержимое без запроса. `--url` делает виджет ссылкой на страницу предпросмотра.
-* **Богатые виджеты** — целый самодостаточный `.html` (встроенные CSS, JS, `data:`-картинки), `.svg` или растровая картинка: `android-widget set <имя> "Заголовок" --file <путь> [--w N] [--h N]`. Нажатия обрабатывает функция `widgetTap()` из страницы. Подробности — в `/etc/opencode-android/AGENTS.md` внутри приложения.
-
-### Обновления без переустановки (OTA)
-
-Приложение проверяет релизы репозитория раз в 6 часов, пока работает сервер, и обновляет **сервер OpenCode** без переустановки; новую версию самого приложения предлагает поставить поверх старой с сохранением всех данных. Источник обновлений — тот же репозиторий, где собирается APK.
-
-Что защищает телефон, по порядку: проверка релиза перед сборкой (возраст 24 часа, тег не переставлен, разбор рискованных изменений — тогда релиз уходит черновиком на проверку человеку); сборка upstream в задаче без секретов и прав записи; контрактный тест готового сервера; подпись манифеста тем же ключом, которым подписан APK, с возрастающим номером версии без откатов; на телефоне — сверка размера и SHA-256, усиленный распаковщик, пробный запуск и автоматический откат с восстановлением базы, если обновлённый сервер не поднялся.
-
-Настройки → Обновления: проверить сейчас, скачать по мобильной сети, «Только по Wi-Fi», источник обновлений. Остановить слежение: переменная репозитория `OTA_DISABLED=true`.
-
-### Для разработчиков
-
-```
-android/            приложение (Kotlin, без AndroidX, только платформенный API)
-runtime/            сборка серверной части: build-opencode.sh, build-rootfs.sh + Dockerfile, fetch-proot.sh,
-                    package-ota.sh (упаковка и подпись), ota-plan.sh (правила выбора обновлений), contract-test.sh
-runtime/rootfs-overlay/   что кладётся поверх Ubuntu: preview, android-open, android-save, android-notify,
-                          android-widget, инструкции для агента,
-                          opencode-profile (изолированный профиль: свой HOME, история и ключи,
-                          как отдельная установка Termux) и test-free-model (проверка изнутри окружения:
-                          отвечает ли бесплатная модель свежему профилю; коды выхода 0/10/11/12/13/3)
-tools/              проверки: check-static.py, check-kotlin.sh, test-jvm.sh, test-guest.sh, test-ota-plan.sh,
-                    test-proot-fetch.sh, test-js/bridge.test.js
-                    free-lane-ab.sh (сравнение версий на бесплатной линии Zen, запускать на телефоне),
-                    test-free-lane-ab.sh (его проверка без интернета). free-lane-ab.sh сам скачивает 1.x из npm
-                    и сверяет sha512, поэтому менять Accept-заголовок реестра нельзя (npm отвечает 406)
-upstream.json       откуда брать OpenCode: репозиторий, мажорная версия и точный закреплённый тег (сейчас v2.2.1 -
-                    тот самый интерфейс 1.0.5; уберите "pin", чтобы снова брать новейший тег мажорной линии)
-```
-
-Локальные проверки без Android SDK: `python3 tools/check-static.py`, `bash tools/test-jvm.sh`, `bash tools/test-guest.sh`, `bash tools/test-ota-plan.sh` (нужны `kotlinc`, JDK 17, `jq`, `curl`, `gcc`, `patchelf`). В CI задача **Checks** прогоняет их же: компиляцию Kotlin против Android SDK 35, логику на JVM, bridge.js в настоящем Chromium, команды `preview`/`android-save`/`android-widget` против настоящего моста, выбор обновлений на поддельном upstream и контрактный тест сервера.
-
-**Свой ключ подписи.** Без секретов APK подписывается открытым dev-ключом из репозитория — он защищает только от случайных ошибок, а не от злоумышленника. Для настоящей защиты создайте ключ и добавьте секреты `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` **до первой установки**: сменить ключ позже можно только удалив приложение вместе с данными.
-
-```
-keytool -genkeypair -v -keystore release.keystore -alias opencode -keyalg RSA -keysize 4096 -validity 36500
-base64 -w0 release.keystore      # результат: ANDROID_KEYSTORE_BASE64
-```
-
-### Если что-то не работает
-
-* Падение при запуске: приложение сохраняет отчёт со стеком и этапом до открытия экрана ошибки — нажмите «Копировать» и отправьте разработчику; повторное открытие приложения показывает сохранённый отчёт ещё раз.
-* Сервер не стартует: Настройки → Диагностика → «Показать журнал»; попробуйте «Режим совместимости».
-* Сервер засыпает в фоне: Настройки → Разрешения → «Работа в фоне»; на MIUI/ColorOS закрепите приложение в недавних или разрешите автозапуск.
-* `Переустановить Linux-окружение` в диагностике возвращает окружение к состоянию из APK и не трогает данные профилей.
+Also included is a **general** subagent for complex searches and multistep tasks. This is used internally and can be invoked using `@general` in messages.
 
 ### Contributing
 
-Нашли ошибку — откройте issue с журналом из Настройки → Диагностика → «Показать журнал», либо присылайте pull request: проверки CI должны проходить. Новости и обсуждение — в [Telegram](https://t.me/OpenCodeMob).
+Pull requests are welcome. The build runs entirely in GitHub Actions: push to `main` and an APK is published
+to Releases. See `docs/SETUP.md` for the one-time configuration.
 
 ### Building on OpenCode
 
-OpenCodeMob — независимый проект: он не создан командой OpenCode и не связан с ней. OpenCode — проект [anomalyco/opencode](https://github.com/anomalyco/opencode); этот Android-порт не собран командой OpenCode и не имеет к ней никакого отношения (this Android port is not built by the OpenCode team and is not affiliated with them in any way).
+OpenCode Mobile is not built by the OpenCode team and is not affiliated with them in any way.
+It packages their MIT-licensed 1.x release inside an Android app.
 
 ---
 
-**Наше сообщество:** [Telegram — @OpenCodeMob](https://t.me/OpenCodeMob)
-
-Лицензии: MIT для кода проекта (`LICENSE`), состав и условия сторонних компонентов (proot, Ubuntu и др.) в `NOTICE`.
+**Join our community** [Telegram](https://t.me/OpenCodeMob)

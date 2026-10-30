@@ -1,18 +1,11 @@
-# Gradle and Android Studio
-.gradle/
 build/
+.gradle/
 local.properties
-*.iml
-.idea/
-
-# Filled in by the GitHub Actions workflow before the APK is assembled
-android/app/src/main/assets/rootfs.tgz
-android/app/src/main/assets/rootfs.stamp
-android/app/src/main/jniLibs/
-
-# Local build products
 *.apk
-out/
-upstream-src/
-plan-summary.md
-plan-risks.md
+runtime-info.txt
+notes.md
+app/src/main/jniLibs/
+app/src/main/assets/rootfs.tar.xz
+app/src/main/assets/rootfs.id
+app/src/main/assets/ui/vendor/
+app/src/main/assets/ui/icons/files/
