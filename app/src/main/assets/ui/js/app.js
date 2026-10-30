@@ -45,6 +45,7 @@ function updateBanner(){if(!built)return;const t=S.offline?'Офлайн — п�
 async function refreshStatus(){try{const m=await api('GET','/mcp');S.mcp=m;const v=Object.values(m);
   T.dot.className='dot '+(v.some(x=>x.status==='failed'||x.status==='needs_auth')?'warn':v.some(x=>x.status==='connected')?'ok':'')}catch{}}
 O.enter=async opt=>{build();O.saveOpts();S.offline=!!(opt&&opt.offline);S.up=false;updateBanner();OC.sseStart();
+  if(O.checkAccount)O.checkAccount();
   await O.setDir(O.store.get('dir','/root'));updateBanner();updateTop();refreshStatus();O.iconsReady.then(()=>{O.refreshFiles(false)})};
 O.reconnect=async()=>{if(!built)return;S.offline=false;await O.setDir(S.dir||O.store.get('dir','/root'));updateBanner();refreshStatus()};
 O.on('server',d=>{if(!built)return;if(!d.ready){S.up=false;updateBanner()}});

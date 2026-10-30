@@ -1,66 +1,106 @@
 <p align="center">
   <img src="docs/logo.svg" alt="OpenCode logo" width="96">
 </p>
-<p align="center">The open source AI coding agent, on your phone.</p>
+<p align="center">Настоящий OpenCode на Android-телефоне. Без root и без отдельного компьютера.</p>
 <p align="center">
-  <a href="https://github.com/samartsevmaksim5-ops/OpenCode-Mobile/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/samartsevmaksim5-ops/OpenCode-Mobile?style=flat-square" /></a>
-  <a href="https://github.com/samartsevmaksim5-ops/OpenCode-Mobile/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/samartsevmaksim5-ops/OpenCode-Mobile/build.yml?style=flat-square&branch=main" /></a>
-  <a href="https://t.me/OpenCodeMob"><img alt="Telegram" src="https://img.shields.io/badge/telegram-OpenCodeMob-blue?style=flat-square" /></a>
+  <a href="https://github.com/lovereplit-bit/OCM/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/lovereplit-bit/OCM?style=flat-square" /></a>
+  <a href="https://github.com/lovereplit-bit/OCM/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/lovereplit-bit/OCM/build.yml?style=flat-square&branch=main" /></a>
+  <a href="https://t.me/OpenCodeMob"><img alt="Telegram" src="https://img.shields.io/badge/telegram-OpenCodeMob-26A5E4?style=flat-square&logo=telegram&logoColor=white" /></a>
 </p>
 
 ---
 
-### Installation
+### Установка
 
-Download the latest `OpenCode-<version>-<build>.apk` from the
-[Releases](https://github.com/samartsevmaksim5-ops/OpenCode-Mobile/releases/latest) page and install it.
+Скачайте `OpenCode-<версия>-<сборка>.apk` со страницы
+[Releases](https://github.com/lovereplit-bit/OCM/releases/latest) и установите.
 
-- Android 11 or newer, 64-bit ARM (arm64-v8a)
-- The first launch unpacks a full Linux environment (a few minutes, once)
-- Sign in with your Google account; every account gets its own private workspace
-- Later updates arrive over the air: **Settings > Updates**
+- Android 11 или новее, 64-битный ARM (arm64-v8a)
+- Первый запуск распаковывает Linux-окружение (пару минут, один раз)
+- Работает сразу: первый же запуск открывает чат, бесплатные модели отвечают без входа
+- Обновления приходят по воздуху: **Настройки → Обновления**
 
-Current app version: **1.0.6**. It runs the **OpenCode 1.x** line.
+Текущая версия приложения: **1.0.8** (откат на рабочую линейку с ядром OpenCode **1.x**).
+Ветка 1.x закреплена сознательно: в ней чат с ИИ работает из коробки.
 
-### What is inside
+### Что внутри
 
-OpenCode Mobile is an Android app that bundles a complete Linux userland, `proot`
-and the OpenCode 1.x terminal agent. The interface is built into the app: you do not open a
-website, and chats stay readable without a network connection.
+OpenCode Mobile — Android-приложение, в которое упакованы полноценный Linux-окружение (proot), `opencode serve` 1.x и
+свой мобильный интерфейс к нему. Никакой сайт не открывается, чаты остаются читаемыми даже без сети.
 
-- Everything from the terminal works on the phone: `/init`, `/connect`, `/models`, `/undo`, `/share`
-  and every other command
-- MCP servers and plugins, configured the same way as on desktop
-- Chat with the agent, live terminal output and the project file tree, with language icons next to files
-- Portrait and landscape layouts
-- Sounds and notifications when a task finishes, when the agent needs you, and when a quota runs out
-- Runs in the background as a foreground service so it is not killed
-- Upload `AGENTS.md` and agent `.md` files from the phone's file picker in **Settings > Agents**
-- Access to `/storage/emulated/0` and `Download` from inside the Linux environment
-- Per-user isolation: private home folder, own local port and own random password on every install
+- Все команды терминального агента работают на телефоне: `/init`, `/connect`, `/models`, `/undo`, `/share` и остальные
+- MCP-серверы и плагины настраиваются так же, как на компьютере
+- Чат с агентом, живой вывод терминала и дерево файлов проекта
+- Книжная и альбомная ориентации
+- Звуки и уведомления: задача завершена, агент ждёт ответа, кончилась квота
+- Фоновая работа через foreground-службу, чтобы сервер не убивался
+- Загрузка `AGENTS.md` и файлов агентов из файлового пикера телефона: **Настройки → Агенты**
+- Доступ к `/storage/emulated/0` и `Download` из Linux-окружения
 
-### Agents
+### Профили: гость — тоже человек, и у каждого свой
 
-OpenCode includes two built-in agents you can switch between in the prompt bar.
+- **Гость без входа.** При первом запуске достаточно нажать «Продолжить как гость»: приложение тут же создаёт
+  **случайный ник** (`Гость-7F3A`), **случайный пароль** и отдельный профиль со своей историей, ключами и бесплатной
+  квотой. Никто не сидит на общем аккаунте: у каждого гостя — свой.
+- **Почта без Google.** Можно указать почту — получите именованный профиль на этом телефоне. Пароль не нужен,
+  данные не покидают устройство.
+- **Смена профиля** — в Настройках; чаты и файлы остаются на телефоне и доступны при повторном входе.
+- Изоляция как в Termux: у каждого профиля свой HOME, свой случайный порт и свой случайный пароль локального сервера.
 
-- **build** - Default, full-access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
-  - Denies file edits by default
-  - Asks permission before running bash commands
-  - Ideal for exploring unfamiliar codebases or planning changes
+### Аккаунт opencode: личная квота Zen
 
-Also included is a **general** subagent for complex searches and multistep tasks. This is used internally and can be invoked using `@general` in messages.
+Вход по Google/GitHub через `opencode console login` (device flow) подключает личную квоту OpenCode Zen — как в
+opencode на компьютере. После входа приложение **зеркалит аккаунт в credential-хранилище opencode**, поэтому модели
+сразу работают под вашей квотой, а не под общей анонимной (в 1.x сервер сам этого не делает — без зеркала вход
+выглядел бесполезным). Выйти можно в любой момент: Настройки → Аккаунт opencode.
+
+Подсказки при ошибках квоты умные: если вы уже вошли — приложение предлагает перезапустить сервер или сменить
+модель/ключ, а не «войдите в Google» в сотый раз.
+
+### Интерфейс
+
+- Настройки открываются **в один тап** иконкой в верхней панели — и ещё раз из списка сессий.
+- Чипы модели и «мышления» в поле ввода не выталкивают друг друга: длинное имя модели обрезается многоточием.
+- Названия сессий в списке обрезаются, не залезая под кнопку удаления.
+- Плашка «модели не подключены» встроена в поле ввода и никогда не закрывает верхнюю панель.
+- Настройки — это нижний мобильный лист, а не растянутое окно.
+
+### Про WARP и OpenCode CLI-агент
+
+Туннель WARP из ранних сборок убран: он занимал место в меню и не работал у большинства пользователей.
+Вместо него в Настройках — ссылка на **OpenCode CLI-агент от Warp**:
+[docs.warp.dev/agents/cli-agents/opencode](https://docs.warp.dev/agents/cli-agents/opencode/).
+
+### Агенты
+
+В OpenCode два встроенных агента, между которыми можно переключаться в поле ввода.
+
+- **build** — основной, полный доступ, для работы над кодом
+- **plan** — только чтение, для анализа и планирования
+  - Не редактирует файлы
+  - Спрашивает разрешение перед командами bash
+  - Удобен для изучения незнакомого кода
+
+Также есть субагент **general** для сложных поисков; вызывается через `@general`.
+
+### Для разработчиков
+
+- `tests/run.sh` — e2e-тесты интерфейса в headless Chromium против мок-сервера opencode (74 проверки).
+- `tests/check-bridge.py` — статическая проверка: каждый `OC.*` из UI существует как `@JavascriptInterface` в Kotlin и в моке.
+- `scripts/build-runtime.sh` — proot как native-библиотеки, Ubuntu arm64, новейший стабильный `v1.*` opencode.
+- `scripts/fetch-ui-deps.sh` — marked, DOMPurify, highlight.js, xterm.js (закреплённые версии) и иконки файлов из репозитория opencode на том же теге. Всё вендорится в APK — интерфейсу не нужна сеть.
+- Сборка полностью в GitHub Actions: пуш в `main` публикует APK в Releases. `docs/SETUP.md` — одноразовая настройка.
 
 ### Contributing
 
-Pull requests are welcome. The build runs entirely in GitHub Actions: push to `main` and an APK is published
-to Releases. See `docs/SETUP.md` for the one-time configuration.
+PR приветствуются. Перед пушем запускайте `bash tests/run.sh` — проверки CI должны проходить.
+Новости и обсуждение — в [Telegram](https://t.me/OpenCodeMob).
 
 ### Building on OpenCode
 
-OpenCode Mobile is not built by the OpenCode team and is not affiliated with them in any way.
-It packages their MIT-licensed 1.x release inside an Android app.
+OpenCode Mobile — независимый проект: он не создан командой OpenCode и не связан с ней. Внутри — их MIT-лицензированный
+релиз 1.x. OpenCode как CLI-агент есть и у Warp — [docs.warp.dev/agents/cli-agents/opencode](https://docs.warp.dev/agents/cli-agents/opencode/).
 
 ---
 
-**Join our community** [Telegram](https://t.me/OpenCodeMob)
+**Наше сообщество:** [Telegram — @OpenCodeMob](https://t.me/OpenCodeMob)

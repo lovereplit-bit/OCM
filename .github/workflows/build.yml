@@ -78,13 +78,20 @@ jobs:
           GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          CODE=$((GITHUB_RUN_NUMBER + 100))
+          # Stay above every previously published versionCode (the 1.1.x upstream-client line
+          # reached 29887625), so this build installs over anything shipped before it.
+          CODE=$((29887625 + GITHUB_RUN_NUMBER))
           gradle :app:assembleRelease --no-daemon -PappVersionName="$VERSION_NAME" -PappVersionCode="$CODE"
           cp app/build/outputs/apk/release/app-release.apk "OpenCode-${VERSION_NAME}-${CODE}.apk"
           {
-            echo "OpenCode Mobile ${VERSION_NAME}"
+            echo "OpenCode Mobile ${VERSION_NAME} — откат на рабочую линейку 1.0.8 (ядро OpenCode 1.x, чат работает из коробки)"
             echo
             echo "Core: opencode $(grep opencode_core runtime-info.txt | cut -d= -f2) (1.x line)"
+            echo
+            echo "- У каждого гостя свой случайный ник и пароль: никто не сидит на общем аккаунте"
+            echo "- После входа Google/GitHub квота Zen привязывается к аккаунту (зеркало credential)"
+            echo "- Интерфейс: модель с длинным именем больше не выталкивает кнопку «мышления», настройки — в один тап"
+            echo "- WARP убран; вместо него — ссылка на OpenCode CLI-агент Warp (docs.warp.dev/agents/cli-agents/opencode)"
             echo
             echo "Telegram: https://t.me/OpenCodeMob"
           } > notes.md

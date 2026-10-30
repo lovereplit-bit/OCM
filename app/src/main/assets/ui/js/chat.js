@@ -1,6 +1,6 @@
 (function(){
 const O=window.OCM,h=O.h,S=O.S,api=O.api,bus=O.bus;
-let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn;
+let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn,nokeyEl,comp;
 const msgEls=new Map(),partEls=new Map(),open=new Set(),timers=new Map();
 let atts=[],mentions=[],stick=true,revKey='',trail=[];
 O.rel=p=>{p=String(p||'');return S.dir&&p.startsWith(S.dir+'/')?p.slice(S.dir.length+1):p};
@@ -15,14 +15,15 @@ O.chatInit=root=>{
   todoEl=h('div',{class:'hide',style:{padding:'0 10px 6px'}});
   dockEl=h('div',{id:'dock'});statusEl=h('div',{class:'status-line hide'});
   popEl=h('div',{id:'pop',class:'hide'});attsEl=h('div',{class:'atts hide'});
+  nokeyEl=h('div',{class:'nokey hide'},h('span',{class:'grow'},'Модели не подключены — бесплатные недоступны.'),h('button',{class:'btn sm',onclick:()=>O.openConnect()},O.icon('key'),'Подключить'));
   ta=h('textarea',{rows:1,placeholder:'Спросите что угодно, / команды, @ файлы',oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
   fileIn=h('input',{type:'file',multiple:true,class:'hide',accept:'image/*,application/pdf,text/*',onchange:onFiles});
-  agentChip=h('button',{class:'chip',onclick:()=>O.openAgents()},O.icon('bot'),h('span'));
-  modelChip=h('button',{class:'chip',onclick:()=>O.openModels()},O.icon('cpu'),h('span'));
-  varChip=h('button',{class:'chip',onclick:cycleVariant},O.icon('bulb'),h('span'));
+  agentChip=h('button',{class:'chip agent',onclick:()=>O.openAgents()},O.icon('bot'),h('span'));
+  modelChip=h('button',{class:'chip model',onclick:()=>O.openModels()},O.icon('cpu'),h('span'));
+  varChip=h('button',{class:'chip keep',onclick:cycleVariant},O.icon('bulb'),h('span'));
   sendBtn=h('button',{id:'send',onclick:onSend},O.icon('send'));
   const cbar=h('div',{class:'cbar grow'},h('button',{class:'ibtn s',onclick:()=>fileIn.click()},O.icon('paperclip')),agentChip,modelChip,varChip);
-  const comp=h('div',{id:'composer'},popEl,h('div',{class:'cbox'},attsEl,ta,h('div',{style:{display:'flex',alignItems:'center',gap:'6px',marginTop:'4px'}},cbar,sendBtn)),fileIn);
+  comp=h('div',{id:'composer'},popEl,h('div',{class:'cbox'},nokeyEl,attsEl,ta,h('div',{style:{display:'flex',alignItems:'center',gap:'6px',marginTop:'4px'}},cbar,sendBtn)),fileIn);
   const wrap=h('div',{style:{position:'relative',flex:1,minHeight:0,display:'flex',flexDirection:'column'}},msgsEl,jumpEl);
   root.append(wrap,revEl,todoEl,statusEl,dockEl,comp);
   bus.on('open',()=>{renderAll()});
@@ -36,7 +37,7 @@ O.chatInit=root=>{
   bus.on('sessions',()=>{renderRevert()});
   bus.on('meta',updateChips);bus.on('conn',updateChips);
   bus.on('serror',p=>{if(p&&(!p.sessionID||p.sessionID===S.sid)){const e=p.error;const t=e&&(e.data&&e.data.message||e.name);if(t&&e.name!=='MessageAbortedError'){
-    if(/quota|rate.?limit|insufficient|exceeded|credit|\b429\b/i.test(String(t)))O.toast('Квота исчерпана. Войдите в аккаунт opencode (Google/GitHub): Настройки → Аккаунт opencode — или подключите свой ключ: Настройки → Модели → Подключить провайдера',8000);
+    if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|\b429\b/i.test(String(t)))O.toast(quotaHint(),8000);
     else O.toast(t,4000)}}});
   updateChips();renderAll();
 };
@@ -106,7 +107,7 @@ function metaUpdate(el,m){
     meta.append(h('span',null,t.join('  ')));
     if(i.error&&i.error.name!=='MessageAbortedError'){const old=el.firstChild.querySelector('.errbox');if(old)old.remove();
       let em=(i.error.data&&i.error.data.message)||i.error.name||'Ошибка';
-      if(/quota|rate.?limit|insufficient|exceeded|credit|\b429\b/i.test(String(em)))em+='\n\nВойдите в аккаунт opencode через Google или GitHub (Настройки → Аккаунт opencode) — квота Zen станет персональной. Или подключите свой ключ: Настройки → Модели → Подключить провайдера';
+      if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|\b429\b/i.test(String(em)))em+='\n\n'+quotaHint();
       el.firstChild.append(h('div',{class:'errbox'},em))}
     else if(i.error)meta.append(h('span',{class:'warn'},'прервано'))}
   meta.append(h('span',{class:'grow'}),h('button',{class:'ibtn s',onclick:()=>msgActions(m)},O.icon('dots')))}
@@ -192,9 +193,13 @@ function questionCard(q){const qs=q.questions||[];const sel=qs.map(()=>new Set()
   return h('div',{class:'card warn'},h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},O.icon('info','warn'),h('b',null,'OpenCode спрашивает')),body,h('div',{class:'row'},h('button',{class:'btn',onclick:rej},'Пропустить'),h('button',{class:'btn pri',onclick:send},'Отправить')))}
 
 // ---- composer ----
+const quotaHint=()=>S.account&&S.account.email
+  ?'Квота этой модели исчерпана. Перезапустите сервер (Настройки → Совместимость), выберите другую модель или подключите свой ключ: Настройки → Модели → Подключить провайдера'
+  :'Квота исчерпана. Войдите в аккаунт opencode (Google/GitHub): Настройки → Аккаунт opencode — или подключите свой ключ: Настройки → Модели → Подключить провайдера';
 function updateChips(){const m=S.model,mi=m&&O.modelInfo(m.providerID,m.modelID);
   agentChip.lastChild.textContent=S.agent;modelChip.lastChild.textContent=mi?(mi.name||m.modelID):'Выберите модель';
   const vs=mi&&mi.variants?Object.keys(mi.variants):[];varChip.classList.toggle('hide',!vs.length);varChip.lastChild.textContent=S.variant||'по умолчанию';
+  const nokey=!m&&!S.offline&&S.up;nokeyEl.classList.toggle('hide',!nokey);if(nokey)ta.placeholder='Спросите что угодно, / команды, @ файлы';
   ta.disabled=!!S.offline&&!S.up;ta.placeholder=ta.disabled?'Офлайн — чтение кэшированных чатов':'Спросите что угодно, / команды, @ файлы';updateSend()}
 function cycleVariant(){const mi=O.modelInfo(S.model.providerID,S.model.modelID),vs=[null,...Object.keys(mi.variants||{})];O.setVariant(vs[(vs.indexOf(S.variant)+1)%vs.length])}
 function updateSend(){const b=busy(),has=ta.value.trim()||atts.length;sendBtn.classList.toggle('stop',b&&!has);sendBtn.textContent='';sendBtn.append(O.icon(b&&!has?'stop':'send'));sendBtn.disabled=!b&&!has}

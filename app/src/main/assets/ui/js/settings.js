@@ -9,15 +9,22 @@ const sub=(t,b,o)=>O.sheet(t,b,Object.assign({full:true},o));
 // ---- main ----
 O.openSettings=()=>{
   const st=O.native.state(),fl=st.flags||{};
-  const body=h('div');const s=sub('Настройки',body);
-  body.append(h('div',{class:'card',style:{display:'flex',alignItems:'center',gap:'10px'}},O.icon('user'),h('div',{class:'grow'},h('b',null,st.name||'Гость'),h('div',{class:'mut s'},'Локальный профиль: '+(st.user||''))),
-    h('button',{class:'btn sm',style:{marginTop:'8px'},onclick:async()=>{if(await O.confirm('Сменить локальный профиль?','Текущие чаты останутся на телефоне и будут доступны после повторного входа с той же почтой.','Сменить'))OC.signOut()}},O.icon('out'),'Сменить профиль')));
+  const body=h('div');const s=O.sheet('Настройки',body);
+  // профиль: у каждого гостя — свой случайный ник и пароль (никогда общий аккаунт)
+  const prof=h('div',{class:'card',style:{display:'flex',alignItems:'center',gap:'10px'}},
+    O.icon('user'),
+    h('div',{class:'grow'},
+      h('b',null,st.name||'Гость'),
+      h('div',{class:'mut s'},st.guest?('Гостевой профиль · ник создан случайно'):(st.user?('Профиль: '+st.user):'Профиль не выбран')),
+      st.guest&&st.pw?h('div',{class:'mut s',style:{display:'flex',alignItems:'center',gap:'6px'}},h('span',{class:'mono'},'Пароль профиля: '+st.pw),h('button',{class:'ibtn s',onclick:()=>O.native.copy(st.pw)},O.icon('copy'))):null),
+    h('button',{class:'btn sm',onclick:async()=>{if(await O.confirm('Сменить профиль?','Чаты и файлы останутся на телефоне и будут доступны при повторном входе.','Сменить'))OC.signOut()}},O.icon('out'),'Сменить'));
+  body.append(prof);
   const g=t=>body.append(h('div',{class:'grp'},t)),r=(i,t,sb,fn)=>body.append(O.listRow(i,t,sb,O.icon('chevR'),fn));
   g('Аккаунт opencode');
   const accRow=O.listRow('user','Аккаунт opencode','проверяем...',O.icon('chevR'),()=>O.openAccount());body.append(accRow);
-  O.consoleOrgs().then(orgs=>{const sp=accRow.querySelector('.t span');if(!sp)return;
-    const em=orgs&&orgs.length?[...new Set(orgs.map(o=>o.accountEmail))][0]:null;
-    sp.textContent=em?('Вход выполнен: '+em):'Не выполнен — войдите через Google/GitHub'});
+  const accSub=()=>{const sp=accRow.querySelector('.t span');if(!sp)return;
+    sp.textContent=S.account&&S.account.email?('Вход выполнен: '+S.account.email):(S.account&&S.account.checked?'Не выполнен — квота Zen общая':'проверяем...')};
+  accSub();O.checkAccount().then(accSub);
   g('Модели');r('key','Подключить провайдера','OpenCode Zen, OpenAI, Anthropic, GitHub Copilot, Google и другие',()=>O.openConnect());
   r('cpu','Модель',S.model?S.model.providerID+'/'+S.model.modelID:'не выбрана',()=>O.openModels());
   g('Оформление');r('palette','Тема и размер текста',({opencode:'OpenCode',light:'Светлая',tokyonight:'Tokyo Night',gruvbox:'Gruvbox'})[S.opts.theme]||S.opts.theme+', '+S.opts.fs+'px',()=>O.openThemes());
@@ -31,6 +38,7 @@ O.openSettings=()=>{
   r('code','Файл конфигурации','Редактировать opencode.json напрямую',()=>openConfig());
   g('Приложение');r('down','Обновления','Приложение и ядро OpenCode (1.x)',()=>openUpdates());r('shield','Разрешения','Файлы, уведомления, фон, установка',()=>openPerms());
   r('bat','Совместимость и логи','Безопасный режим, перезапуск сервера',()=>openCompat());r('info','О приложении','',()=>openAbout());
+  r('globe','OpenCode CLI-агент (Warp)','docs.warp.dev/agents/cli-agents/opencode',()=>O.openUrl('https://docs.warp.dev/agents/cli-agents/opencode/'));
   r('tg','Сообщество','t.me/OpenCodeMob',()=>O.openUrl('https://t.me/OpenCodeMob'))};
 
 // ---- agents / rules upload ----
@@ -130,7 +138,9 @@ function openCompat(){const fl=O.native.state().flags||{};
 function openAbout(){const st=O.native.state();
   sub('О приложении',h('div',null,h('div',{class:'center',style:{minHeight:0,padding:'16px 0'}},O.logo(40),h('b',{style:{fontSize:'20px'}},'OpenCode'),h('div',{class:'mut'},'Версия '+st.version),h('div',{class:'mut s'},'Ядро '+(st.core||'неизвестно')+' (1.x)')),
     h('div',{class:'note'},'OpenCode Mobile упаковывает CLI OpenCode 1.x (лицензия MIT) в Android-приложение. Оно создано не командой OpenCode и никак с ней не связано.'),
-    h('button',{class:'btn wide',style:{marginTop:'12px'},onclick:()=>O.openUrl('https://t.me/OpenCodeMob')},O.icon('tg'),'t.me/OpenCodeMob')))}
+    h('div',{class:'note',style:{marginTop:'10px'}},'OpenCode как CLI-агент есть и у Warp — документация: docs.warp.dev/agents/cli-agents/opencode.'),
+    h('button',{class:'btn wide',style:{marginTop:'12px'},onclick:()=>O.openUrl('https://docs.warp.dev/agents/cli-agents/opencode/')},O.icon('globe'),'OpenCode CLI-агент (Warp)'),
+    h('button',{class:'btn wide',style:{marginTop:'8px'},onclick:()=>O.openUrl('https://t.me/OpenCodeMob')},O.icon('tg'),'t.me/OpenCodeMob')))}
 O.on('signedout',()=>location.reload());
 
 // ---- аккаунт opencode: вход через Google/GitHub (device flow) ----
@@ -140,6 +150,9 @@ O.openAccount=()=>{
   let busy=false;
   const drawIdle=async()=>{body.textContent='';
     const orgs=await O.consoleOrgs();
+    // remember the state: hints in chat and «Подключить провайдера» больше не предлагают войти, если уже вошли
+    const em=orgs&&orgs.length?[...new Set(orgs.map(o=>o.accountEmail))][0]:null;
+    S.account={email:em||null,checked:true};
     if(orgs===null){
       body.append(h('div',{class:'errbox'},'Не удалось связаться с сервером opencode. Убедитесь, что он запущен, и попробуйте ещё раз.'),
         h('button',{class:'btn wide',style:{marginTop:'10px'},onclick:()=>drawIdle()},O.icon('refresh'),'Повторить'));
@@ -176,6 +189,8 @@ O.openAccount=()=>{
       }else if(d.stage==='done'){fin=true;busy=false;
         box.textContent='';
         box.append(h('div',{class:'card',style:{display:'flex',alignItems:'center',gap:'10px'}},O.icon('check'),h('div',{class:'grow'},h('b',null,'Вошли как '+d.email),h('div',{class:'mut s'},'Перезапускаем сервер, чтобы применить аккаунт...'))));
+        if(d.synced===false)box.append(h('div',{class:'errbox',style:{marginTop:'10px'}},'Аккаунт сохранён, но автоматически привязать его к моделям не удалось. После перезапуска откройте Настройки → Аккаунт opencode и проверьте статус входа.'));
+        S.account={email:d.email,checked:true};bus.emit('meta');
         O.toast('Вошли как '+d.email,4000);
         setTimeout(()=>{s.close();OC.restartServer();O.toast('Перезапуск сервера...')},1500);
       }else if(d.stage==='error'){fin=true;busy=false;
@@ -187,6 +202,6 @@ O.openAccount=()=>{
   };
   drawIdle()};
 O.on('authlogout',d=>{
-  if(d.ok){O.toast('Вы вышли из аккаунта opencode. Перезапускаем сервер...',3500);try{OC.restartServer()}catch{}}
+  if(d.ok){S.account={email:null,checked:true};bus.emit('meta');O.toast('Вы вышли из аккаунта opencode. Перезапускаем сервер...',3500);try{OC.restartServer()}catch{}}
   else O.toast(d.error||'Не удалось выйти',4000)});
 })();

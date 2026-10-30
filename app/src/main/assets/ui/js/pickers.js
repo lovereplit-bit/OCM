@@ -5,7 +5,8 @@ const search=(ph,fn)=>h('input',{placeholder:ph,oninput:e=>fn(e.target.value.toL
 // ---- sessions drawer ----
 O.openSessions=()=>{
   const list=h('div'),q=search('Поиск по сессиям',()=>draw());
-  const s=O.sheet('Сессии',h('div',null,h('button',{class:'btn pri wide',onclick:async()=>{s.close();try{await O.newSession()}catch(e){O.toast(e.message)}}},O.icon('plus'),'Новая сессия'),h('div',{style:{height:'10px'}}),q,list),{drawer:true});
+  const s=O.sheet('Сессии',h('div',null,h('button',{class:'btn pri wide',onclick:async()=>{s.close();try{await O.newSession()}catch(e){O.toast(e.message)}}},O.icon('plus'),'Новая сессия'),h('div',{style:{height:'10px'}}),q,list),{drawer:true,
+    actions:h('button',{class:'ibtn',onclick:()=>{s.close();O.openSettings()}},O.icon('sliders'))});
   function draw(){list.textContent='';const f=q.value.toLowerCase();
     const items=S.sessions.filter(x=>O.sessionTitle(x).toLowerCase().includes(f));
     if(!items.length)list.append(h('div',{class:'mut',style:{padding:'20px',textAlign:'center'}},'Сессий пока нет'));
@@ -13,8 +14,8 @@ O.openSessions=()=>{
       list.append(h('div',{class:'li'+(x.id===S.sid?' on':'')},
         h('button',{class:'t',style:{textAlign:'left',flex:1,minWidth:0},onclick:()=>{s.close();O.openSession(x.id)}},
           h('b',{style:{display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},O.sessionTitle(x)),
-          h('span',{class:'mut s'},O.ago(x.time.updated)+(sm&&(sm.additions||sm.deletions)?'  +'+sm.additions+' -'+sm.deletions:''))),
-        b?h('span',{class:'spin'}):null,h('button',{class:'ibtn s',onclick:()=>sessActions(x)},O.icon('dots'))))})}
+          h('span',{class:'mut s',style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},O.ago(x.time.updated)+(sm&&(sm.additions||sm.deletions)?'  +'+sm.additions+' -'+sm.deletions:''))),
+        b?h('span',{class:'spin',style:{flex:'none'}}):null,h('button',{class:'ibtn s',style:{flex:'none'},onclick:()=>sessActions(x)},O.icon('dots'))))})}
   draw();bus.on('sessions',()=>{if(s.root.isConnected)draw()})};
 function sessActions(x){O.actions(O.sessionTitle(x),[
   {label:'Переименовать',icon:'edit',fn:async()=>{const v=await O.ask('Переименование сессии',null,O.sessionTitle(x));if(v)try{await api('PATCH','/session/'+x.id,{title:v})}catch(e){O.toast(e.message)}}},
@@ -70,8 +71,15 @@ O.openConnect=async()=>{
   const draw=()=>{list.textContent='';const f=q.value.toLowerCase();
     const sorted=[...all].sort((a,b)=>{const ca=conn.has(a.id)?0:1,cb=conn.has(b.id)?0:1;if(ca!==cb)return ca-cb;const pa=POP.indexOf(a.id),pb=POP.indexOf(b.id);return(pa<0?99:pa)-(pb<0?99:pb)||name(a).localeCompare(name(b))});
     sorted.filter(p=>!f||(name(p)+p.id).toLowerCase().includes(f)).forEach(p=>list.append(O.listRow('cloud',name(p),p.id==='opencode'?'Бесплатные модели без ключа — добавьте ключ Zen для платных':p.id,conn.has(p.id)?O.icon('check','ok'):null,()=>pick(p))))};
-  body.textContent='';body.append(h('button',{class:'btn pri wide',onclick:()=>{s.close();O.openAccount()}},O.icon('user'),'Войти через Google / GitHub (аккаунт opencode)'),
-    h('div',{class:'note',style:{margin:'10px 0'}},'Вход в аккаунт opencode делает квоту Zen персональной — как в opencode на компьютере. Либо подключите провайдера своим ключом ниже.'),q,list);draw();
+  body.textContent='';
+  if(S.account&&S.account.email){
+    body.append(O.listRow('user',S.account.email,'Аккаунт opencode подключён — квота Zen персональная',O.icon('check','ok'),()=>{s.close();O.openAccount()}));
+    body.append(h('div',{class:'note',style:{margin:'10px 0'}},'Вы уже вошли. Модели OpenCode Zen работают под вашей личной квотой. Ниже можно подключить и других провайдеров своим ключом.'));
+  }else{
+    body.append(h('button',{class:'btn pri wide',onclick:()=>{s.close();O.openAccount()}},O.icon('user'),'Войти через Google / GitHub (аккаунт opencode)'),
+      h('div',{class:'note',style:{margin:'10px 0'}},'Вход в аккаунт opencode делает квоту Zen персональной — как в opencode на компьютере. Либо подключите провайдера своим ключом ниже.'));
+  }
+  body.append(q,list);draw();
   const after=async()=>{try{await api('POST','/instance/dispose',null)}catch{}await O.loadMeta();O.toast('Подключено');s.close()};
   const pick=p=>{const ms=(auth[p.id]||[]).map((m,i)=>({m,i}));if(!ms.length)ms.push({m:{type:'api',label:'API-ключ'},i:0});
     const go=x=>x.m.type==='oauth'?oauth(p,x):keyForm(p);

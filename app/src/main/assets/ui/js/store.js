@@ -3,7 +3,7 @@ const O=window.OCM,api=O.api;
 const bus=O.bus={h:{},on(n,f){(this.h[n]=this.h[n]||[]).push(f)},emit(n,...a){(this.h[n]||[]).forEach(f=>{try{f(...a)}catch(e){console.error(n,e)}})}};
 const S=O.S={dir:'',sessions:[],sid:null,status:{},perms:[],questions:[],todos:{},diffs:{},
   providers:[],agents:[],commands:[],cfg:{},agent:'build',model:null,variant:null,mcp:{},lsp:[],branch:'',
-  offline:false,up:false,gstatus:{},opts:Object.assign({thinking:true,details:true,theme:'opencode',fs:14},O.store.get('opts',{}))};
+  offline:false,up:false,gstatus:{},account:{email:null,checked:false},opts:Object.assign({thinking:true,details:true,theme:'opencode',fs:14},O.store.get('opts',{}))};
 O.saveOpts=()=>{O.store.set('opts',S.opts);document.documentElement.dataset.theme=S.opts.theme;document.documentElement.style.setProperty('--fs',S.opts.fs+'px')};
 
 // ---- IndexedDB key/value cache (offline reading) ----
@@ -59,7 +59,17 @@ O.onServerEvent=raw=>{let o;try{o=JSON.parse(raw)}catch{return}
   case'pty.exited':case'pty.deleted':bus.emit('pty',p);break}};
 const normPerm=p=>({id:p.id,sessionID:p.sessionID,title:p.title||p.permission||p.type||'Разрешение',patterns:[].concat(p.patterns||p.pattern||[]),metadata:p.metadata||{},tool:p.tool,raw:p});
 
-O.on('sse',d=>{if(d.t==='data')O.onServerEvent(d.d);else if(d.t==='open'){S.up=true;bus.emit('conn')}else if(d.t==='close'){S.up=false;bus.emit('conn')}});
+// Brief SSE drops (app frozen in background for a second) must not flash the reconnect banner:
+// delay it, cancel when the stream comes back.
+let upT=null;
+O.on('sse',d=>{if(d.t==='data')O.onServerEvent(d.d);else if(d.t==='open'){if(upT){clearTimeout(upT);upT=null}S.up=true;bus.emit('conn')}
+  else if(d.t==='close'){S.up=false;if(!upT)upT=setTimeout(()=>{upT=null;if(!S.up)bus.emit('conn')},5000)}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!S.up){try{OC.sseStart()}catch(e){}}});
+
+// ---- opencode account (Zen) status: known once checked, so hints never nag after a login ----
+O.checkAccount=async()=>{try{const r=await api('GET','/experimental/console/orgs',null,{timeout:10000});
+  const em=r&&r.orgs&&r.orgs.length?[...new Set(r.orgs.map(o=>o.accountEmail))][0]:null;
+  S.account={email:em||null,checked:true};bus.emit('meta')}catch{S.account.checked=true}};
 
 // ---- loaders (network first, IndexedDB fallback) ----
 O.loadMeta=async()=>{

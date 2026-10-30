@@ -1,8 +1,8 @@
 # One-time setup
 
-1. Push this repo to `samartsevmaksim5-ops/OpenCode-Mobile` (branch `main`). The workflow in
+1. Push this repo to `lovereplit-bit/OCM` (branch `main`). The workflow in
    `.github/workflows/build.yml` builds on every push and publishes the APK to Releases.
-   Release names look like `OpenCode-1.0.6-<code>.apk`; the app compares `<code>` for OTA.
+   Release names look like `OpenCode-1.0.8-<code>.apk`; the app compares `<code>` for OTA.
 
 2. Google sign-in (optional until you want it):
    - Google Cloud Console > APIs & Services > Credentials
@@ -16,7 +16,8 @@
    over yours, so for a public repo move it into secrets instead: set `KEYSTORE_BASE64` (base64 of the .jks) and
    `KEYSTORE_PASSWORD`, then delete the file from the repo. The workflow prefers the secrets.
 
-4. Version: change `VERSION_NAME` in the workflow. The version code is `run_number + 100`.
+4. Version: change `VERSION_NAME` in the workflow. The version code is `29887625 + run_number`, so every build
+   stays above the 1.1.x upstream-client line that reached 29887625.
 
 ## What the build does
 

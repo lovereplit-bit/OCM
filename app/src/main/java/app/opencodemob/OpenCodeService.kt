@@ -89,7 +89,7 @@ class OpenCodeService : Service() {
         }
     }
 
-    private val quotaRe = Regex("(?i)quota|rate.?limit|insufficient|exceeded|credit|\\b429\\b")
+    private val quotaRe = Regex("(?i)quota|usage.?limit|rate.?limit|limit\\s+reached|insufficient|exceeded|credit|\\b429\\b")
 
     private fun onEvent(json: String) {
         val root = try { JSONObject(json) } catch (_: Exception) { return }

@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -94,7 +95,11 @@ class MainActivity : ComponentActivity() {
                 override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? =
                     loader.shouldInterceptRequest(r.url)
                 override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
-                    openExternal(r.url); return true
+                    val u = r.url
+                    // our own asset domain must never "escape" to the system browser:
+                    // e.g. location.reload() after sign-out goes through here
+                    if (u.host == "appassets.androidplatform.net") { v.loadUrl(u.toString()); return true }
+                    openExternal(u); return true
                 }
             }
             webChromeClient = object : WebChromeClient() {
@@ -148,6 +153,37 @@ class MainActivity : ComponentActivity() {
 
     private fun uid() = Prefs.get(this, "uid")
 
+    /** A fresh random identity for a guest profile: unique uid, nickname and password.
+     *  Every guest gets their own profile with their own chats, keys and free-quota bucket;
+     *  nobody sits on a shared "local" account anymore. */
+    private fun randomGuest() {
+        val rnd = java.security.SecureRandom()
+        fun hex(n: Int) = ByteArray(n).also { rnd.nextBytes(it) }.joinToString("") { "%02x".format(it) }
+        val nickChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        val nick = "Гость-" + (1..4).map { nickChars[rnd.nextInt(nickChars.length)] }.joinToString("")
+        val pwChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        val pw = (1..16).map { pwChars[rnd.nextInt(pwChars.length)] }.joinToString("")
+        val gu = "g" + hex(5)
+        val em = "guest-" + hex(4) + "@device.local"
+        Prefs.put(this, "uid", gu)
+        Prefs.put(this, "email", em)
+        Prefs.put(this, "name", nick)
+        Prefs.put(this, "guestpw", pw)
+        Prefs.put(this, "guest", "1")
+        // remembered separately, so "continue as guest" returns to the same profile after a sign-out
+        Prefs.put(this, "guestuid", gu)
+        Prefs.put(this, "guestemail", em)
+        Prefs.put(this, "guestname", nick)
+    }
+
+    /** Local data dir key. Never empty after this call: the existing profile or a fresh random guest. */
+    private fun ensureUid(): String {
+        val u = uid()
+        if (u.isNotEmpty()) return u
+        randomGuest()
+        return uid()
+    }
+
     // ---------- opencode account login (device flow via `opencode console login`) ----------
 
     private val ansiRe = Regex("\u001B\\[[0-9;?]*[ -/]*[@-~]|\u001B\\][^\u0007\u001B]*(\u0007|\u001B\\\\)|[\u001B\u0000-\u0008\u000B\u000C\u000E-\u001F]")
@@ -158,8 +194,7 @@ class MainActivity : ComponentActivity() {
     /** Starts `opencode console login` inside proot and streams the device-flow URL/code to the UI. */
     private fun doAuthLogin() {
         if (loginProc != null) return authEmit(JSONObject().put("stage", "error").put("error", "Вход уже выполняется"))
-        val u = uid()
-        if (u.isEmpty()) return authEmit(JSONObject().put("stage", "error").put("error", "Сначала войдите в профиль"))
+        val u = ensureUid()
         if (!Runtime.isInstalled(this)) return authEmit(JSONObject().put("stage", "error").put("error", "Linux-окружение ещё не установлено"))
         thread {
             var url: String? = null
@@ -205,7 +240,10 @@ class MainActivity : ComponentActivity() {
                 val fin = p.waitFor()
                 val em = doneEmail; val fm = failMsg
                 if (em != null) {
-                    authEmit(JSONObject().put("stage", "done").put("email", em))
+                    // mirror the console account into the Zen credential store BEFORE the restart,
+                    // otherwise the provider stays anonymous and every model hits the shared free quota
+                    val synced = syncZenCredential(this@MainActivity, u, em)
+                    authEmit(JSONObject().put("stage", "done").put("email", em).put("synced", synced))
                 } else if (fm != null) {
                     authEmit(JSONObject().put("stage", "error").put("error", fm))
                 } else if (fin != 0) {
@@ -221,10 +259,82 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * opencode 1.x: `console login` stores the account in opencode.db (tables `account` +
+     * `account_state`), but the OpenCode Zen provider only becomes non-anonymous when the
+     * integration store (`credential` table, integration_id='opencode') holds the OAuth token.
+     * Without this mirror the provider stays anonymous even after a successful login and every
+     * model reports "Free usage limit reached" - exactly the "logged in but still sitting on
+     * the free shared account" bug. We write the credential row the integration system would
+     * have stored, so the personal Zen quota actually applies after the login.
+     */
+    private fun syncZenCredential(c: Context, uid: String, email: String): Boolean {
+        val db = File(Runtime.home(c, uid), ".local/share/opencode/opencode.db")
+        if (!db.exists()) return false
+        return try {
+            SQLiteDatabase.openDatabase(db.path, null, SQLiteDatabase.OPEN_READWRITE).use { sq ->
+                val row = sq.rawQuery(
+                    "SELECT id,url,access_token,refresh_token,token_expiry FROM account WHERE email=? ORDER BY time_updated DESC LIMIT 1",
+                    arrayOf(email)
+                ).use { r ->
+                    if (r.moveToFirst()) listOf(
+                        r.getString(0), r.getString(1), r.getString(2), r.getString(3),
+                        if (r.isNull(4)) null else r.getLong(4)
+                    ) else null
+                } ?: return false
+                val accId = row[0] as? String ?: return false
+                val url = row[1] as? String
+                val access = row[2] as? String ?: return false
+                val refresh = row[3] as? String ?: return false
+                val expiry = row[4] as? Long
+                val mirrored = sq.rawQuery("SELECT value FROM credential WHERE integration_id='opencode'", null).use { r ->
+                    while (r.moveToNext()) {
+                        val v = r.getString(0) ?: continue
+                        if (v.contains("\"access\":\"$access\"") && v.contains("\"refresh\":\"$refresh\"")) return@use true
+                    }
+                    false
+                }
+                if (mirrored) return true
+                val now = System.currentTimeMillis()
+                val meta = JSONObject()
+                    .put("server", if (url.isNullOrEmpty()) "https://opencode.ai/console" else url)
+                    .put("accountID", accId).put("email", email)
+                val value = JSONObject()
+                    .put("type", "oauth").put("methodID", "device")
+                    .put("access", access).put("refresh", refresh)
+                    .put("expires", expiry ?: (now + 3_600_000L))
+                    .put("metadata", meta)
+                sq.beginTransaction()
+                try {
+                    sq.execSQL("DELETE FROM credential WHERE integration_id='opencode'")
+                    sq.execSQL(
+                        "INSERT INTO credential (id,integration_id,label,value,connector_id,method_id,active,time_created,time_updated) VALUES (?,?,?,?,?,?,?,?,?)",
+                        arrayOf<Any>("cred_" + java.lang.Long.toString(now, 36) + (100..999).random(), "opencode", email, value.toString(), "opencode", "device", 1, now, now)
+                    )
+                    sq.setTransactionSuccessful()
+                } finally { sq.endTransaction() }
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Removes the mirrored Zen credential when the user logs out of the opencode account. */
+    private fun dropZenCredential(c: Context, uid: String) {
+        val db = File(Runtime.home(c, uid), ".local/share/opencode/opencode.db")
+        if (!db.exists()) return
+        try {
+            SQLiteDatabase.openDatabase(db.path, null, SQLiteDatabase.OPEN_READWRITE).use { sq ->
+                sq.execSQL("DELETE FROM credential WHERE integration_id='opencode'")
+            }
+        } catch (_: Exception) {}
+    }
+
     /** Runs `opencode console logout <email>` (quick, non-interactive with an explicit email). */
     private fun doAuthLogout(email: String) {
-        val u = uid()
-        if (u.isEmpty() || !Runtime.isInstalled(this)) return emit("authlogout", JSONObject().put("ok", false).put("error", "Окружение не готово"))
+        val u = ensureUid()
+        if (!Runtime.isInstalled(this)) return emit("authlogout", JSONObject().put("ok", false).put("error", "Окружение не готово"))
         thread {
             try {
                 val p = Runtime.prootCmd(this, u, listOf("/usr/local/bin/opencode", "console", "logout", email))
@@ -239,6 +349,7 @@ class MainActivity : ComponentActivity() {
                 val text = out.toString()
                 val ok = fin == 0 && !text.contains("Not logged in") && !text.contains("Account not found")
                 val e = if (ok) null else if (text.contains("Account not found")) "Аккаунт не найден" else if (text.contains("Not logged in")) "Вход не выполнен" else "opencode вернул код $fin"
+                if (ok) dropZenCredential(this@MainActivity, u)
                 emit("authlogout", if (ok) JSONObject().put("ok", true) else JSONObject().put("ok", false).put("error", e ?: "Ошибка выхода"))
             } catch (e: Exception) {
                 emit("authlogout", JSONObject().put("ok", false).put("error", e.message ?: "Ошибка выхода"))
@@ -269,7 +380,8 @@ class MainActivity : ComponentActivity() {
 
     private fun doSignIn() {
         if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isEmpty()) {
-            Prefs.put(this, "uid", "local"); Prefs.put(this, "email", "локальный профиль"); Prefs.put(this, "name", "Гость")
+            // no Google client configured: a random guest profile instead of the old shared "local" one
+            if (uid().isEmpty() || Prefs.get(this, "guest") == "1") randomGuest()
             emit("signin", JSONObject().put("ok", true).put("fallback", true)); return
         }
         val opt = GetGoogleIdOption.Builder()
@@ -290,6 +402,7 @@ class MainActivity : ComponentActivity() {
                     Prefs.put(this@MainActivity, "uid", uid)
                     Prefs.put(this@MainActivity, "email", g.id)
                     Prefs.put(this@MainActivity, "name", g.displayName ?: g.id)
+                    Prefs.put(this@MainActivity, "guest", ""); Prefs.put(this@MainActivity, "guestpw", "")
                     emit("signin", JSONObject().put("ok", true))
                 } else emit("signin", JSONObject().put("ok", false).put("error", "Unsupported credential"))
             } catch (e: Exception) {
@@ -334,6 +447,8 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun state(): String = JSONObject().apply {
             put("version", BuildConfig.VERSION_NAME); put("code", BuildConfig.VERSION_CODE)
             put("user", Prefs.get(this@MainActivity, "email")); put("name", Prefs.get(this@MainActivity, "name"))
+            put("guest", Prefs.get(this@MainActivity, "guest") == "1")
+            if (Prefs.get(this@MainActivity, "guest") == "1") put("pw", Prefs.get(this@MainActivity, "guestpw"))
             put("googleConfigured", BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotEmpty())
             put("installed", Runtime.isInstalled(this@MainActivity))
             put("core", Updater.installedCore(this@MainActivity))
@@ -342,6 +457,22 @@ class MainActivity : ComponentActivity() {
 
         // --- account / lifecycle ---
         @JavascriptInterface fun signIn() { runOnUiThread { doSignIn() } }
+
+        /** Гостевой профиль: у каждого гостя свой случайный ник и пароль (fresh=true — новый профиль). */
+        @JavascriptInterface fun signInGuest(fresh: Boolean) {
+            val gu = Prefs.get(this, "guestuid")
+            when {
+                fresh -> randomGuest()
+                gu.isNotEmpty() -> { // return to the existing guest profile; its data is still on the phone
+                    Prefs.put(this, "uid", gu)
+                    Prefs.put(this, "email", Prefs.get(this, "guestemail"))
+                    Prefs.put(this, "name", Prefs.get(this, "guestname"))
+                    Prefs.put(this, "guest", "1")
+                }
+                else -> randomGuest()
+            }
+            emit("signin", JSONObject().put("ok", true).put("guest", true))
+        }
 
         /** Настоящий вход в аккаунт opencode (Google/GitHub) — device flow через `opencode console login`. */
         @JavascriptInterface fun authLogin() { runOnUiThread { doAuthLogin() } }
@@ -364,6 +495,7 @@ class MainActivity : ComponentActivity() {
             Prefs.put(this@MainActivity, "uid", uid)
             Prefs.put(this@MainActivity, "email", e)
             Prefs.put(this@MainActivity, "name", e.substringBefore('@'))
+            Prefs.put(this@MainActivity, "guest", ""); Prefs.put(this@MainActivity, "guestpw", "")
             emit("signin", JSONObject().put("ok", true))
         }
 
@@ -371,7 +503,9 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 Net.sseStop()
                 stopService(Intent(this@MainActivity, OpenCodeService::class.java))
-                Prefs.put(this@MainActivity, "uid", ""); Prefs.put(this@MainActivity, "email", ""); Prefs.put(this@MainActivity, "name", "")
+                // keep uid: chats/files stay on the phone, only the shown profile resets,
+                // and the next "continue as guest" returns to the same data
+                Prefs.put(this@MainActivity, "email", ""); Prefs.put(this@MainActivity, "name", "")
                 lifecycleScope.launch {
                     try { CredentialManager.create(this@MainActivity).clearCredentialState(ClearCredentialStateRequest()) } catch (_: Exception) {}
                     emit("signedout", JSONObject())
@@ -390,10 +524,26 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        /** Nuclear retry: wipes every leftover of previous installs (old rootfs, partial extracts,
+         *  renamed-aside dirs), then installs from scratch. Fixes any stale state on the phone. */
+        @JavascriptInterface fun resetInstall() {
+            thread {
+                try {
+                    stopService(Intent(this@MainActivity, OpenCodeService::class.java))
+                    Runtime.rmrf(Runtime.rootfs(this@MainActivity))
+                    Runtime.rmrf(File(filesDir, "rootfs.new"))
+                    filesDir.listFiles { f -> f.name.startsWith("rootfs.broken") }?.forEach { Runtime.rmrf(it) }
+                    Runtime.install(this@MainActivity) { emit("install", JSONObject().put("pct", it)) }
+                    emit("install", JSONObject().put("done", true))
+                } catch (e: Throwable) {
+                    emit("install", JSONObject().put("error", e.message ?: e.toString()))
+                }
+            }
+        }
+
         @JavascriptInterface fun start() {
             runOnUiThread {
-                val uid = uid()
-                if (uid.isEmpty()) return@runOnUiThread
+                val uid = ensureUid()
                 ServerState.error = null; lastErr = null
                 ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, OpenCodeService::class.java).putExtra("uid", uid))
                 if (ServerState.ready) emit("ready", JSONObject())
