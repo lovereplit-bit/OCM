@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
@@ -460,14 +461,14 @@ class MainActivity : ComponentActivity() {
 
         /** Гостевой профиль: у каждого гостя свой случайный ник и пароль (fresh=true — новый профиль). */
         @JavascriptInterface fun signInGuest(fresh: Boolean) {
-            val gu = Prefs.get(this, "guestuid")
+            val gu = Prefs.get(this@MainActivity, "guestuid")
             when {
                 fresh -> randomGuest()
                 gu.isNotEmpty() -> { // return to the existing guest profile; its data is still on the phone
-                    Prefs.put(this, "uid", gu)
-                    Prefs.put(this, "email", Prefs.get(this, "guestemail"))
-                    Prefs.put(this, "name", Prefs.get(this, "guestname"))
-                    Prefs.put(this, "guest", "1")
+                    Prefs.put(this@MainActivity, "uid", gu)
+                    Prefs.put(this@MainActivity, "email", Prefs.get(this@MainActivity, "guestemail"))
+                    Prefs.put(this@MainActivity, "name", Prefs.get(this@MainActivity, "guestname"))
+                    Prefs.put(this@MainActivity, "guest", "1")
                 }
                 else -> randomGuest()
             }
