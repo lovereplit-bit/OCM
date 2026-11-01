@@ -127,7 +127,7 @@ O.on('update',d=>{if(!updUI)return;
 const PERMS=[['notifications','bell','Уведомления','Звуки и оповещения о завершении задач'],['files','folder','Доступ ко всем файлам','Работа с /storage/emulated/0 и Download'],['battery','bat','Работа в фоне','Игнорирование оптимизации батареи, чтобы сервер не отключался'],['install','down','Установка обновлений','Разрешить OTA-обновлениям устанавливать новый APK']];
 let permUI=null;
 O.permRows=()=>{const p=O.native.state().perms||{};return PERMS.map(([k,i,t,d])=>h('div',{class:'li'},O.icon(i),h('div',{class:'t'},h('b',null,t),h('span',null,d)),p[k]?h('span',{class:'ok s'},'Дано'):h('button',{class:'btn sm',onclick:()=>OC.grant(k)},'Разрешить')))};
-function openPerms(){const box=h('div',null,O.permRows());const s=sub('Разрешения',box,{onClose:()=>{permUI=null}});permUI=()=>{box.textContent='';box.append(O.permRows())}}
+function openPerms(){const box=h('div',null,...O.permRows());const s=sub('Разрешения',box,{onClose:()=>{permUI=null}});permUI=()=>{box.textContent='';box.append(...O.permRows())}}
 O.on('perms',()=>{if(permUI)permUI()});
 
 // ---- compatibility / about ----

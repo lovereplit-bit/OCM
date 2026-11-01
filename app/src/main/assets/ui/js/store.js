@@ -28,26 +28,53 @@ O.child=sid=>S.childSessions&&S.childSessions[sid];
 const saveMsgs=O.debounce(sid=>{const l=O.msgs(sid).list.slice(-400).map(m=>({info:m.info,parts:m.parts}));O.kv.set('msgs:'+sid,l)},1200);
 
 // ---- server events ----
+let syncBusy=false;
+O.syncSession=async(sid,force)=>{
+  if(!sid||syncBusy)return;syncBusy=true;
+  try{
+    const arr=await api('GET','/session/'+sid+'/message',null,{timeout:15000});
+    if(Array.isArray(arr)){
+      const s=O.msgs(sid);let changed=force||arr.length!==s.list.length;
+      if(!changed){
+        for(let i=0;i<arr.length;i++){
+          const m=arr[i],cur=s.idx.get(m.info.id);
+          if(!cur||(m.parts&&cur.parts&&m.parts.length!==cur.parts.length)){changed=true;break}
+        }
+      }
+      if(changed){
+        s.list=[];s.idx=new Map();
+        for(const m of arr){const x={info:m.info,parts:m.parts};s.list.push(x);s.idx.set(m.info.id,x)}
+        saveMsgs(sid);if(sid===S.sid)bus.emit('open',sid);
+      }
+    }
+  }catch(e){}finally{syncBusy=false}};
+
 O.onServerEvent=raw=>{let o;try{o=JSON.parse(raw)}catch{return}
   const ev=o.payload||o,p=ev.properties||{};
-  if(o.directory&&o.directory!=='global'&&S.dir&&o.directory!==S.dir&&!/^(permission|question)\./.test(ev.type))return;
+  const evSid=p.sessionID||(p.info&&p.info.sessionID)||(p.part&&p.part.sessionID)||(p.message&&p.message.sessionID);
+  const isCur=evSid&&evSid===S.sid;
+  const normD=d=>String(d||'').replace(/\/+$/,'').replace(/^\/sdcard(\/|$)/,'/storage/emulated/0$1');
+  if(!isCur&&o.directory&&o.directory!=='global'&&S.dir&&normD(o.directory)!==normD(S.dir)&&!/^(permission|question)\./.test(ev.type))return;
   switch(ev.type){
-  case'server.connected':S.up=true;bus.emit('conn');break;
-  case'session.created':case'session.updated':{const i=p.info;if(!i)break;
+  case'server.connected':S.up=true;bus.emit('conn');if(S.sid)O.syncSession(S.sid);break;
+  case'session.created':case'session.updated':{const i=p.info||p.session;if(!i)break;
     if(i.parentID){(S.childSessions=S.childSessions||{})[i.id]=i;break}
     const k=S.sessions.findIndex(x=>x.id===i.id);if(k>=0)S.sessions[k]=i;else S.sessions.unshift(i);
     S.sessions.sort((a,b)=>b.time.updated-a.time.updated);bus.emit('sessions');if(i.id===S.sid)bus.emit('session');break}
   case'session.deleted':S.sessions=S.sessions.filter(x=>x.id!==(p.info&&p.info.id));bus.emit('sessions');if(p.info&&p.info.id===S.sid){S.sid=null;bus.emit('open',null)}break;
   case'session.status':S.status[p.sessionID]=p.status;bus.emit('status',p.sessionID);break;
-  case'session.idle':S.status[p.sessionID]={type:'idle'};bus.emit('status',p.sessionID);bus.emit('idle',p.sessionID);break;
+  case'session.idle':S.status[p.sessionID]={type:'idle'};bus.emit('status',p.sessionID);bus.emit('idle',p.sessionID);if(p.sessionID===S.sid)O.syncSession(p.sessionID,true);break;
   case'session.error':bus.emit('serror',p);break;
   case'session.diff':S.diffs[p.sessionID]=p.diff||[];bus.emit('diff',p.sessionID);break;
-  case'message.updated':{const m=O.upsertMsg(p.info);bus.emit('msg',p.info.sessionID,m);saveMsgs(p.info.sessionID);break}
-  case'message.removed':{const s=O.msgs(p.sessionID);s.list=s.list.filter(m=>m.info.id!==p.messageID);s.idx.delete(p.messageID);bus.emit('msg-removed',p.sessionID,p.messageID);break}
-  case'message.part.updated':{const m=O.upsertPart(p.part);bus.emit('part',p.part.sessionID,m,p.part);saveMsgs(p.part.sessionID);break}
-  case'message.part.delta':{const s=O.msgs(p.sessionID),m=s.idx.get(p.messageID);if(!m)break;const pt=m.parts.find(x=>x.id===p.partID);if(!pt)break;
-    pt[p.field||'text']=(pt[p.field||'text']||'')+p.delta;bus.emit('part',p.sessionID,m,pt);break}
-  case'message.part.removed':{const m=O.msgs(p.sessionID).idx.get(p.messageID);if(m){m.parts=m.parts.filter(x=>x.id!==p.partID);bus.emit('part-removed',p.sessionID,m,p.partID)}break}
+  case'message.updated':{const info=p.info||p.message||(p.id?p:null);if(!info||!info.id)break;const m=O.upsertMsg(info);const sid=info.sessionID||S.sid;bus.emit('msg',sid,m);saveMsgs(sid);break}
+  case'message.removed':{const sid=p.sessionID||S.sid,s=O.msgs(sid);s.list=s.list.filter(m=>m.info.id!==p.messageID);s.idx.delete(p.messageID);bus.emit('msg-removed',sid,p.messageID);break}
+  case'message.part.updated':{const part=p.part||(p.id&&p.messageID?p:null);if(!part)break;const m=O.upsertPart(part);const sid=part.sessionID||S.sid;bus.emit('part',sid,m,part);saveMsgs(sid);break}
+  case'message.part.delta':{const sid=p.sessionID||(p.part&&p.part.sessionID)||S.sid,mid=p.messageID||(p.part&&p.part.messageID),pid=p.partID||(p.part&&p.part.id);
+    if(!sid||!mid)break;const s=O.msgs(sid);let m=s.idx.get(mid);
+    if(!m)m=O.upsertMsg({id:mid,sessionID:sid,role:'assistant',time:{created:Date.now()}});
+    let pt=m.parts.find(x=>x.id===pid);if(!pt){pt={id:pid||('prt_'+Date.now()),sessionID:sid,messageID:mid,type:p.type||'text',text:''};m.parts.push(pt)}
+    const f=p.field||'text';pt[f]=(pt[f]||'')+p.delta;bus.emit('part',sid,m,pt);break}
+  case'message.part.removed':{const sid=p.sessionID||S.sid,m=O.msgs(sid).idx.get(p.messageID);if(m){m.parts=m.parts.filter(x=>x.id!==p.partID);bus.emit('part-removed',sid,m,p.partID)}break}
   case'permission.updated':case'permission.asked':{const q=normPerm(p);if(!S.perms.some(x=>x.id===q.id))S.perms.push(q);bus.emit('perm');break}
   case'permission.replied':{const id=p.permissionID||p.requestID||p.id;S.perms=S.perms.filter(x=>x.id!==id);bus.emit('perm');break}
   case'question.asked':{if(!S.questions.some(x=>x.id===p.id))S.questions.push(p);bus.emit('perm');break}
@@ -62,9 +89,9 @@ const normPerm=p=>({id:p.id,sessionID:p.sessionID,title:p.title||p.permission||p
 // Brief SSE drops (app frozen in background for a second) must not flash the reconnect banner:
 // delay it, cancel when the stream comes back.
 let upT=null;
-O.on('sse',d=>{if(d.t==='data')O.onServerEvent(d.d);else if(d.t==='open'){if(upT){clearTimeout(upT);upT=null}S.up=true;bus.emit('conn')}
+O.on('sse',d=>{if(d.t==='data')O.onServerEvent(d.d);else if(d.t==='open'){if(upT){clearTimeout(upT);upT=null}S.up=true;bus.emit('conn');if(S.sid)O.syncSession(S.sid)}
   else if(d.t==='close'){S.up=false;if(!upT)upT=setTimeout(()=>{upT=null;if(!S.up)bus.emit('conn')},5000)}});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!S.up){try{OC.sseStart()}catch(e){}}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(!S.up){try{OC.sseStart()}catch(e){}}if(S.sid)O.syncSession(S.sid,true);O.loadPending()}});
 
 // ---- opencode account (Zen) status: known once checked, so hints never nag after a login ----
 O.checkAccount=async()=>{try{const r=await api('GET','/experimental/console/orgs',null,{timeout:10000});

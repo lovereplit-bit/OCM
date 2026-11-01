@@ -31,7 +31,12 @@ O.chatInit=root=>{
   bus.on('part',(sid,m)=>{if(sid!==S.sid)return;const was=stick;ensureMsg(m);if(was)scrollEnd()});
   bus.on('msg-removed',(sid,id)=>{const e=msgEls.get(id);if(e){e.remove();msgEls.delete(id)}});
   bus.on('part-removed',(sid,m,pid)=>{const e=partEls.get(pid);if(e){e.remove();partEls.delete(pid)}});
-  bus.on('status',sid=>{if(sid===S.sid){renderStatus();updateSend()}});
+let pollTimer=null;
+function startPoll(){if(pollTimer)return;pollTimer=setInterval(()=>{if(S.sid&&busy())O.syncSession(S.sid);else stopPoll()},2500)}
+function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null}}
+
+  bus.on('status',sid=>{if(sid===S.sid){renderStatus();updateSend();if(busy())startPoll();else stopPoll()}});
+  bus.on('idle',sid=>{if(sid===S.sid||!sid){stopPoll();renderStatus();updateSend()}});
   bus.on('perm',renderDock);bus.on('todo',sid=>{if(sid===S.sid)renderTodos()});
   bus.on('session',()=>{const k=revisionKey();if(k!==revKey)renderAll();else renderRevert()});
   bus.on('sessions',()=>{renderRevert()});
@@ -50,8 +55,21 @@ function renderAll(){
   const list=S.sid?O.visibleMsgs(S.sid):[];
   if(!list.length)showEmpty();else{const fr=document.createDocumentFragment();list.forEach(m=>{const e=buildMsg(m);fr.append(e)});msgsEl.append(fr)}
   scrollEnd(true);renderDock();renderStatus();renderRevert();renderTodos();updateSend();updateChips()}
-function showEmpty(){msgsEl.append(h('div',{class:'empty'},O.logo(40),h('b',{style:{color:'var(--fg)',fontSize:'17px'}},'OpenCode'),h('span',{class:'mono s'},S.dir||''),
-  h('span',null,'Опишите задачу, введите / для команд или @ для упоминания файла.')))}
+function showEmpty(){msgsEl.append(h('div',{class:'empty'},
+  h('div',{class:'opencode-watermark'},'opencode'),
+  h('div',{class:'pills-row'},
+    h('span',{class:'pill',onclick:()=>O.openProjects()},O.icon('folder'),h('span',null,O.basename(S.dir)||'/root')),
+    h('span',{class:'pill'},O.icon('branch'),h('span',null,S.branch||'no git')),
+    S.model?h('span',{class:'pill',onclick:()=>O.openModels()},O.icon('cpu'),h('span',null,(O.modelInfo(S.model.providerID,S.model.modelID)||{}).name||S.model.modelID)):null
+  ),
+  h('p',{class:'empty-hint'},'Опишите задачу, введите / для команд или @ для файлов'),
+  h('div',{class:'quick-chips'},
+    h('button',{class:'chip',onclick:()=>O.insertText('/help')},O.icon('info'),h('span',null,'/help')),
+    h('button',{class:'chip',onclick:()=>O.insertText('/init')},O.icon('doc'),h('span',null,'/init')),
+    h('button',{class:'chip',onclick:()=>O.openModels()},O.icon('cpu'),h('span',null,'Модели')),
+    h('button',{class:'chip',onclick:()=>O.openConnect()},O.icon('key'),h('span',null,'Провайдеры'))
+  )
+))}
 function ensureMsg(m){
   const rv=revisionKey();if(rv&&m.info.id>=rv)return;
   let el=msgEls.get(m.info.id);
@@ -283,7 +301,8 @@ async function onSend(){
     const m=O.upsertMsg({id:mid,sessionID:sid,role:'user',time:{created:Date.now()},agent:S.agent,model:S.model});m.local=true;
     m.parts=parts.map((p,i)=>Object.assign({id:'prt_local'+i,sessionID:sid,messageID:mid},p));bus.emit('msg',sid,m);scrollEnd(true);
     await api('POST','/session/'+sid+'/prompt_async',{messageID:mid,agent:S.agent,model:S.model,variant:S.variant||undefined,parts},{timeout:30000});
-  }catch(e){const s=O.msgs(S.sid);s.list=s.list.filter(x=>x.info.id!==mid);s.idx.delete(mid);const el=msgEls.get(mid);if(el){el.remove();msgEls.delete(mid)}O.toast(e.message,4000);ta.value=text;onInput()}}
+    startPoll();
+  }catch(e){stopPoll();const s=O.msgs(S.sid);s.list=s.list.filter(x=>x.info.id!==mid);s.idx.delete(mid);const el=msgEls.get(mid);if(el){el.remove();msgEls.delete(mid)}O.toast(e.message,4000);ta.value=text;onInput()}}
 function clear(){ta.value='';atts=[];mentions=[];renderAtts();autosize();hidePop();updateSend()}
 O.chat={renderAll,sess,focus:()=>ta&&ta.focus()};
 })();

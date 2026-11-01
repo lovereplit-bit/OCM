@@ -42,10 +42,10 @@ shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
 info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
 cloud:'<path d="M18 10h-1.3A8 8 0 109 18h9a4 4 0 000-8z"/>',
 play:'<path d="M6 4l14 8-14 8z" fill="currentColor"/>',
-logo:'<path d="M5 3h14v18H5zM9 7h6v10H9z" fill="currentColor" fill-rule="evenodd" stroke="none"/>'
+logo:'<rect x="5" y="2" width="14" height="20" rx="1.5" fill="currentColor"/><rect x="8.5" y="6" width="7" height="4.5" fill="var(--bg,#0e0e10)"/><rect x="8.5" y="10.5" width="7" height="7.5" fill="var(--mut,#555559)"/>'
 };
 O.icon=(n,c)=>{const s=document.createElement('span');s.className='ic'+(c?' '+c:'');
   s.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(I[n]||I.file)+'</svg>';return s};
-O.logo=(w)=>{const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('viewBox','0 0 48 60');s.setAttribute('class','logo');s.style.width=(w||42)+'px';s.style.height=((w||42)*1.25)+'px';
-  s.innerHTML='<path fill="currentColor" fill-rule="evenodd" d="M0 0h48v60H0zM12 12h24v36H12z"/>';return s};
+O.logo=(w)=>{const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('viewBox','0 0 100 124');s.setAttribute('class','logo');s.style.width=(w||40)+'px';s.style.height=((w||40)*1.24)+'px';
+  s.innerHTML='<rect width="100" height="124" fill="#ffffff" rx="4"/><rect x="25" y="24" width="50" height="26" fill="var(--bg,#0e0e10)"/><rect x="25" y="50" width="50" height="50" fill="#555559"/>';return s};
 })();

@@ -78,18 +78,91 @@ O.openConnect=async()=>{
   }else{
     body.append(h('button',{class:'btn pri wide',onclick:()=>{s.close();O.openAccount()}},O.icon('user'),'Войти через Google / GitHub (аккаунт opencode)'),
       h('div',{class:'note',style:{margin:'10px 0'}},'Вход в аккаунт opencode делает квоту Zen персональной — как в opencode на компьютере. Либо подключите провайдера своим ключом ниже.'));
-  }
-  body.append(q,list);draw();
+  const provBase={'openai':'https://api.openai.com/v1','anthropic':'https://api.anthropic.com','openrouter':'https://openrouter.ai/api/v1','deepseek':'https://api.deepseek.com/v1','groq':'https://api.groq.com/openai/v1','together':'https://api.together.xyz/v1','fireworks':'https://api.fireworks.ai/inference/v1','mistral':'https://api.mistral.ai/v1','xai':'https://api.x.ai/v1','cerebras':'https://api.cerebras.ai/v1','nvidia':'https://integrate.api.nvidia.com/v1','google':'https://generativelanguage.googleapis.com/v1beta/openai','ollama':'http://localhost:11434/v1','lmstudio':'http://localhost:1234/v1'};
+  const probeModels=async(rawBase,key,pid)=>{
+    let base=String(rawBase||'').trim().replace(/\/+$/,'');
+    if(!base)base=provBase[pid]||'https://api.openai.com/v1';
+    let url=base.endsWith('/models')?base:(base+(base.endsWith('/v1')?'/models':'/v1/models'));
+    const headers={};
+    if(pid==='anthropic'||base.includes('anthropic.com')){
+      url=base.replace(/\/v1.*$/,'')+'/v1/models';
+      if(key)headers['x-api-key']=key;headers['anthropic-version']='2023-06-01';
+    }else if(key){headers['Authorization']='Bearer '+key}
+    const res=await fetch(url,{headers});
+    if(!res.ok)throw new Error('HTTP '+res.status+': '+(await res.text()).slice(0,200));
+    const data=await res.json();
+    const arr=data.data||data.models||(Array.isArray(data)?data:[]);
+    const list=arr.map(m=>typeof m==='string'?m:(m.id||m.name||m.model)).filter(Boolean).sort();
+    return list;
+  };
+  const keyForm=p=>{
+    const inp=h('input',{type:'password',placeholder:'Вставьте API-ключ',autocapitalize:'off',autocorrect:'off'});
+    const urlInp=h('input',{placeholder:provBase[p.id]||'https://api.../v1',value:provBase[p.id]||'',autocapitalize:'off',autocorrect:'off'});
+    const showUrl=h('details',{style:{margin:'8px 0',fontSize:'12.5px'}},h('summary',{class:'mut',style:{cursor:'pointer'}},'Кастомный Base URL (прокси)'),h('div',{class:'field',style:{marginTop:'6px'}},urlInp));
+    const modelsBox=h('div',{class:'hide',style:{marginTop:'10px',maxHeight:'220px',overflowY:'auto',border:'1px solid var(--line)',borderRadius:'12px',background:'var(--bg)'}});
+    const fetchBtn=h('button',{class:'btn wide',style:{marginTop:'8px'},onclick:async()=>{
+      const k=inp.value.trim();fetchBtn.disabled=true;fetchBtn.textContent='Опрашиваем API...';
+      modelsBox.textContent='';modelsBox.classList.remove('hide');
+      try{
+        const ms=await probeModels(urlInp.value.trim()||provBase[p.id],k,p.id);
+        if(!ms.length){modelsBox.append(h('div',{class:'mut',style:{padding:'12px'}},'Моделей не найдено'));return}
+        modelsBox.append(h('div',{class:'grp',style:{margin:'8px 10px 4px'}},'Доступные модели ('+ms.length+') — нажмите для копирования'));
+        ms.forEach(m=>modelsBox.append(h('div',{class:'li',style:{padding:'6px 10px',cursor:'pointer'},onclick:()=>{O.native.copy(m);O.toast('Скопировано: '+m)}},
+          O.icon('cpu'),h('div',{class:'t'},h('b',{style:{fontSize:'13px',fontWeight:500}},m)),h('button',{class:'ibtn s',onclick:e=>{e.stopPropagation();O.native.copy(m)}},O.icon('copy')))));
+      }catch(e){modelsBox.append(h('div',{class:'errbox',style:{margin:'8px'}},'Ошибка опроса: '+e.message))}
+      finally{fetchBtn.disabled=false;fetchBtn.textContent='';fetchBtn.append(O.icon('search'),'Получить список моделей')}
+    }},O.icon('search'),'Получить список моделей');
+    const sh=O.sheet(name(p),h('div',null,h('div',{class:'field'},h('label',null,'API-ключ'),inp),showUrl,fetchBtn,modelsBox,
+      p.id==='opencode'?h('div',{class:'note',style:{margin:'8px 0'}},'Получите ключ Zen на opencode.ai/zen. Бесплатные модели работают и без него.'):null,
+      h('button',{class:'btn pri wide',style:{marginTop:'12px'},onclick:async()=>{if(!inp.value.trim())return;try{await api('PUT','/auth/'+p.id,{type:'api',key:inp.value.trim()});sh.close();after()}catch(e){O.toast(e.message)}}},'Сохранить')));
+  };
+  const openCustom=()=>{
+    const nid=h('input',{placeholder:'например: my-llm, ollama, proxy',autocapitalize:'off',autocorrect:'off'});
+    const nname=h('input',{placeholder:'например: Мой провайдер',autocapitalize:'off',autocorrect:'off'});
+    const nurl=h('input',{placeholder:'http://localhost:11434/v1 или https://...',autocapitalize:'off',autocorrect:'off'});
+    const nkey=h('input',{type:'password',placeholder:'API-ключ (если нужен)',autocapitalize:'off',autocorrect:'off'});
+    const modelsBox=h('div',{class:'hide',style:{marginTop:'10px',maxHeight:'200px',overflowY:'auto',border:'1px solid var(--line)',borderRadius:'12px',background:'var(--bg)'}});
+    let foundModels=[];
+    const probeBtn=h('button',{class:'btn wide',style:{marginTop:'8px'},onclick:async()=>{
+      const u=nurl.value.trim();if(!u){O.toast('Введите Base URL');return}
+      probeBtn.disabled=true;probeBtn.textContent='Опрашиваем API...';
+      modelsBox.textContent='';modelsBox.classList.remove('hide');
+      try{
+        foundModels=await probeModels(u,nkey.value.trim(),nid.value.trim());
+        if(!foundModels.length){modelsBox.append(h('div',{class:'mut',style:{padding:'12px'}},'Модели не найдены'));return}
+        modelsBox.append(h('div',{class:'grp',style:{margin:'8px 10px 4px'}},'Найдено моделей: '+foundModels.length));
+        foundModels.forEach(m=>modelsBox.append(h('div',{class:'li',style:{padding:'6px 10px'}},O.icon('cpu'),h('div',{class:'t'},h('b',{style:{fontSize:'13px'}},m)),O.icon('check','ok'))));
+      }catch(e){modelsBox.append(h('div',{class:'errbox',style:{margin:'8px'}},'Ошибка опроса: '+e.message))}
+      finally{probeBtn.disabled=false;probeBtn.textContent='';probeBtn.append(O.icon('search'),'Опросить API и получить модели')}
+    }},O.icon('search'),'Опросить API и получить модели');
+    const sh=O.sheet('Кастомный провайдер',h('div',null,
+      h('div',{class:'field'},h('label',null,'ID провайдера'),nid),
+      h('div',{class:'field',style:{marginTop:'6px'}},h('label',null,'Название'),nname),
+      h('div',{class:'field',style:{marginTop:'6px'}},h('label',null,'Base URL'),nurl),
+      h('div',{class:'field',style:{marginTop:'6px'}},h('label',null,'API-ключ (опционально)'),nkey),
+      probeBtn,modelsBox,
+      h('button',{class:'btn pri wide',style:{marginTop:'12px'},onclick:async()=>{
+        const id=(nid.value.trim()||'custom').toLowerCase().replace(/[^a-z0-9_-]/g,'');
+        const url=nurl.value.trim();if(!url){O.toast('Укажите Base URL');return}
+        const mObj={};foundModels.forEach(m=>{mObj[m]={name:m}});
+        if(!foundModels.length)mObj['default']={name:'Default Model'};
+        const cfgText=O.native.cfgRead()||'{}';let cfgObj={};try{cfgObj=JSON.parse(cfgText)}catch{}
+        cfgObj.provider=cfgObj.provider||{};
+        cfgObj.provider[id]={npm:'@ai-sdk/openai',name:nname.value.trim()||id,baseURL:url,models:mObj};
+        const w=O.native.cfgWrite(JSON.stringify(cfgObj,null,2));
+        if(!w.ok){O.toast(w.err||'Ошибка записи opencode.json');return}
+        if(nkey.value.trim()){try{await api('PUT','/auth/'+id,{type:'api',key:nkey.value.trim()})}catch{}}
+        sh.close();after();O.toast('Кастомный провайдер сохранён!');
+      }},'Сохранить провайдер')));
+  };
+  const addBtn=h('button',{class:'btn wide',style:{marginBottom:'10px'},onclick:openCustom},O.icon('plus'),'Добавить кастомный провайдер (OpenAI/Ollama)');
+  body.append(addBtn,q,list);draw();
   const after=async()=>{try{await api('POST','/instance/dispose',null)}catch{}await O.loadMeta();O.toast('Подключено');s.close()};
   const pick=p=>{const ms=(auth[p.id]||[]).map((m,i)=>({m,i}));if(!ms.length)ms.push({m:{type:'api',label:'API-ключ'},i:0});
     const go=x=>x.m.type==='oauth'?oauth(p,x):keyForm(p);
     if(ms.length===1&&!conn.has(p.id))return go(ms[0]);
     O.actions(name(p),[...ms.map(x=>({label:x.m.label||(x.m.type==='oauth'?'Войти':'API-ключ'),icon:x.m.type==='oauth'?'user':'key',fn:()=>go(x)})),
       conn.has(p.id)?{label:'Отключить',icon:'trash',danger:true,fn:()=>disconnect(p)}:null])};
-  const keyForm=p=>{const inp=h('input',{type:'password',placeholder:'Вставьте API-ключ',autocapitalize:'off',autocorrect:'off'});
-    const sh=O.sheet(name(p),h('div',null,h('div',{class:'field'},h('label',null,'API-ключ'),inp),
-      p.id==='opencode'?h('div',{class:'note',style:{margin:'8px 0'}},'Получите ключ Zen на opencode.ai/zen. Бесплатные модели работают и без него.'):null,
-      h('button',{class:'btn pri wide',onclick:async()=>{if(!inp.value.trim())return;try{await api('PUT','/auth/'+p.id,{type:'api',key:inp.value.trim()});sh.close();after()}catch(e){O.toast(e.message)}}},'Сохранить')))};
   const oauth=async(p,x)=>{const view=h('div',null,h('div',{class:'mut'},'Подготовка...'));const sh=O.sheet(name(p),view);
     try{const r=await api('POST','/provider/'+p.id+'/oauth/authorize',{method:x.i});view.textContent='';
       view.append(h('div',null,r.instructions||'Откройте ссылку и подтвердите доступ.'),h('div',{style:{display:'flex',gap:'8px',margin:'12px 0'}},
