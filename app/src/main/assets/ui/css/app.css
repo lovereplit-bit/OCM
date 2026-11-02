@@ -1,11 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
 :root {
   --bg: #0d0d0f;
   --bg2: #161619;
   --bg3: #1c1c20;
   --card: #1c1c1f;
-  --card-hover: #232328;
+  --card-hover: #242429;
   --line: rgba(255, 255, 255, 0.08);
   --line2: rgba(255, 255, 255, 0.16);
   --fg: #ffffff;
@@ -100,7 +98,7 @@ html, body {
   overflow: hidden;
   background: var(--bg);
   color: var(--fg);
-  font: var(--fs)/1.5 "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: var(--fs)/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum";
   -webkit-user-select: none;
   user-select: none;
@@ -199,7 +197,7 @@ a:hover {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 9px 16px;
+  padding: 10px 16px;
   border-radius: 12px;
   background: var(--card);
   border: 1px solid var(--line);
@@ -234,7 +232,7 @@ a:hover {
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  padding: 5px 10px;
+  padding: 5px 11px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line);
@@ -253,8 +251,8 @@ a:hover {
 }
 
 .spin {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border: 2px solid var(--line);
   border-top-color: var(--fg);
   border-radius: 50%;
@@ -272,8 +270,68 @@ a:hover {
 }
 .dot.ok { background: var(--ok); }
 .dot.err { background: var(--err); }
-.dot.warn { background: var(--warn); }
+.dot.warn { background: var(--warn)}
 .fi { width: 18px; height: 18px; flex: none; object-fit: contain; }
+
+/* ==========================================================================
+   BOOT / ONBOARDING / LINUX INSTALL / PROFILE SCREEN
+   ========================================================================== */
+#boot {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--bg);
+  overflow-y: auto;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.center {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  max-width: 440px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.logo {
+  width: 52px;
+  height: 52px;
+  flex: none;
+  color: var(--fg);
+}
+
+.note {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--blue);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--mut);
+  text-align: left;
+  background: var(--card);
+}
+
+.bar {
+  height: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+  width: 100%;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--blue);
+  transition: width .2s;
+}
 
 /* ==========================================================================
    APP SHELL & TOP HUD (Screenshot 1: Minimalist, Hamburger left, Ghost right)
@@ -802,10 +860,9 @@ a:hover {
   color: var(--fg);
   flex: none;
 }
-.settings-row-icon.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
 .settings-row-icon.purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
-.settings-row-icon.amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 .settings-row-icon.green { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+.settings-row-icon.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
 
 .settings-row-text {
   flex: 1;
@@ -828,6 +885,70 @@ a:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ==========================================================================
+   LEGACY / GENERAL LIST ROWS & CARDS
+   ========================================================================== */
+.li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s;
+}
+.li:active {
+  background: var(--card-hover);
+}
+.li.on {
+  background: var(--card);
+}
+.li .t {
+  flex: 1;
+  min-width: 0;
+}
+.li .t b {
+  display: block;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.li .t span {
+  display: block;
+  color: var(--mut);
+  font-size: 12.5px;
+}
+
+.card {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 16px;
+  padding: 12px 14px;
+}
+.card.warn {
+  border-color: var(--warn);
+}
+.card .row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.card .row .btn {
+  flex: 1;
+}
+
+.grp {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--mut);
+  margin: 16px 6px 4px;
+  font-weight: 600;
 }
 
 /* ==========================================================================
@@ -1093,6 +1214,32 @@ a:hover {
 .fchips { display: flex; flex-wrap: wrap; gap: 6px; }
 .fchips img.thumb { max-height: 120px; max-width: 100%; border-radius: 10px; }
 
+#pop {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 100%;
+  max-height: 42vh;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+  z-index: 15;
+}
+#pop .it {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+}
+#pop .it.on, #pop .it:active { background: var(--bg3); }
+#pop .it b { font-weight: 600; }
+#pop .it span.d { color: var(--mut); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atts { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 4px 6px; }
+.status-line { display: flex; align-items: center; gap: 8px; color: var(--mut); font-size: 12.5px; padding: 2px 12px 6px; }
+.nokey { display: flex; align-items: center; gap: 8px; margin: 0 2px 6px; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 10px; color: var(--mut); font-size: 12px; }
+
 #jump {
   position: absolute;
   right: 16px;
@@ -1239,8 +1386,43 @@ a:hover {
   font-style: normal;
 }
 .code-view .ln span { white-space: pre; padding-right: 16px; }
+.editor {
+  flex: 1;
+  border-radius: 0;
+  border: 0;
+  resize: none;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
 
-/* Terminal */
+/* Terminal & Panes */
+.pane-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  min-height: 44px;
+}
+.pane-h b { font-weight: 600; }
+#side-tabs { display: none; border-bottom: 1px solid var(--line); }
+#app[data-mode=wide] #side-tabs { display: flex; }
+#side-tabs button { flex: 1; padding: 9px 0; color: var(--mut); font-weight: 500; font-size: 13px; }
+#side-tabs button.on { color: var(--fg); box-shadow: inset 0 -2px var(--fg); }
+.side-pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.side-pane.show { display: flex; }
+
+.tsub { display: flex; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.tsub button { padding: 5px 12px; border-radius: 999px; color: var(--mut); border: 1px solid var(--line); }
+.tsub button.on { color: var(--fg); background: var(--bg2); border-color: var(--fg); }
+#agentlog { flex: 1; overflow: auto; padding: 8px 10px; background: var(--code); font-family: "JetBrains Mono", monospace; font-size: 12px; }
+#agentlog .cmd { color: var(--ok); white-space: pre-wrap; word-break: break-all; margin-top: 10px; }
+#agentlog .out { white-space: pre-wrap; word-break: break-all; color: var(--fg); }
+#agentlog .meta { color: var(--mut); font-size: 11px; }
+
 #xwrap { flex: 1; min-height: 0; background: var(--code); padding: 4px; }
 #xterm { height: 100%; }
 #keys {
@@ -1293,3 +1475,9 @@ a:hover {
 .hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable, .hljs-type, .hljs-name { color: #c084fc; }
 .hljs-deletion { color: var(--err); }
 .hljs-meta { color: var(--mut); }
+
+/* Wide screen adjustments */
+#app[data-mode=wide] .pane { display: none; }
+#app[data-mode=wide] #pane-files { display: flex !important; flex: none; width: 240px; border-right: 1px solid var(--line); }
+#app[data-mode=wide] #pane-chat { display: flex !important; }
+#app[data-mode=wide] #pane-side { display: flex !important; flex: none; width: min(44%, 480px); border-left: 1px solid var(--line); }
