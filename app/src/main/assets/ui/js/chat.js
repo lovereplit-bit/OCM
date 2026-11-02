@@ -229,26 +229,101 @@ function renderStatus(){const s=S.status[S.sid];statusEl.textContent='';
   if(!s||s.type==='idle'){statusEl.classList.add('hide');return}
   statusEl.classList.remove('hide');statusEl.append(h('span',{class:'spin'}),h('span',null,s.type==='retry'?('Повтор (попытка '+s.attempt+')'+(s.message?': '+s.message:'')):'Выполняется'))}
 function renderDock(){dockEl.textContent='';
-  S.perms.filter(p=>p.sessionID===S.sid).forEach(p=>dockEl.append(permCard(p)));
-  S.questions.filter(q=>q.sessionID===S.sid).forEach(q=>dockEl.append(questionCard(q)));
+  const curPerms=S.perms.filter(p=>p.sessionID===S.sid);
+  const curQuestions=S.questions.filter(q=>q.sessionID===S.sid);
+  curPerms.forEach(p=>dockEl.append(permCard(p)));
+  curQuestions.forEach(q=>dockEl.append(questionCard(q)));
   const other=S.perms.filter(p=>p.sessionID!==S.sid)[0]||S.questions.filter(q=>q.sessionID!==S.sid)[0];
-  if(other)dockEl.append(h('button',{class:'card warn',style:{textAlign:'left'},onclick:()=>O.openSession(other.sessionID)},O.icon('alert','warn'),'Другая сессия ждёт вас'));
+  if(other)dockEl.append(h('button',{class:'hud-dock-card',style:{padding:'12px 16px',display:'flex',alignItems:'center',gap:'10px',textAlign:'left',cursor:'pointer'},onclick:()=>O.openSession(other.sessionID)},O.icon('alert','warn'),h('b',null,'Другая сессия ждёт вас')));
+  if(chatRoot){chatRoot.classList.toggle('dock-active',curPerms.length>0||curQuestions.length>0)}
   O.updateBadges&&O.updateBadges()}
 function permCard(p){const btns=[];
   const reply=async r=>{btns.forEach(b=>b.disabled=true);try{await O.replyPermission(p,r)}catch(e){btns.forEach(b=>b.disabled=false);O.toast(e.message)}};
-  btns.push(h('button',{class:'btn dng',onclick:()=>reply('reject')},'Отклонить'),h('button',{class:'btn',onclick:()=>reply('once')},'Разрешить раз'),h('button',{class:'btn pri',onclick:()=>reply('always')},'Всегда'));
+  btns.push(h('button',{class:'btn-dock-skip',style:{color:'#f87171'},onclick:()=>reply('reject')},O.tr('Reject','Отклонить')),
+            h('button',{class:'btn-dock-skip',onclick:()=>reply('once')},O.tr('Once','Разрешить раз')),
+            h('button',{class:'btn-dock-submit',onclick:()=>reply('always')},O.tr('Always','Всегда')));
   const diff=p.metadata&&typeof p.metadata.diff==='string'?p.metadata.diff:'';
-  return h('div',{class:'card warn'},h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},O.icon('shield','warn'),h('b',null,'Разрешение: '+p.title)),
-    p.patterns.length?h('div',{class:'mono s mut',style:{marginTop:'4px',wordBreak:'break-all'}},p.patterns.join('\n')):null,
-    diff?h('details',{style:{marginTop:'6px'}},h('summary',{class:'s'},'Показать изменения'),O.unifiedEl(diff)):null,h('div',{class:'row'},btns))}
+  return h('div',{class:'hud-dock-card'},
+    h('div',{class:'hud-dock-header'},
+      h('div',{class:'hud-dock-header-left'},
+        h('div',{class:'badge-icon',style:{background:'rgba(245,158,11,0.15)',color:'#fbbf24'}},O.icon('shield')),
+        h('b',null,O.tr('Permission Request','Запрос разрешения'))),
+      h('span',{class:'mut',style:{fontSize:'11.5px',background:'rgba(255,255,255,0.06)',padding:'3px 8px',borderRadius:'999px'}},p.title)),
+    h('div',{class:'hud-dock-body'},
+      h('div',{style:{fontSize:'14px',fontWeight:'600',color:'#ffffff',marginBottom:'4px'}},p.title),
+      p.patterns.length?h('div',{class:'mono s mut',style:{background:'#141416',padding:'8px 10px',borderRadius:'10px',wordBreak:'break-all'}},p.patterns.join('\n')):null,
+      diff?h('details',{style:{marginTop:'6px'}},h('summary',{class:'s'},'Показать изменения'),O.unifiedEl(diff)):null),
+    h('div',{class:'hud-dock-footer'},btns));
+}
 function questionCard(q){const qs=q.questions||[];const sel=qs.map(()=>new Set());const custom=qs.map(()=>'');
-  const send=async()=>{try{await api('POST','/question/'+q.id+'/reply',{answers:qs.map((_,i)=>[...sel[i],...(custom[i]?[custom[i]]:[])])});S.questions=S.questions.filter(x=>x.id!==q.id);renderDock()}catch(e){O.toast(e.message)}};
+  qs.forEach((x,i)=>{
+    if(Array.isArray(x.default))x.default.forEach(d=>sel[i].add(d));
+    else if(typeof x.default==='string'&&x.default)sel[i].add(x.default);
+  });
+  const send=async()=>{
+    const answers=qs.map((_,i)=>[...sel[i],...(custom[i]?.trim()?[custom[i].trim()]:[])]);
+    const hasAny=answers.some(a=>a.length>0);
+    if(!hasAny&&qs.length>0){
+      O.toast(O.tr('Please select an option or type an answer, or click Skip','Выберите вариант или введите ответ, либо нажмите «Пропустить»'));
+      return;
+    }
+    try{
+      await api('POST','/question/'+q.id+'/reply',{answers});
+      S.questions=S.questions.filter(x=>x.id!==q.id);
+      renderDock();
+    }catch(e){O.toast(e.message)}
+  };
   const rej=async()=>{try{await api('POST','/question/'+q.id+'/reject',{});S.questions=S.questions.filter(x=>x.id!==q.id);renderDock()}catch(e){O.toast(e.message)}};
-  const body=qs.map((x,i)=>{const opts=h('div',{style:{display:'flex',flexDirection:'column',gap:'6px',marginTop:'6px'}},(x.options||[]).map(o=>{
-      const b=h('button',{class:'li',style:{border:'1px solid var(--line)',padding:'8px 10px'},onclick:()=>{if(x.multiple){sel[i].has(o.label)?sel[i].delete(o.label):sel[i].add(o.label)}else{sel[i].clear();sel[i].add(o.label)}opts.querySelectorAll('button').forEach((bb,k)=>bb.classList.toggle('on',sel[i].has(x.options[k].label)))}},
-        h('div',{class:'t'},h('b',null,o.label),o.description?h('span',null,o.description):null));return b}));
-    return h('div',{style:{marginTop:'6px'}},x.header?h('b',null,x.header):null,h('div',null,x.question),opts,x.custom===false?null:h('input',{placeholder:'Свой вариант ответа',style:{marginTop:'6px'},oninput:e=>{custom[i]=e.target.value}}))});
-  return h('div',{class:'card warn'},h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},O.icon('info','warn'),h('b',null,'OpenCode спрашивает')),body,h('div',{class:'row'},h('button',{class:'btn',onclick:rej},'Пропустить'),h('button',{class:'btn pri',onclick:send},'Отправить')))}
+  const body=qs.map((x,i)=>{
+    const isMulti=!!x.multiple;
+    const qBadge=qs.length>1?h('div',{class:'dock-q-num'},O.tr('Question','Вопрос')+' '+(i+1)+' / '+qs.length):null;
+    const opts=h('div',{class:'dock-opts-list'},(x.options||[]).map(o=>{
+      const isInit=sel[i].has(o.label);
+      const indicator=h('div',{class:'dock-opt-indicator'+(isMulti?' check':'')});
+      const b=h('button',{
+        class:'dock-opt-row'+(isMulti?' multiple':'')+(isInit?' on':''),
+        onclick:()=>{
+          if(isMulti){
+            sel[i].has(o.label)?sel[i].delete(o.label):sel[i].add(o.label);
+          }else{
+            sel[i].clear();
+            sel[i].add(o.label);
+          }
+          opts.querySelectorAll('.dock-opt-row').forEach((bb,k)=>bb.classList.toggle('on',sel[i].has(x.options[k].label)));
+        }
+      },
+      indicator,
+      h('div',{class:'dock-opt-content'},
+        h('span',{class:'dock-opt-label'},o.label),
+        o.description?h('span',{class:'dock-opt-desc'},o.description):null));
+      return b;
+    }));
+    const inp=x.custom===false?null:h('input',{
+      class:'dock-custom-inp',
+      placeholder:O.tr('Type your own answer...','Свой вариант ответа...'),
+      oninput:e=>{custom[i]=e.target.value},
+      onkeydown:e=>{if(e.key==='Enter'){e.preventDefault();send()}},
+      onfocus:e=>{setTimeout(()=>e.target.scrollIntoView({behavior:'smooth',block:'center'}),250)}
+    });
+    return h('div',{class:'dock-q-section'},
+      qBadge,
+      x.header?h('div',{class:'dock-q-header'},x.header):null,
+      h('div',{class:'dock-q-title'},x.question),
+      opts,
+      inp);
+  });
+  return h('div',{class:'hud-dock-card'},
+    h('div',{class:'hud-dock-header'},
+      h('div',{class:'hud-dock-header-left'},
+        h('div',{class:'badge-icon'},O.icon('help')),
+        h('b',null,O.tr('OpenCode asks','OpenCode спрашивает'))),
+      h('span',{class:'mut',style:{fontSize:'11.5px',background:'rgba(255,255,255,0.06)',padding:'3px 8px',borderRadius:'999px'}},
+        qs.length>1?(qs.length+' '+O.tr('questions','вопроса')):(O.tr('Action needed','Требуется выбор')))),
+    h('div',{class:'hud-dock-body'},body),
+    h('div',{class:'hud-dock-footer'},
+      h('button',{class:'btn-dock-skip',onclick:rej},O.tr('Skip','Пропустить')),
+      h('button',{class:'btn-dock-submit',onclick:send},O.icon('send'),O.tr('Send reply','Отправить ответ'))));
+}
 
 // ---- composer ----
 let quotaModalOpen=false;
