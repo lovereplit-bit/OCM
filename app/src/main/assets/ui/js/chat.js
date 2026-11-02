@@ -1,6 +1,6 @@
 (function(){
 const O=window.OCM,h=O.h,S=O.S,api=O.api,bus=O.bus;
-let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn,nokeyEl,comp,projChip,vcsChip,footerPrompt,chatRoot;
+let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn,nokeyEl,comp,projChip,vcsChip,projTxt,vcsTxt,footerPrompt,chatRoot;
 const msgEls=new Map(),partEls=new Map(),open=new Set(),timers=new Map();
 let atts=[],mentions=[],stick=true,revKey='',trail=[];
 O.rel=p=>{p=String(p||'');return S.dir&&p.startsWith(S.dir+'/')?p.slice(S.dir.length+1):p};
@@ -17,7 +17,7 @@ O.chatInit=root=>{
   dockEl=h('div',{id:'dock'});statusEl=h('div',{class:'status-line hide'});
   popEl=h('div',{id:'pop',class:'hide'});attsEl=h('div',{class:'atts hide'});
   nokeyEl=h('div',{class:'nokey hide'},h('span',{class:'grow'},'Модели не подключены — бесплатные недоступны.'),h('button',{class:'btn sm',onclick:()=>O.openConnect()},O.icon('key'),'Подключить'));
-  ta=h('textarea',{rows:1,placeholder:'Спросите что угодно, / — команды, @ — контекст...',oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
+  ta=h('textarea',{rows:1,placeholder:'Спросите о чём угодно (/ команды, @ файлы)...',oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
   fileIn=h('input',{type:'file',multiple:true,class:'hide',accept:'image/*,application/pdf,text/*',onchange:onFiles});
   agentChip=h('button',{class:'chip agent',onclick:()=>O.openAgents()},O.icon('bot'),h('span'));
   modelChip=h('button',{class:'chip model',onclick:()=>O.openModels()},O.icon('cube'),h('span'));
@@ -25,10 +25,12 @@ O.chatInit=root=>{
   sendBtn=h('button',{id:'send',onclick:onSend},O.icon('send'));
   const plusBtn=h('button',{class:'ibtn s attach-btn',onclick:()=>fileIn.click()},O.icon('plus'));
   const cbar=h('div',{class:'cbar grow'},plusBtn,agentChip,modelChip,varChip);
-  projChip=h('button',{class:'context-pill sub-chip',onclick:()=>O.openProjects()},O.icon('folder'),h('span',null,'Проект по умолчанию'),O.icon('chevD'));
-  vcsChip=h('button',{class:'context-pill sub-chip',onclick:()=>O.setTab('changes')},O.icon('branch'),h('span',null,'Нет Git'));
+  projTxt=h('span',{class:'pill-text'},'Проект по умолчанию');
+  projChip=h('button',{class:'context-pill sub-chip',onclick:()=>O.openProjects()},O.icon('folder'),projTxt,O.icon('chevD'));
+  vcsTxt=h('span',{class:'pill-text'},'Нет Git');
+  vcsChip=h('button',{class:'context-pill sub-chip',onclick:()=>O.setTab('changes')},O.icon('branch'),vcsTxt);
   const subBar=h('div',{class:'comp-sub-bar'},projChip,vcsChip);
-  footerPrompt=h('button',{class:'opencode-footer-link',onclick:()=>O.openConnect()},'Подключитесь к более чем 75 провайдерам, чтобы использовать другие модели, включая Claude, GPT, Gemini и другие ›');
+  footerPrompt=h('button',{class:'opencode-footer-link',onclick:()=>O.openConnect()},'Подключить провайдеров (Claude, GPT, Gemini и др.) ›');
   comp=h('div',{id:'composer'},popEl,h('div',{class:'cbox'},subBar,nokeyEl,attsEl,ta,h('div',{class:'cbar-row',style:{display:'flex',alignItems:'center',gap:'6px',marginTop:'6px'}},cbar,sendBtn)),footerPrompt,fileIn);
   const wrap=h('div',{class:'chat-msgs-wrap',style:{position:'relative',flex:1,minHeight:0,display:'flex',flexDirection:'column'}},msgsEl,jumpEl);
   root.append(wrap,revEl,todoEl,statusEl,dockEl,comp);
@@ -208,12 +210,12 @@ function updateChips(){const m=S.model,mi=m&&O.modelInfo(m.providerID,m.modelID)
   agentChip.lastChild.textContent=S.agent;modelChip.lastChild.textContent=mi?(mi.name||m.modelID):'Выберите модель';
   const vs=mi&&mi.variants?Object.keys(mi.variants):[];
   varChip.classList.remove('hide');
-  varChip.lastChild.textContent=vs.length?(S.variant||'по умолчанию'):(S.opts.thinking?'Мышление':'Без мышления');
+  varChip.lastChild.textContent=vs.length?(S.variant||'по умолчанию'):(S.opts.thinking?'Мышление':'Без мышл.');
   varChip.classList.toggle('on',!!S.opts.thinking);
-  if(projChip)projChip.querySelector('span').textContent=O.basename(S.dir)||'Проект по умолчанию';
-  if(vcsChip)vcsChip.querySelector('span').textContent=S.branch||'Нет Git';
+  if(projTxt)projTxt.textContent=O.basename(S.dir)||'Проект по умолчанию';
+  if(vcsTxt)vcsTxt.textContent=S.branch||'Нет Git';
   const nokey=!m&&!S.offline&&S.up;nokeyEl.classList.toggle('hide',!nokey);
-  ta.disabled=!!S.offline&&!S.up;ta.placeholder=ta.disabled?'Офлайн — чтение кэшированных чатов':'Спросите что угодно, / — команды, @ — контекст...';updateSend()}
+  ta.disabled=!!S.offline&&!S.up;ta.placeholder=ta.disabled?'Офлайн — чтение кэшированных чатов':'Спросите о чём угодно (/ команды, @ файлы)...';updateSend()}
 function cycleVariant(){const mi=O.modelInfo(S.model.providerID,S.model.modelID),vs=[null,...Object.keys(mi&&mi.variants||{})];
   if(vs.length>1){O.setVariant(vs[(vs.indexOf(S.variant)+1)%vs.length])}
   else{S.opts.thinking=!S.opts.thinking;O.saveOpts();updateChips();renderAll();O.toast(S.opts.thinking?'Мышление включено':'Мышление отключено',1200)}}
