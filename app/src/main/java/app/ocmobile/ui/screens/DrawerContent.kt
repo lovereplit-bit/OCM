@@ -1,0 +1,258 @@
+package app.ocmobile.ui.screens
+
+import app.ocmobile.ui.theme.screenBackdrop
+import app.ocmobile.ui.theme.kimiLike
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.ocmobile.Graph
+import app.ocmobile.ui.components.tap
+import app.ocmobile.api.Session
+import app.ocmobile.ui.Nav
+import app.ocmobile.ui.Route
+import app.ocmobile.ui.components.Heading
+import app.ocmobile.ui.components.Ico
+import app.ocmobile.ui.components.IconBtn
+import app.ocmobile.ui.components.Pill
+import app.ocmobile.ui.components.Txt
+import app.ocmobile.ui.theme.Ic
+import app.ocmobile.ui.theme.Oc
+import coil3.compose.AsyncImage
+import java.io.File
+
+@Composable
+fun DrawerContent(nav: Nav, close: () -> Unit) {
+    val c = Oc.c
+    val sessions = Graph.chats.chatsOnly(Graph.chats.sessions.collectAsState().value)
+    val statuses by Graph.chats.statuses.collectAsState()
+    val pinnedIds = Graph.prefs.pinnedSet()
+    val pinned = sessions.filter { it.id in pinnedIds }
+    val recent = sessions.filter { it.id !in pinnedIds }.take(12)
+    fun go(r: Route) { close(); nav.root(r) }
+
+    Box(Modifier.fillMaxSize().screenBackdrop("DrawerContent1")) {
+        LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 140.dp)) {
+            item { DrawerHeader { go(it) } }
+            item {
+                val navs = if (Oc.look.id.kimiLike)
+                    // Kimi: sections with labels like in their menu, plus memory
+                    listOf(Triple("Запланированные", Ic.Clock2, Route.Scheduled), Triple("Удалённые устройства", Ic.Laptop, Route.Code), Triple("Проекты", Ic.Folder, Route.Projects), Triple("Артефакты", Ic.Puzzle, Route.Artifacts), Triple("Память", Ic.Sparkle, Route.Memory)) +
+                        // cl0udly has its own room: chat and play while the agent works
+                        (if (Oc.look.id == "cloud") listOf(Triple("cl0udly", Ic.Cloud, Route.Mascot)) else emptyList())
+                else listOf(Triple("Проекты", Ic.Folder, Route.Projects), Triple("Код", Ic.Code, Route.Code), Triple("Артефакты", Ic.Puzzle, Route.Artifacts), Triple("Расписание", Ic.Clock2, Route.Scheduled))
+                if (Oc.look.id == "cards") {
+                    // Cards: sections as 2×2 tiles
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        navs.chunked(2).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                row.forEach { (l, ic, r) ->
+                                    Column(Modifier.weight(1f).clip(Oc.round(16.dp)).background(c.surface).border(1.dp, c.border, Oc.round(16.dp)).tap(scale = 0.97f) { go(r) }.padding(14.dp)) {
+                                        Ico(ic, tint = c.accent, size = 20.dp); Spacer(Modifier.height(10.dp)); Txt(l, size = 15.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else Column(Modifier.padding(top = 8.dp)) { navs.forEach { (l, ic, r) -> NavItem(l, ic) { go(r) } } }
+                if (Oc.look.id != "cards") Box(Modifier.padding(horizontal = 20.dp, vertical = 14.dp).fillMaxWidth().height(1.dp).background(c.border))
+            }
+            if (pinned.isNotEmpty()) {
+                item { Txt("Закреплённые", Modifier.padding(start = 24.dp, top = 6.dp, bottom = 6.dp), size = 16.sp, color = c.textDim) }
+                items(pinned, key = { "p" + it.id }) { SessionRow(it, statuses[it.id], nav, close) }
+            }
+            item { Txt(if (Oc.look.id.kimiLike) "История чатов" else "Недавние", Modifier.padding(start = 24.dp, top = 14.dp, bottom = 6.dp), size = 16.sp, color = c.textDim) }
+            items(recent, key = { "r" + it.id }) { SessionRow(it, statuses[it.id], nav, close) }
+            if (recent.isEmpty() && pinned.isEmpty()) item { Txt("Сессий пока нет", Modifier.padding(start = 24.dp, top = 8.dp), size = 16.sp, color = c.textDim) }
+        }
+        Row(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(c.bg.copy(alpha = 0f), c.bg, c.bg)))
+                .padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (Oc.look.id.kimiLike) {
+                // Kimi: history search at the bottom and a round settings button
+                Row(
+                    Modifier.weight(1f).height(52.dp).clip(CircleShape).background(c.surfaceHigh.copy(alpha = 0.7f)).border(1.dp, c.border, CircleShape)
+                        .tap(scale = 0.98f) { SearchHandoff.pending = true; go(Route.Recents) }.padding(horizontal = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) { Ico(Ic.Search, tint = c.textDim, size = 22.dp); Spacer(Modifier.width(12.dp)); Txt("Поиск", size = 17.sp, color = c.textDim) }
+                Spacer(Modifier.width(10.dp))
+                if (Oc.look.id == "cloud") app.ocmobile.ui.components.KimiCircleBtn(Ic.Edit, { go(Route.Home) }, size = 52.dp)
+                else app.ocmobile.ui.components.KimiCircleBtn(Ic.Sliders, { go(Route.Settings) }, size = 52.dp)
+            } else {
+            Avatar(52.dp) { go(Route.Settings) }
+            Spacer(Modifier.weight(1f))
+            Pill("Новый чат", { go(Route.Home) }, icon = Ic.Plus)
+            }
+        }
+    }
+}
+
+@Composable
+fun Avatar(size: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+    val c = Oc.c
+    val path = Graph.prefs.avatarPath
+    Box(Modifier.size(size).clip(CircleShape).background(c.surfaceHigh).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        if (path.isNotBlank() && File(path).exists()) AsyncImage(File(path), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else Txt(Graph.prefs.userName.take(1).uppercase().ifBlank { "?" }, size = (size.value * 0.42f).sp, color = c.text)
+    }
+}
+
+/** Drawer header: each look has its own. */
+@Composable
+private fun DrawerHeader(go: (Route) -> Unit) {
+    val c = Oc.c
+    when (Oc.look.id) {
+        // Telegram: a colored panel with avatar and name
+        "messenger" -> Column(Modifier.fillMaxWidth().background(c.surface).padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 14.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Avatar(64.dp) { go(Route.Settings) }
+                Spacer(Modifier.weight(1f))
+                IconBtn(Ic.Search, { go(Route.Recents) })
+            }
+            Spacer(Modifier.height(14.dp))
+            Txt(Graph.prefs.userName.ifBlank { "OpenCode" }, size = 17.sp, weight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            Txt("OpenCode на этом телефоне", size = 14.sp, color = c.textDim)
+        }
+        // Hairline: mono label, wide heading and a line
+        "hairline" -> Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 12.dp, bottom = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Txt("TEXFI / OPENCODE", Modifier.weight(1f), size = 11.sp, color = c.textDim, family = Oc.label)
+                IconBtn(Ic.Search, { go(Route.Recents) }, iconSize = 20.dp)
+            }
+            Heading("Open", size = 30.sp)
+            Box(Modifier.padding(top = 2.dp)) { Heading("Code.", size = 30.sp, color = c.accent) }
+        }
+        // ChatGPT: a search bar at the top
+        "chatgpt" -> Row(
+            Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp).fillMaxWidth().height(44.dp).clip(CircleShape).background(c.surfaceHigh)
+                .tap(scale = 0.99f) { go(Route.Recents) }.padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) { Ico(Ic.Search, tint = c.textDim, size = 20.dp); Spacer(Modifier.width(10.dp)); Txt("Поиск", size = 16.sp, color = c.textDim) }
+        // Kimi: a plain heading without the mascot (the mascot is only on the empty screen and while thinking)
+        // Kimi: avatar, name and a round new chat button
+        "kimi", "cloud" -> Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 14.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Avatar(44.dp) { go(Route.Settings) }
+            Spacer(Modifier.width(14.dp))
+            Txt(Graph.prefs.userName.ifBlank { "OpenCode" }, Modifier.weight(1f), size = 19.sp, weight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1)
+            // cl0udly: settings at the top, new chat at the bottom by the search
+            if (Oc.look.id == "cloud") app.ocmobile.ui.components.KimiCircleBtn(Ic.Sliders, { go(Route.Settings) }, size = 48.dp)
+            else app.ocmobile.ui.components.KimiCircleBtn(Ic.Edit, { go(Route.Home) }, size = 48.dp)
+        }
+        // Notebook: heading and date in italics
+        "notebook" -> Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 12.dp, bottom = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Heading("Notebook", Modifier.weight(1f), size = 30.sp)
+                IconBtn(Ic.Search, { go(Route.Recents) })
+            }
+            androidx.compose.material3.Text(
+                java.text.SimpleDateFormat("EEEE, d MMMM", java.util.Locale("ru")).format(java.util.Date()),
+                fontFamily = Oc.reply, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontSize = 15.sp, color = c.textDim,
+            )
+        }
+        else -> Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Heading("OpenCode", Modifier.weight(1f), size = 30.sp)
+            IconBtn(Ic.Search, { go(Route.Recents) })
+        }
+    }
+}
+
+@Composable
+private fun NavItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    val c = Oc.c
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = if (Oc.look.id == "messenger") 13.dp else 15.dp), verticalAlignment = Alignment.CenterVertically) {
+        when (Oc.look.id) {
+            "hairline" -> { Ico(icon, tint = c.textDim, size = 18.dp); Spacer(Modifier.width(18.dp)); Txt(label.uppercase(), Modifier.weight(1f), size = 13.sp, family = Oc.label); Txt("→", size = 13.sp, color = c.textDim, family = Oc.label) }
+            "messenger" -> { Ico(icon, tint = c.textDim, size = 24.dp); Spacer(Modifier.width(28.dp)); Txt(label, size = 16.sp) }
+            "notebook" -> { Ico(icon, tint = c.accent, size = 22.dp); Spacer(Modifier.width(18.dp)); Txt(label, size = 18.sp, family = Oc.reply) }
+            "kimi", "cloud" -> { Ico(icon, tint = c.text, size = 23.dp); Spacer(Modifier.width(20.dp)); Txt(label, size = 18.sp) }
+            else -> { Ico(icon, tint = c.textDim, size = 26.dp); Spacer(Modifier.width(20.dp)); Txt(label, size = 18.sp, color = c.textDim) }
+        }
+    }
+}
+
+@Composable
+private fun SessionRow(s: Session, status: String?, nav: Nav, close: () -> Unit) {
+    var actions by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    if (actions) SessionActionsSheet(s) { actions = false }
+    val c = Oc.c
+    val current = (nav.current as? Route.Chat)?.id == s.id
+    val needs = Graph.chats.questions.collectAsState().value.any { it.sessionID == s.id } || Graph.chats.permissions.collectAsState().value.any { it.sessionID == s.id }
+    Row(
+        Modifier.padding(horizontal = 10.dp).fillMaxWidth().clip(Oc.round(18.dp)).background(if (current) c.surfaceHigh else androidx.compose.ui.graphics.Color.Transparent)
+            .tap(scale = 1f, onLongClick = { actions = true }) { close(); nav.openChat(s.id) }.padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (Oc.look.id == "messenger") {
+            // like a chat list: a circle with the first letter
+            val hue = listOf(0xFFE17076, 0xFFFAA774, 0xFF7BC862, 0xFF6EC9CB, 0xFF65AADD, 0xFFA695E7, 0xFFEE7AAE)[(s.id.hashCode() and 0x7fffffff) % 7]
+            Box(Modifier.size(44.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(hue)), contentAlignment = Alignment.Center) {
+                Txt(s.displayTitle.take(1).uppercase(), size = 18.sp, color = androidx.compose.ui.graphics.Color.White, weight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            }
+            Spacer(Modifier.width(14.dp))
+        } else if (Oc.look.id == "cloud") {
+            // cl0udly: icon by chat type
+            Ico(
+                when (app.ocmobile.data.ChatKind.of(s)) {
+                    app.ocmobile.data.ChatKind.Code -> Ic.Code
+                    app.ocmobile.data.ChatKind.Task -> Ic.ListCheck
+                    app.ocmobile.data.ChatKind.Research -> Ic.Globe
+                    app.ocmobile.data.ChatKind.Writing -> Ic.Edit
+                    app.ocmobile.data.ChatKind.Talk -> Ic.Chat
+                },
+                tint = c.textDim, size = 20.dp,
+            )
+            Spacer(Modifier.width(16.dp))
+        } else if (!Oc.look.id.kimiLike) {
+            Ico(if (s.directory == app.ocmobile.data.CHAT_DIR) Ic.Chat else if (s.directory.isBlank()) Ic.Terminal else Ic.Code, tint = c.textDim, size = if (Oc.look.id == "hairline") 18.dp else 22.dp)
+            Spacer(Modifier.width(18.dp))
+        }
+        Txt(s.displayTitle, Modifier.weight(1f), size = if (Oc.look.id == "hairline") 15.sp else if (Oc.look.id == "messenger") 16.sp else 18.sp, maxLines = 1, family = if (Oc.look.id == "notebook") Oc.reply else null)
+        // how many helpers worked in this chat
+        val all = Graph.chats.allSessions.collectAsState().value
+        val helpers = androidx.compose.runtime.remember(all, s.id) { all.values.count { it.parentID == s.id } }
+        if (helpers > 0) {
+            Spacer(Modifier.width(10.dp))
+            Row(Modifier.clip(CircleShape).background(c.surfaceHigh).padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                Ico(Ic.Users, tint = c.textDim, size = 13.dp); Spacer(Modifier.width(4.dp))
+                Txt("$helpers", size = 12.sp, color = c.textDim)
+            }
+        }
+        if (needs || status != null) {
+            Spacer(Modifier.width(12.dp))
+            Box(Modifier.size(11.dp).clip(CircleShape).background(if (needs) c.link else c.textDim))
+        }
+    }
+}
+
+/** Search opened from the drawer: in Recents the search bar "flies" up from where it was. */
+object SearchHandoff { @Volatile var pending = false }

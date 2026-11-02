@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the account vault and settings go to cloud backup: sign-in, memory, rules. Not the Ubuntu environment or chats. -->
+<full-backup-content>
+    <include domain="file" path="vault" />
+    <include domain="sharedpref" path="oc.xml" />
+</full-backup-content>

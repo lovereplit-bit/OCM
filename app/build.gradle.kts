@@ -1,62 +1,90 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 val appVersionName = (findProperty("appVersionName") as String?) ?: "2.0.0"
-val appVersionCode = ((findProperty("appVersionCode") as String?) ?: "200").toInt()
+val appVersionCode = ((findProperty("appVersionCode") as String?) ?: "29887640").toInt()
 val ksPass = System.getenv("KEYSTORE_PASSWORD")?.takeIf { it.isNotEmpty() } ?: "opencodemob"
+val releaseKs = rootProject.file("keystore/release.jks")
 
 android {
-    namespace = "app.opencodemob"
-    compileSdk = 35
+    namespace = "app.ocmobile"
+    compileSdk = 37
 
     defaultConfig {
-        applicationId = "app.opencodemob"
-        minSdk = 30
-        targetSdk = 34
+        applicationId = "app.ocmobile"
+        minSdk = 26
+        // 28 on purpose: proot runs binaries from the app data directory,
+        // and with targetSdk >= 29 Android forbids exec from app_data_file (same as Termux).
+        // The APK is distributed as a file, not through Play.
+        targetSdk = 28
         versionCode = appVersionCode
         versionName = appVersionName
-        ndk { abiFilters.add("arm64-v8a") }
-        buildConfigField("String", "GITHUB_REPO", "\"lovereplit-bit/OCM\"")
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${System.getenv("GOOGLE_WEB_CLIENT_ID") ?: ""}\"")
+        ndk { abiFilters += "arm64-v8a" }
     }
+
+    // targetSdk 28: see above; not an error for an APK outside Play
+    lint { disable += "ExpiredTargetSdkVersion" }
 
     signingConfigs {
         create("release") {
-            storeFile = rootProject.file("keystore/release.jks")
-            storePassword = ksPass
-            keyAlias = "opencodemob"
-            keyPassword = ksPass
+            if (releaseKs.exists()) {
+                storeFile = releaseKs
+                storePassword = ksPass
+                keyAlias = "opencodemob"
+                keyPassword = ksPass
+            } else {
+                storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            }
         }
     }
+
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = false
         }
     }
+
+    buildFeatures { compose = true; buildConfig = true }
+
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
-    kotlinOptions { jvmTarget = "17" }
-    buildFeatures { buildConfig = true }
-    androidResources { noCompress += listOf("xz") }
-    // proot and its loader ship as native libs: this is the only way to exec them on Android 10+
-    packaging { jniLibs { useLegacyPackaging = true } }
+
+    packaging {
+        // proot and its libraries ship as lib*.so and must be extracted to disk,
+        // otherwise they can't be run as executables.
+        jniLibs.useLegacyPackaging = true
+        jniLibs.keepDebugSymbols += "**/*.so"
+        resources.excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "DebugProbesKt.bin")
+    }
+
+    testOptions { unitTests.isReturnDefaultValues = true }
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.activity:activity-ktx:1.9.3")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.webkit:webkit:1.12.1")
-    implementation("androidx.credentials:credentials:1.3.0")
-    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
-    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
-    implementation("org.apache.commons:commons-compress:1.27.1")
-    implementation("org.tukaani:xz:1.10")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.okhttp)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network)
+    implementation(libs.gms.code.scanner)
+    implementation(libs.androidx.fragment)
+
+    testImplementation(libs.junit)
 }

@@ -7,7 +7,7 @@
 2. Google sign-in (optional until you want it):
    - Google Cloud Console > APIs & Services > Credentials
    - Create an OAuth client of type **Web application**; copy its client ID into the repo secret `GOOGLE_WEB_CLIENT_ID`
-   - Create a second OAuth client of type **Android** with package `app.opencodemob` and the SHA-1 printed by the
+   - Create a second OAuth client of type **Android** with package `app.ocmobile` and the SHA-1 printed by the
      "Signing key" step of the workflow run
    - Without the secret the app falls back to a local profile and says so on the login screen
 

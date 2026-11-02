@@ -1,112 +1,80 @@
-name: Build APK
+name: Build & Release APK
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v2.0.0)"
+        default: "v2.0.0"
+        required: false
 
 permissions:
   contents: write
 
 env:
   VERSION_NAME: "2.0.0"
+  VERSION_CODE: "29887640"
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-qemu-action@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          platforms: arm64
+          fetch-depth: 0
 
-      - uses: actions/setup-java@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-      # setup-android@v3 is broken: it runs `sdkmanager tools` and Google removed
-      # the legacy 'tools' package from the SDK repository ("Failed to find package 'tools'").
-      # The ubuntu-24.04 runner already ships the SDK; we only accept licenses
-      # and install the exact components this project needs.
-      - name: Android SDK (licenses + components)
-        run: |
-          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          [ -x "$SDKM" ] || SDKM="$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -n1)"
-          echo "sdkmanager: $SDKM"
-          yes | "$SDKM" --licenses > /dev/null || true
-          "$SDKM" --install "platforms;android-35" "build-tools;35.0.0" "platform-tools" > /dev/null
-
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.10.2"
-
-      - name: Runtime (proot + Linux rootfs + opencode 1.x)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/build-runtime.sh
-
-      - name: UI assets (libraries and file icons)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/fetch-ui-deps.sh
-
-      - name: Signing key
+      - name: Setup Signing Keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          PASS="${KEYSTORE_PASSWORD:-opencodemob}"
-          if [ -n "$KEYSTORE_BASE64" ]; then echo "$KEYSTORE_BASE64" | base64 -d > keystore/release.jks; fi
+          mkdir -p keystore
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > keystore/release.jks
+          fi
           if [ ! -f keystore/release.jks ]; then
-            echo "::warning::No keystore in repo or secrets - generated a throwaway one. OTA updates will not install over older builds."
+            echo "Generating release keystore..."
             keytool -genkeypair -alias opencodemob -keyalg RSA -keysize 2048 -validity 36500 \
-              -keystore keystore/release.jks -storepass "$PASS" -keypass "$PASS" \
+              -keystore keystore/release.jks -storepass opencodemob -keypass opencodemob \
               -dname "CN=OpenCode Mobile, O=OpenCodeMob, C=RU"
           fi
-          echo "Register this SHA-1 in the Google Cloud Android OAuth client:"
-          keytool -list -v -keystore keystore/release.jks -storepass "$PASS" | grep -E "SHA1:"
 
-      - name: Build APK
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release APK
         env:
-          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          # Stay above every previously published versionCode (the 1.1.x upstream-client line
-          # reached 29887625), so this build installs over anything shipped before it.
-          CODE=$((29887625 + GITHUB_RUN_NUMBER))
-          gradle :app:assembleRelease --no-daemon -PappVersionName="$VERSION_NAME" -PappVersionCode="$CODE"
-          cp app/build/outputs/apk/release/app-release.apk "OpenCode-${VERSION_NAME}-${CODE}.apk"
-          {
-            echo "OpenCode Mobile ${VERSION_NAME} — Глобальное обновление интерфейса 2.0.0 (ChatGPT Vanilla UI)"
-            echo
-            echo "Core: opencode $(grep opencode_core runtime-info.txt | cut -d= -f2) (1.x line)"
-            echo
-            echo "Что нового в версии 2.0.0:"
-            echo "- Полный реворк интерфейса в стиле ChatGPT / Vanilla OpenCode Mobile: боковая панель (Drawer), плавающая приподнятая карточка ввода (Floating Composer), современная шторка моделей (Model Bottom Sheet)."
-            echo "- 100% русская локализация интерфейса: все диалоги, шторки, подсказки, действия и уведомления переведены на чистый русский язык."
-            echo "- Новый кастомный шрифт JetBrains Mono с поддержкой кириллицы и латиницы, а также стилизованными цифрами с перечёркнутым нулём (slashed zero) и моноширинным выравниванием (tabular digits)."
-            echo "- Боковое меню (Drawer) с живым поиском по чатам, закреплением сессий (Pinned Sessions) с сохранением, быстрым доступом к артефактам, файлам проекта и профилю."
-            echo "- Интерактивный маскот cl0udly: клик по маскоту включает режим приватной анонимной сессии."
-            echo "- Кнопка «+» в поле ввода для быстрого прикрепления файлов, вставки @файлов, /команд и инструментов."
-            echo "- Удобная шторка моделей с категориями (бесплатные, с рассуждениями), выбором усилия размышлений (Effort) и встроенным каталогом."
-            echo "- Плавные физичные микро-анимации кнопок (scale 0.96) и всплывающих панелей (spring bezier)."
-            echo "- Полная обратная совместимость со всеми методами нативного моста OpenCode."
-            echo
-            echo "Telegram: https://t.me/OpenCodeMob"
-          } > notes.md
+          ./gradlew --no-daemon :app:assembleRelease \
+            -PappVersionName="${{ env.VERSION_NAME }}" \
+            -PappVersionCode="${{ env.VERSION_CODE }}"
+          cp app/build/outputs/apk/release/app-release.apk "OpenCode-${{ env.VERSION_NAME }}.apk"
 
-      - name: Publish release
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenCode-${{ env.VERSION_NAME }}
+          path: OpenCode-${{ env.VERSION_NAME }}.apk
+
+      - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: OpenCode ${{ env.VERSION_NAME }} (build ${{ github.run_number }})
-          body_path: notes.md
-          files: OpenCode-*.apk
+          tag_name: ${{ github.event.inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.0.0') }}
+          name: "OpenCode ${{ env.VERSION_NAME }}"
+          body_path: docs/releases/v2.0.0.md
+          files: OpenCode-${{ env.VERSION_NAME }}.apk
           make_latest: true
