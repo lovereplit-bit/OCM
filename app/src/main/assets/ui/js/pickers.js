@@ -50,60 +50,17 @@ O.browseDir=(start,cb)=>{let path=start||'/root';
 
 // ---- models / agents (Screenshot 2 exact match) ----
 O.openModels=()=>{
-  const all=O.allModels();
-  let primaryModels=[];
-  const seen=new Set();
-  const add=m=>{if(!m)return;const key=m.pid+'/'+m.mid;if(seen.has(key))return;seen.add(key);primaryModels.push(m)};
+  let onlyFree=O.store.get('onlyFreeModels',true);
+  let filterText='';
+  const listEl=h('div');
+  const q=search(O.tr('Search models...','Поиск моделей...'),v=>{filterText=v;draw()});
 
-  if(S.model){
-    const active=all.find(x=>x.pid===S.model.providerID&&x.mid===S.model.modelID);
-    if(active)add(active);
-  }
-  const featured=['DeepSeek V4.1 Flash Free','Flint 40B Free','Nemotron 3.5 Super VL Free','Beam Free'];
-  featured.forEach(fn=>{
-    const f=all.find(x=>(x.name||'').toLowerCase().includes(fn.toLowerCase().replace(/ free/i,''))||(x.mid||'').toLowerCase().includes(fn.toLowerCase().replace(/ free/i,'')));
-    if(f)add(f);
-  });
-  all.forEach(x=>{
-    const c=x.m&&x.m.cost,free=(c&&c.input===0&&c.output===0)||x.pid==='opencode'||/free/i.test(x.name||x.mid);
-    if(free&&primaryModels.length<6)add(x);
-  });
-  if(!primaryModels.length){
-    primaryModels=[
-      {pid:'opencode',mid:'deepseek-v4.1-flash',name:'DeepSeek V4.1 Flash Free',sub:'200k context · images · reasoning'},
-      {pid:'opencode',mid:'flint-40b',name:'Flint 40B Free',sub:'262k context · reasoning'},
-      {pid:'opencode',mid:'nemotron-3.5-super-vl',name:'Nemotron 3.5 Super VL Free',sub:'1048k context · images · reasoning'},
-      {pid:'opencode',mid:'beam',name:'Beam Free',sub:'1048k context · reasoning'}
-    ];
-  }else if(primaryModels.length<4){
-    all.slice(0,4-primaryModels.length).forEach(m=>add(m));
-  }
-
-  const groupCard=h('div',{class:'group-card'});
-  primaryModels.slice(0,8).forEach(x=>{
-    const isSel=S.model&&S.model.providerID===x.pid&&S.model.modelID===x.mid;
-    let sub=x.sub;
-    if(!sub){
-      const ctx=x.m&&x.m.limit&&x.m.limit.context,parts=[];
-      if(ctx)parts.push(O.fmtK(ctx)+' context');
-      if(x.m&&(x.m.modalities&&x.m.modalities.includes('image')||x.m.attachment!==false))parts.push('images');
-      if(x.m&&(x.m.reasoning||x.m.variants))parts.push('reasoning');
-      if(!parts.length)parts.push(x.pid);
-      sub=parts.join(' · ');
-    }
-    const row=h('button',{class:'model-row',onclick:()=>{O.setModel(x.pid,x.mid);s.close()}},
-      h('div',{class:'model-row-left'},
-        h('span',{class:'model-row-title'},x.name),
-        h('span',{class:'model-row-sub'},sub)),
-      isSel?O.icon('check','model-check'):null);
-    groupCard.append(row);
-  });
-
-  const disclaimer=h('div',{class:'model-disclaimer'},
-    O.tr('Free models share one daily limit per network.','Бесплатные модели делят общий суточный лимит.'),
-    h('br'),
-    O.tr('Connect more providers in ','Подключите других провайдеров в '),
-    h('button',{onclick:()=>{s.close();O.openConnect()}},O.tr('Settings → Providers.','Настройки → Провайдеры.')));
+  const swRow=O.toggleRow('shield',
+    O.tr('Only free models','Только бесплатные модели'),
+    O.tr('Hide paid models requiring API balance or keys','Показывать только модели с бесплатным доступом'),
+    onlyFree,
+    v=>{onlyFree=v;O.store.set('onlyFreeModels',v);draw()}
+  );
 
   let curEffort=O.store.get('effort','Default');
   const effortTxt=h('span',null,curEffort+' ›');
@@ -120,43 +77,91 @@ O.openModels=()=>{
       h('span',{class:'recommended-badge'},O.tr('Recommended','Рекомендуется'))),
     h('div',{class:'detached-card-right'},effortTxt));
 
-  const moreCard=h('button',{class:'detached-card',onclick:()=>{s.close();O.openAllModelsCatalog()}},
-    h('div',{class:'detached-card-left'},h('span',null,O.tr('More models','Ещё модели'))),
+  const connectCard=h('button',{class:'detached-card',onclick:()=>{s.close();O.openConnect()}},
+    h('div',{class:'detached-card-left'},
+      O.icon('key'),
+      h('span',{style:{marginLeft:'6px'}},O.tr('Connect more providers','Подключить провайдеров (API ключи)'))),
     h('div',{class:'detached-card-right'},'›'));
 
-  const container=h('div',null,groupCard,disclaimer,effortCard,moreCard);
-  const s=O.sheet(O.tr('Select model','Выбор модели'),container,{hud:true});
-};
+  const container=h('div',null,q,listEl,h('div',{style:{height:'10px'}}),swRow,effortCard,connectCard);
+  const s=O.sheet(O.tr('Select model','Выбор модели'),container,{hud:true,full:true});
 
-O.openAllModelsCatalog=()=>{
-  const list=h('div'),q=search(O.tr('Search models...','Поиск моделей...'),()=>draw());
-  const s=O.sheet(O.tr('All models','Все модели'),h('div',null,
-    h('button',{class:'btn pri wide',onclick:()=>{s.close();O.openConnect()}},O.icon('key'),O.tr('Connect more providers','Подключить провайдеров')),
-    h('div',{style:{height:'10px'}}),q,list),{hud:true,full:true});
   function draw(){
-    list.textContent='';const f=q.value.toLowerCase(),all=O.allModels();
-    if(!all.length){list.append(h('div',{class:'mut',style:{padding:'16px'}},O.tr('No models available.','Моделей пока нет.')));return}
-    const by={};all.forEach(x=>{(by[x.pname||x.pid]=by[x.pname||x.pid]||[]).push(x)});
-    Object.keys(by).forEach(k=>{
-      const items=by[k].filter(x=>!f||(x.name+' '+x.mid+' '+k).toLowerCase().includes(f));
-      if(!items.length)return;
-      list.append(h('div',{class:'settings-section-title'},k));
-      const card=h('div',{class:'group-card'});
-      items.forEach(x=>{
-        const on=S.model&&S.model.providerID===x.pid&&S.model.modelID===x.mid;
-        const ctx=x.m&&x.m.limit&&x.m.limit.context;
-        const sub=(ctx?O.fmtK(ctx)+' context · ':'')+x.mid;
-        card.append(h('button',{class:'model-row',onclick:()=>{O.setModel(x.pid,x.mid);s.close()}},
-          h('div',{class:'model-row-left'},
-            h('span',{class:'model-row-title'},x.name),
-            h('span',{class:'model-row-sub'},sub)),
-          on?O.icon('check','model-check'):null));
-      });
-      list.append(card);
+    listEl.textContent='';
+    const all=O.allModels();
+    if(!all.length){
+      listEl.append(h('div',{class:'mut',style:{padding:'24px 16px',textAlign:'center'}},
+        h('p',null,O.tr('No models available. Check runtime or connect a provider.','Моделей пока нет. Дождитесь запуска сервера или подключите провайдера.')),
+        h('button',{class:'btn pri sm',style:{marginTop:'8px'},onclick:()=>{s.close();O.openConnect()}},O.icon('key'),O.tr('Connect provider','Подключить'))
+      ));
+      return;
+    }
+
+    let items=all;
+    if(onlyFree){
+      items=items.filter(x=>O.isModelFree(x));
+    }
+    if(filterText){
+      const f=filterText.toLowerCase();
+      items=items.filter(x=>(x.name+' '+x.mid+' '+(x.pname||x.pid)).toLowerCase().includes(f));
+    }
+
+    if(!items.length){
+      listEl.append(h('div',{class:'mut',style:{padding:'20px 16px',textAlign:'center'}},
+        onlyFree
+          ?O.tr('No free models found matching filter. Try disabling "Only free models" below.','Бесплатных моделей по фильтру не найдено. Попробуйте отключить пункт «Только бесплатные модели» ниже.')
+          :O.tr('No models match filter.','Модели не найдены.')));
+      return;
+    }
+
+    const activeKey=S.model?(S.model.providerID+'/'+S.model.modelID):'';
+    items.sort((a,b)=>{
+      const aOn=(a.pid+'/'+a.mid)===activeKey;
+      const bOn=(b.pid+'/'+b.mid)===activeKey;
+      if(aOn!==bOn)return aOn?-1:1;
+      return (a.name||a.mid).localeCompare(b.name||b.mid);
     });
+
+    const groupCard=h('div',{class:'group-card'});
+    items.forEach(x=>{
+      const isSel=activeKey===(x.pid+'/'+x.mid);
+      const isFree=O.isModelFree(x);
+      const badge=h('span',{class:'badge-model '+(isFree?'badge-free':'badge-paid')},
+        isFree?O.tr('Free','Бесплатно'):O.tr('Paid','Платная')
+      );
+
+      const ctx=x.m&&x.m.limit&&x.m.limit.context,parts=[];
+      parts.push(x.pname||x.pid);
+      if(ctx)parts.push(O.fmtK(ctx)+' context');
+      if(x.m&&(x.m.modalities&&x.m.modalities.includes('image')||x.m.attachment!==false))parts.push('images');
+      if(x.m&&(x.m.reasoning||x.m.variants))parts.push('reasoning');
+      if(!isFree&&x.m&&x.m.cost&&typeof x.m.cost.input==='number'&&x.m.cost.input>0){
+        parts.push('$'+x.m.cost.input+'/1M');
+      }
+      const sub=parts.join(' · ');
+
+      const row=h('button',{class:'model-row'+(isSel?' on':''),onclick:()=>{
+        O.setModel(x.pid,x.mid);
+        s.close();
+        O.toast(O.tr('Selected: ','Выбрана: ')+(x.name||x.mid),1500);
+      }},
+        h('div',{class:'model-row-left'},
+          h('div',{style:{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}},
+            h('span',{class:'model-row-title'},x.name||x.mid),
+            badge
+          ),
+          h('span',{class:'model-row-sub'},sub)
+        ),
+        isSel?O.icon('check','model-check'):null
+      );
+      groupCard.append(row);
+    });
+    listEl.append(groupCard);
   }
   draw();
 };
+
+O.openAllModelsCatalog=()=>O.openModels();
 
 O.openAgents=()=>{const ags=O.primaryAgents();
   const card=h('div',{class:'group-card'},ags.map(a=>h('button',{class:'model-row',onclick:()=>{O.setAgent(a.name);s.close()}},
@@ -287,7 +292,7 @@ O.openCustomProvider=parentSheet=>{
 };
 
 // ---- themes / help ----
-O.openThemes=()=>{const th=[['opencode','OpenCode','#131010','#fab283'],['light','Светлая','#fafaf8','#c2641c'],['tokyonight','Tokyo Night','#1a1b26','#7aa2f7'],['gruvbox','Gruvbox','#282828','#fabd2f']];
+O.openThemes=()=>{const th=[['opencode','OpenCode','#0D0D0F','#fab283'],['light','Светлая','#fafaf8','#c2641c'],['tokyonight','Tokyo Night','#1a1b26','#7aa2f7'],['gruvbox','Gruvbox','#282828','#fabd2f']];
   const s=O.sheet('Оформление',h('div',null,th.map(t=>O.listRow(h('span',{style:{width:'22px',height:'22px',borderRadius:'6px',background:t[2],border:'3px solid '+t[3],flex:'none'}}),t[1],'',S.opts.theme===t[0]?O.icon('check','ok'):null,()=>{S.opts.theme=t[0];O.saveOpts();s.close()})),
     h('div',{class:'grp'},'Размер текста'),h('div',{class:'seg'},[13,14,15,16,18].map(n=>h('button',{class:S.opts.fs===n?'on':'',onclick:()=>{S.opts.fs=n;O.saveOpts();s.close()}},n)))))};
 O.openHelp=()=>O.sheet('Справка',h('div',null,h('div',{class:'grp'},'Команды'),O.builtins.map(b=>O.listRow(b.i,'/'+b.n,b.d,null,()=>{O.back();b.run()})),

@@ -2,6 +2,9 @@ package app.opencodemob
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.speech.RecognizerIntent
+import android.widget.Toast
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -75,14 +78,35 @@ class MainActivity : ComponentActivity() {
     private val chooser = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         fileCb?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(r.resultCode, r.data)); fileCb = null
     }
+    private val speechLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        if (r.resultCode == Activity.RESULT_OK && r.data != null) {
+            val results = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val text = results?.firstOrNull() ?: ""
+            if (text.isNotEmpty()) {
+                runOnUiThread {
+                    emit("voice", JSONObject().put("text", text))
+                }
+            }
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.statusBarColor = 0xFF0D0D0F.toInt()
+        window.navigationBarColor = 0xFF0D0D0F.toInt()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
+        WindowCompat.getInsetsController(window, window.decorView)?.let { controller ->
+            controller.isAppearanceLightStatusBars = false
+            controller.isAppearanceLightNavigationBars = false
+        }
         val root = FrameLayout(this).apply {
-            setBackgroundColor(0xFF131010.toInt())
+            setBackgroundColor(0xFF0D0D0F.toInt())
             keepScreenOn = true
         }
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, ins ->
@@ -91,7 +115,7 @@ class MainActivity : ComponentActivity() {
             WindowInsetsCompat.CONSUMED
         }
         web = WebView(this).apply {
-            setBackgroundColor(0xFF131010.toInt())
+            setBackgroundColor(0xFF0D0D0F.toInt())
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
@@ -582,6 +606,21 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface fun testSound(kind: String) { Notifier.beep(kind) }
+
+        @JavascriptInterface fun startVoiceInput(lang: String) {
+            runOnUiThread {
+                try {
+                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, if (lang == "en") "Speak now..." else "Говорите...")
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (lang == "en") "en-US" else "ru-RU")
+                    }
+                    speechLauncher.launch(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(this@MainActivity, "Голосовой ввод недоступен: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
 
         // --- network (local server) ---
         @JavascriptInterface fun http(id: String, method: String, path: String, body: String) {

@@ -27,7 +27,55 @@ O.chatInit=root=>{
   const cbarLeft=h('div',{class:'cbar-left'},plusBtn,agentChip,modelChip);
   const cbarRight=h('div',{class:'cbar-right'},micBtn,sendBtn);
   const cbarRow=h('div',{class:'cbar-row'},cbarLeft,cbarRight);
-  comp=h('div',{id:'composer'},popEl,h('div',{class:'cbox'},nokeyEl,attsEl,ta,cbarRow),fileIn);
+  const pumpkinSvg = `<svg class="pumpkin-svg" viewBox="0 0 48 46" width="46" height="44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="pkGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff9d26"/>
+      <stop offset="65%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#c2410c"/>
+    </radialGradient>
+    <filter id="pkGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g class="pumpkin-body">
+    <ellipse cx="14" cy="27" rx="9" ry="12" fill="url(#pkGrad)"/>
+    <ellipse cx="34" cy="27" rx="9" ry="12" fill="url(#pkGrad)"/>
+    <ellipse cx="18" cy="28" rx="9" ry="13" fill="url(#pkGrad)"/>
+    <ellipse cx="30" cy="28" rx="9" ry="13" fill="url(#pkGrad)"/>
+    <ellipse cx="24" cy="28.5" rx="9.5" ry="13.5" fill="url(#pkGrad)"/>
+    <path d="M22 17 C22 13, 27 12, 28 9 C26 12, 24 13, 23 17 Z" fill="#15803d"/>
+  </g>
+  <g class="pumpkin-face" filter="url(#pkGlow)">
+    <polygon points="17,25 21,28 17.5,29" fill="#fef08a" class="pk-eye"/>
+    <polygon points="31,25 27,28 30.5,29" fill="#fef08a" class="pk-eye"/>
+    <polygon points="24,28 22.5,31 25.5,31" fill="#fef08a" class="pk-eye"/>
+    <path d="M16 33.5 Q24 40 32 33.5 Q30 35.5 28 34.5 L27 36 L25.5 34.5 L24 36 L22.5 34.5 L21 36 L19.5 34.5 Q18 35.5 16 33.5 Z" fill="#fef08a" class="pk-mouth"/>
+  </g>
+  <g class="witch-hat">
+    <path d="M7 21 C14 17, 34 17, 41 21 C36 23, 12 23, 7 21 Z" fill="#1e1829"/>
+    <path d="M16 20 C18 13, 26 7, 31 3 C30 6, 29 9, 29 11 C31 10, 34 8, 33 6 C28 9, 28 14, 29 20 Z" fill="#2d223c"/>
+    <path d="M17 20 C19 14, 25 8, 31 3 C27 9, 25 15, 25 20 Z" fill="#44355a"/>
+    <path d="M16.5 19.5 C20 18, 25 18, 28.5 19.5 L28.8 20.8 C25 19.2, 20 19.2, 16.2 20.8 Z" fill="#ea580c"/>
+    <rect x="21" y="17.8" width="5.5" height="4" rx="1" fill="#eab308"/>
+    <rect x="22.2" y="18.6" width="3.1" height="2.4" rx="0.5" fill="#1e1829"/>
+  </g>
+</svg>`;
+
+  const pumpkinEl=h('div',{
+    class:'halloween-pumpkin-wrap',
+    title:'Happy Halloween! Нажми меня!',
+    onclick:()=>{
+      pumpkinEl.classList.add('bounce');
+      setTimeout(()=>pumpkinEl.classList.remove('bounce'),700);
+      O.toast('🎃 Бу! Счастливого Хэллоуина от OpenCode! 👻',3000);
+      if(O.spawnBats)O.spawnBats();
+    },
+    html:pumpkinSvg
+  });
+
+  comp=h('div',{id:'composer'},pumpkinEl,popEl,h('div',{class:'cbox'},nokeyEl,attsEl,ta,cbarRow),fileIn);
   const wrap=h('div',{class:'chat-msgs-wrap',style:{position:'relative',flex:1,minHeight:0,display:'flex',flexDirection:'column'}},msgsEl,jumpEl);
   root.append(wrap,revEl,todoEl,statusEl,dockEl,comp);
   bus.on('open',()=>{renderAll()});
@@ -41,8 +89,9 @@ O.chatInit=root=>{
   bus.on('sessions',()=>{renderRevert()});
   bus.on('meta',updateChips);bus.on('conn',updateChips);
   bus.on('serror',p=>{if(p&&(!p.sessionID||p.sessionID===S.sid)){const e=p.error;const t=e&&(e.data&&e.data.message||e.name);if(t&&e.name!=='MessageAbortedError'){
-    if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|\b429\b/i.test(String(t)))O.toast(quotaHint(),8000);
+    if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|balance|funds|\b429\b/i.test(String(t)))O.showQuotaAccountModal(t);
     else O.toast(t,4000)}}});
+  O.on('voice',d=>{if(d&&d.text){ta.value=(ta.value?ta.value+' ':'')+d.text;onInput();ta.focus()}});
   updateChips();renderAll();
 };
 const nearBottom=()=>msgsEl.scrollHeight-msgsEl.scrollTop-msgsEl.clientHeight<140;
@@ -113,7 +162,10 @@ function metaUpdate(el,m){
     meta.append(h('span',null,t.join('  ')));
     if(i.error&&i.error.name!=='MessageAbortedError'){const old=el.firstChild.querySelector('.errbox');if(old)old.remove();
       let em=(i.error.data&&i.error.data.message)||i.error.name||'Ошибка';
-      if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|\b429\b/i.test(String(em)))em+='\n\n'+quotaHint();
+      if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|\b429\b/i.test(String(em))){
+        em+='\n\n'+quotaHint();
+        O.showQuotaAccountModal(em);
+      }
       el.firstChild.append(h('div',{class:'errbox'},em))}
     else if(i.error)meta.append(h('span',{class:'warn'},'прервано'))}
   meta.append(h('span',{class:'grow'}),h('button',{class:'ibtn s',onclick:()=>msgActions(m)},O.icon('dots')))}
@@ -199,15 +251,44 @@ function questionCard(q){const qs=q.questions||[];const sel=qs.map(()=>new Set()
   return h('div',{class:'card warn'},h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},O.icon('info','warn'),h('b',null,'OpenCode спрашивает')),body,h('div',{class:'row'},h('button',{class:'btn',onclick:rej},'Пропустить'),h('button',{class:'btn pri',onclick:send},'Отправить')))}
 
 // ---- composer ----
+let quotaModalOpen=false;
+O.showQuotaAccountModal=msg=>{
+  if(quotaModalOpen)return;
+  if(S.account&&S.account.email){
+    O.toast(O.tr('Quota limit reached for this model. Switch to another model or connect your provider key: Settings → Providers.','Квота для этой модели исчерпана. Выберите другую модель или подключите свой ключ: Настройки → Провайдеры.'),6000);
+    return;
+  }
+  quotaModalOpen=true;
+  const content=h('div',{style:{textAlign:'center',padding:'16px 8px 8px'}},
+    h('div',{style:{fontSize:'38px',marginBottom:'10px'}},'⚡'),
+    h('b',{style:{fontSize:'17px',display:'block',marginBottom:'8px'}},O.tr('Free Quota Limit Reached','Лимит бесплатной квоты исчерпан')),
+    h('p',{class:'mut',style:{fontSize:'13.5px',lineHeight:'1.5',margin:'0 0 18px',textAlign:'center'}},
+      O.tr(
+        'You are currently using shared guest quota without an account. Sign in with Google or GitHub to receive your personal free OpenCode quota, or add your own provider API key.',
+        'Вы используете общую квоту без авторизации, которая временно исчерпана.\n\nВойдите через Google или GitHub, чтобы получить персональную бесплатную квоту OpenCode, либо подключите собственный API ключ.'
+      )
+    ),
+    h('button',{class:'btn pri wide',style:{marginBottom:'10px'},onclick:()=>{s.close();O.openAccount()}},O.icon('user'),O.tr('Sign in with Google / GitHub','Войти через Google / GitHub')),
+    h('button',{class:'btn wide',style:{marginBottom:'10px'},onclick:()=>{s.close();O.openConnect()}},O.icon('key'),O.tr('Connect own API key','Подключить свой API ключ')),
+    h('button',{class:'btn wide',onclick:()=>s.close()},O.tr('Later','Позже'))
+  );
+  const s=O.sheet(O.tr('OpenCode Quota','Квота OpenCode'),content,{hud:true,onClose:()=>{quotaModalOpen=false}});
+};
+
 const quotaHint=()=>S.account&&S.account.email
   ?'Квота этой модели исчерпана. Перезапустите сервер (Настройки → Совместимость), выберите другую модель или подключите свой ключ: Настройки → Модели → Подключить провайдера'
   :'Квота исчерпана. Войдите в аккаунт opencode (Google/GitHub): Настройки → Аккаунт opencode — или подключите свой ключ: Настройки → Модели → Подключить провайдера';
 function onMic(){
+  const lang=O.store.get('lang','ru')==='en'?'en':'ru';
+  if(window.OC&&window.OC.startVoiceInput){
+    window.OC.startVoiceInput(lang);
+    return;
+  }
   const SpeechRec=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(SpeechRec){
     try{
       const rec=new SpeechRec();
-      rec.lang=O.store.get('lang','ru')==='en'?'en-US':'ru-RU';
+      rec.lang=lang==='en'?'en-US':'ru-RU';
       rec.interimResults=false;
       const b=O.$('.mic-btn');if(b)b.style.color='#ef4444';
       O.toast(O.tr('Listening... Speak now','Слушаю... Говорите'),2500);
@@ -331,7 +412,15 @@ async function onSend(){
     const m=O.upsertMsg({id:mid,sessionID:sid,role:'user',time:{created:Date.now()},agent:S.agent,model:S.model});m.local=true;
     m.parts=parts.map((p,i)=>Object.assign({id:'prt_local'+i,sessionID:sid,messageID:mid},p));bus.emit('msg',sid,m);scrollEnd(true);
     await api('POST','/session/'+sid+'/prompt_async',{messageID:mid,agent:S.agent,model:S.model,variant:S.variant||undefined,parts},{timeout:30000});
-  }catch(e){const s=O.msgs(S.sid);s.list=s.list.filter(x=>x.info.id!==mid);s.idx.delete(mid);const el=msgEls.get(mid);if(el){el.remove();msgEls.delete(mid)}O.toast(e.message,4000);ta.value=text;onInput()}}
+  }catch(e){
+    const s=O.msgs(S.sid);s.list=s.list.filter(x=>x.info.id!==mid);s.idx.delete(mid);const el=msgEls.get(mid);if(el){el.remove();msgEls.delete(mid)}
+    if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|\b429\b/i.test(String(e.message))){
+      O.showQuotaAccountModal(e.message);
+    }else{
+      O.toast(e.message,4000);
+    }
+    ta.value=text;onInput();
+  }}
 function clear(){ta.value='';atts=[];mentions=[];renderAtts();autosize();hidePop();updateSend()}
 O.chat={renderAll,sess,focus:()=>ta&&ta.focus()};
 })();

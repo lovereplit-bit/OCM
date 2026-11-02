@@ -122,6 +122,21 @@ O.loadMeta=async()=>{
   if(pr.status==='fulfilled')O.kv.set('projects',pr.value);
   if(br.status==='fulfilled')S.branch=br.value&&br.value.branch||'';
   O.pickDefaults();bus.emit('meta')};
+O.isModelFree=x=>{
+  if(!x)return false;
+  if(x.free===true)return true;
+  const m=x.m||x;
+  if(m.free===true)return true;
+  const c=m.cost;
+  if(c&&typeof c.input==='number'&&typeof c.output==='number'){
+    if(c.input===0&&c.output===0)return true;
+    if(c.input>0||c.output>0)return false;
+  }
+  const str=((x.name||'')+' '+(x.mid||'')+' '+(x.pid||'')).toLowerCase();
+  if(/\bfree\b|бесплатн/i.test(str))return true;
+  if(x.pid==='opencode'&&(!c||(!c.input&&!c.output)))return true;
+  return false;
+};
 O.primaryAgents=()=>S.agents.filter(a=>a.mode!=='subagent'&&!a.hidden);
 O.modelInfo=(pid,mid)=>{const p=S.providers.find(x=>x.id===pid);return p&&p.models&&p.models[mid]};
 O.allModels=()=>S.providers.flatMap(p=>Object.values(p.models||{}).map(m=>({pid:p.id,pname:p.name,mid:m.id,name:m.name||m.id,m})));
@@ -133,7 +148,16 @@ O.pickDefaults=()=>{
   const ag=S.agents.find(a=>a.name===S.agent);
   if(!m&&ag&&ag.model&&ok(ag.model))m=ag.model;
   if(!m&&typeof S.cfg.model==='string'&&S.cfg.model.includes('/')){const[i,...r]=S.cfg.model.split('/');const c={providerID:i,modelID:r.join('/')};if(ok(c))m=c}
-  if(!m){const all=O.allModels();const d=all.find(x=>S.defaults[x.pid]===x.mid)||all[0];if(d)m={providerID:d.pid,modelID:d.mid}}
+  if(!m){
+    const all=O.allModels();
+    const onlyFree=O.store.get('onlyFreeModels',true);
+    let d=null;
+    if(onlyFree){
+      d=all.find(x=>O.isModelFree(x)&&S.defaults[x.pid]===x.mid)||all.find(x=>O.isModelFree(x));
+    }
+    if(!d)d=all.find(x=>S.defaults[x.pid]===x.mid)||all[0];
+    if(d)m={providerID:d.pid,modelID:d.mid};
+  }
   S.model=m||null;
   const v=O.store.get('variant.'+(m?m.providerID+'/'+m.modelID:''));S.variant=v&&m&&O.modelInfo(m.providerID,m.modelID)&&O.modelInfo(m.providerID,m.modelID).variants&&O.modelInfo(m.providerID,m.modelID).variants[v]?v:null};
 O.setModel=(pid,mid)=>{S.model={providerID:pid,modelID:mid};O.store.set('model.'+S.agent,S.model);O.pickDefaults();bus.emit('meta')};
