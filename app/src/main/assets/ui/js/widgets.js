@@ -119,7 +119,7 @@ O.openAppChooser=async function(){
 
 // In-App Web Project Preview (HTML + CSS + JS + Images)
 O.openPreview=function(relPath){
-  const target=relPath||'';
+  const target=relPath&&relPath!=='.'?(relPath.startsWith('/')?relPath:(S.dir+'/'+relPath)):(S.dir||'/root');
   let previewUrl='https://appassets.androidplatform.net/_preview/index.html';
   try{
     if(O.native&&O.native.preparePreview){
@@ -129,13 +129,41 @@ O.openPreview=function(relPath){
   }catch(e){console.error('preparePreview error:',e)}
 
   let isMobile=true;
+  // Frame without restrictive sandbox attribute so local assets and scripts execute seamlessly
   const frame=h('iframe',{
     class:'web-preview-frame',
-    src:previewUrl,
-    sandbox:'allow-scripts allow-same-origin allow-forms allow-modals allow-popups'
+    src:previewUrl
   });
+
+  // Direct srcdoc fallback for local HTML files
+  if(target.endsWith('.html')||target.endsWith('.htm')){
+    try{
+      const r=O.native.readText(target);
+      if(r&&r.ok&&r.text){
+        // Frame will load via URL or srcdoc
+        frame.addEventListener('error',()=>{frame.srcdoc=r.text});
+      }
+    }catch(_){}
+  }
+
   const titleTxt=h('span',{class:'preview-title-text'},target?O.basename(target):'Web Preview');
-  const pathBadge=h('span',{class:'preview-path-badge'},target||'index.html');
+  const pathInput=h('input',{
+    class:'preview-addr-input',
+    value:target||'index.html',
+    title:O.tr('Path or URL (Press Enter)','Путь или URL (Нажмите Enter)'),
+    onkeydown:e=>{
+      if(e.key==='Enter'){
+        const v=e.target.value.trim();
+        if(v.startsWith('http://')||v.startsWith('https://')){
+          frame.src=v;
+        }else if(O.native&&O.native.preparePreview){
+          const p=O.native.preparePreview(v);
+          if(p)frame.src=p;
+        }
+      }
+    }
+  });
+
   const viewToggleBtn=h('button',{class:'ibtn s',title:O.tr('Switch Viewport (Mobile/Desktop)','Переключить масштаб (Мобильный/ПК)'),onclick:()=>{
     isMobile=!isMobile;
     frameWrap.classList.toggle('desktop-mode',!isMobile);
@@ -154,7 +182,7 @@ O.openPreview=function(relPath){
   }},O.icon('ext'));
 
   const bar=h('div',{class:'web-preview-bar'},
-    h('div',{class:'preview-bar-left'},O.icon('globe'),titleTxt,pathBadge),
+    h('div',{class:'preview-bar-left'},O.icon('globe'),titleTxt,pathInput),
     h('div',{class:'preview-bar-right'},viewToggleBtn,refreshBtn,externalBtn));
 
   const frameWrap=h('div',{class:'web-preview-frame-wrap mobile-mode'},frame);

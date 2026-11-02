@@ -12,7 +12,7 @@ O.filesInit=root=>{
   root.append(
     h('div',{class:'pane-h'},
       O.icon('folder'),titleEl,
-      h('button',{class:'ibtn s',title:'Веб-предпросмотр',onclick:()=>O.openPreview&&O.openPreview('.')},O.icon('globe')),
+      h('button',{class:'ibtn s',title:'Веб-предпросмотр',onclick:()=>O.openPreview&&O.openPreview(S.dir)},O.icon('globe')),
       h('button',{class:'ibtn s',title:'Новый файл',onclick:()=>newEntry('',false)},O.icon('plus')),
       h('button',{class:'ibtn s',title:'Обновить',onclick:()=>O.refreshFiles(true)},O.icon('refresh'))
     ),

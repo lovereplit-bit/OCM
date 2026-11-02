@@ -1975,14 +1975,14 @@ a:hover {
   z-index: 10;
 }
 .top-tokens-btn {
-  display: inline-flex;
+  display: none; /* hidden on main hub by default; shown only when chat is active */
   align-items: center;
-  gap: 6px;
-  padding: 4px 9px;
+  gap: 5px;
+  padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #e4e4e7;
+  background: #1c1c1f;
+  border: 1px solid #2e2e33;
+  color: #a1a1aa;
   font-family: "JetBrains Mono", monospace;
   font-size: 11.5px;
   font-weight: 600;
@@ -1992,36 +1992,50 @@ a:hover {
   -webkit-tap-highlight-color: transparent;
 }
 .top-tokens-btn:active {
-  background: rgba(255, 255, 255, 0.12);
+  background: #27272a;
   transform: scale(0.96);
 }
+.tok-bolt {
+  color: #71717a !important; /* Pure gray bolt as requested */
+  font-size: 11.5px;
+  display: inline-block;
+}
 .top-tokens-val {
-  color: #f59e0b;
+  color: #a1a1aa; /* Pure sleek gray */
   letter-spacing: 0.2px;
 }
-.token-pulse-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.8);
-  animation: tokenPulse 2s infinite ease-in-out;
-}
-@keyframes tokenPulse {
-  0%, 100% { opacity: 0.5; transform: scale(0.9); }
-  50% { opacity: 1; transform: scale(1.2); }
-}
 
-/* ---- Chat AI Message Diff Badge ---- */
+/* ---- Chat AI Message Diff Badge & Diff Line ---- */
+.msg-diff-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12.5px;
+  font-weight: 700;
+  width: fit-content;
+  user-select: none;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.12s;
+}
+.msg-diff-line:active {
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.97);
+}
 .msg-diff-badge {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-top: 10px;
-  padding: 4px 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 8px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
   font-weight: 700;
@@ -2034,10 +2048,10 @@ a:hover {
   background: rgba(255, 255, 255, 0.08);
   transform: scale(0.97);
 }
-.diff-add {
+.diff-stat-val.add, .diff-add {
   color: #4ade80;
 }
-.diff-del {
+.diff-stat-val.del, .diff-del {
   color: #f87171;
 }
 .diff-label {
@@ -2078,7 +2092,7 @@ a:hover {
   gap: 6px;
   flex: none;
 }
-.web-preview-title {
+.web-preview-title, .preview-title-text {
   font-weight: 600;
   font-size: 13.5px;
   color: #f4f4f5;
@@ -2095,6 +2109,22 @@ a:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 220px;
+}
+.preview-addr-input {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11.5px;
+  color: #e4e4e7;
+  background: #18181b;
+  border: 1px solid #2e2e33;
+  border-radius: 6px;
+  padding: 3px 8px;
+  flex: 1;
+  min-width: 0;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.preview-addr-input:focus {
+  border-color: #38bdf8;
 }
 .web-preview-frame-wrap {
   flex: 1;
@@ -2271,12 +2301,12 @@ a:hover {
   transform: scale(0.95);
 }
 
-/* ---- Ghost RPG Cutscene Tutorial ---- */
+/* ---- Ghost RPG Cutscene Tutorial (Sleek Dark Gray HUD) ---- */
 .tutorial-cutscene-overlay {
   position: fixed;
   inset: 0;
   z-index: 10000;
-  background: radial-gradient(circle at 50% 30%, #1c152e 0%, #0d0914 55%, #050308 100%);
+  background: radial-gradient(circle at 50% 30%, #1c1c22 0%, #0d0d0f 65%, #050507 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2284,6 +2314,7 @@ a:hover {
   padding: 24px 20px env(safe-area-inset-bottom, 24px);
   box-sizing: border-box;
   animation: cutsceneFadeIn 0.35s ease-out;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", sans-serif;
 }
 @keyframes cutsceneFadeIn {
   from { opacity: 0; }
@@ -2301,61 +2332,101 @@ a:hover {
 .cutscene-dialog-box {
   width: 100%;
   max-width: 520px;
-  background: rgba(20, 16, 28, 0.94);
+  background: rgba(20, 20, 24, 0.96);
   backdrop-filter: blur(20px);
-  border: 1.5px solid rgba(168, 85, 247, 0.35);
-  border-radius: 20px;
+  border: 1px solid #2e2e33;
+  border-radius: 18px;
   padding: 20px;
   box-sizing: border-box;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7), 0 0 30px rgba(168, 85, 247, 0.15);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(255, 255, 255, 0.03);
   position: relative;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", sans-serif;
 }
-.cutscene-speaker-meta {
+.cutscene-dialog-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  justify-content: space-between;
+  margin-bottom: 12px;
 }
 .cutscene-char-name {
-  font-size: 15px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
   font-weight: 700;
-  color: #e9d5ff;
-  letter-spacing: 0.3px;
+  color: #f4f4f5;
+  letter-spacing: 0.5px;
 }
 .cutscene-char-badge {
+  font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   font-weight: 600;
   padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(168, 85, 247, 0.2);
-  color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.4);
+  border-radius: 6px;
+  background: #27272a;
+  color: #d4d4d8;
+  border: 1px solid #3f3f46;
 }
 .cutscene-dialog-text {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 14.5px;
-  line-height: 1.55;
-  color: #f4f4f5;
+  line-height: 1.6;
+  color: #e4e4e7;
   min-height: 64px;
   white-space: pre-wrap;
   word-break: break-word;
 }
-.cutscene-controls-row {
+.cutscene-dialog-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid #27272a;
 }
-.cutscene-step-counter {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 12px;
-  color: #a1a1aa;
-}
-.cutscene-buttons {
+.cutscene-step-dots {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+.step-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3f3f46;
+  transition: all 0.2s;
+}
+.step-dot.active {
+  width: 18px;
+  border-radius: 999px;
+  background: #f4f4f5;
+}
+.cutscene-btn-skip {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: #71717a;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.cutscene-btn-skip:active {
+  color: #e4e4e7;
+}
+.cutscene-btn-next {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: #09090b;
+  background: #f4f4f5;
+  border: 1px solid #ffffff;
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.cutscene-btn-next:active {
+  background: #d4d4d8;
+  transform: scale(0.97);
 }
 
 /* ---- Modern Files Tree & Search ---- */

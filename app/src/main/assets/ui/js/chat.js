@@ -183,6 +183,14 @@ function getMsgDiff(m){
       }
     }
   }
+  // If not found in message parts directly, check session diffs
+  if(!found){
+    const d=S.diffs[m.info.sessionID||S.sid]||[];
+    if(d.length){
+      d.forEach(f=>{added+=(f.additions||0);deleted+=(f.deletions||0)});
+      if(added>0||deleted>0)found=true;
+    }
+  }
   return{added,deleted,found};
 }
 
@@ -204,21 +212,23 @@ function metaUpdate(el,m){
     if(i.cost)t.push('$'+i.cost.toFixed(4));
     meta.append(h('span',null,t.join('  ')));
 
+    // Always render diff stats line under assistant messages (+N -M)
     const diffStat=getMsgDiff(m);
-    const oldDiffBadge=el.firstChild.querySelector('.msg-diff-badge');
-    if(diffStat.found||diffStat.added>0||diffStat.deleted>0){
-      const badge=h('button',{
-        class:'msg-diff-badge',
-        title:O.tr('View session changes','Посмотреть изменения в сессии'),
+    const oldDiffLine=el.firstChild.querySelector('.msg-diff-line')||el.firstChild.querySelector('.msg-diff-badge');
+    const hasText=m.parts.some(p=>p.type==='text'&&String(p.text||'').trim()!=='');
+    if(hasText||diffStat.found||diffStat.added>0||diffStat.deleted>0){
+      const badge=h('div',{
+        class:'msg-diff-line',
+        title:O.tr('View code changes in project','Посмотреть изменения кода в проекте'),
         onclick:()=>O.setTab('changes')
       },
-      O.icon('edit'),
-      h('span',{class:'diff-add'},'+'+diffStat.added),
-      h('span',{class:'diff-del'},'-'+diffStat.deleted));
-      if(oldDiffBadge)oldDiffBadge.replaceWith(badge);
+      h('span',{class:'diff-stat-val add'},'+'+diffStat.added),
+      h('span',{style:{color:'#52525b'}},' '),
+      h('span',{class:'diff-stat-val del'},'-'+diffStat.deleted));
+      if(oldDiffLine)oldDiffLine.replaceWith(badge);
       else el.firstChild.append(badge);
-    }else if(oldDiffBadge){
-      oldDiffBadge.remove();
+    }else if(oldDiffLine){
+      oldDiffLine.remove();
     }
 
     if(i.error&&i.error.name!=='MessageAbortedError'){const old=el.firstChild.querySelector('.errbox');if(old)old.remove();
@@ -541,10 +551,14 @@ async function onSend(){
     const sc=(S.commands||[]).find(c=>c.name===cm[1]);
     if(sc){if(!S.model)return O.openConnect();clear();try{const sid=await sess();api('POST','/session/'+sid+'/command',{command:sc.name,arguments:cm[2]||'',agent:S.agent,model:modelStr()},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}}
   
-  // Natural language app opening trigger (e.g. "открой телеграм", "запусти youtube")
-  const appMatch=/^(?:открой|запусти|open|launch)\s+([a-zA-Zа-яА-Я0-9_.-]+)$/i.exec(text);
+  // Natural language app opening trigger (e.g. "открой телеграм", "запусти youtube", "открой приложение вк")
+  const appMatch=/^(?:открой|запусти|open|launch)\s+(?:приложение\s+)?([a-zA-Zа-яА-Я0-9_.-]+)/i.exec(text);
   if(appMatch){
-    O.dispatchAction('open_app',appMatch[1]);
+    const appTarget=appMatch[1];
+    O.dispatchAction('open_app',appTarget);
+    O.toast('Запуск приложения: '+appTarget,2000);
+    clear();
+    return;
   }
 
   if(!S.model){O.toast('Подключите провайдера, чтобы выбрать модель');O.openConnect();return}

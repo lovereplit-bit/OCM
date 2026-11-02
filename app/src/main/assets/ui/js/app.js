@@ -11,8 +11,8 @@ function build(){
 
   // Minimal Top Header matching Screenshot 1: Hamburger on left, Tokens badge right next to it, Ghost mascot on right
   T.menu=h('button',{class:'top-menu-btn',onclick:()=>O.openSessions()},O.icon('menu'));
-  T.tokensVal=h('span',{class:'top-tokens-val'},'⚡ 0 tok');
-  T.tokens=h('button',{class:'top-tokens-btn',title:O.tr('Session Tokens / Context','Токены сессии / Контекст'),onclick:()=>O.openTokensModal()},T.tokensVal);
+  T.tokensVal=h('span',{class:'top-tokens-val'},'0 tok');
+  T.tokens=h('button',{class:'top-tokens-btn',style:{display:'none'},title:O.tr('Session Tokens / Context','Токены сессии / Контекст'),onclick:()=>O.openTokensModal()},h('span',{class:'tok-bolt'},'⚡'),T.tokensVal);
   const topLeft=h('div',{class:'top-left-box'},T.menu,T.tokens);
   T.ghost=h('button',{class:'top-ghost-btn',onclick:()=>{if(O.spawnBats)O.spawnBats();O.openGhost()}},O.icon('ghost'));
   const top=h('div',{id:'top'},topLeft,T.ghost);
@@ -140,10 +140,13 @@ O.openTokensModal=()=>{
 function updateTop(){
   if(!built)return;
   if(T.tokensVal){
+    const msgs=S.sid?O.visibleMsgs(S.sid):[];
+    const hasStartedChat=!!(S.sid&&msgs.length>0);
+    if(T.tokens)T.tokens.style.display=hasStartedChat?'inline-flex':'none';
     const tok=O.calcSessionTokens(S.sid);
     const txt=tok.total>0?(O.fmtK(tok.total)+' tok'):'0 tok';
     const pct=tok.pct!=null?(' · '+tok.pct+'%'):'';
-    T.tokensVal.textContent='⚡ '+txt+pct;
+    T.tokensVal.textContent=txt+pct;
   }
   // Ghost icon status dot/indicator if MCP needs attention
   const v=Object.values(S.mcp||{});

@@ -288,27 +288,26 @@ object Runtime {
 
             val home = home(c, uid)
             val cfg = File(home, ".config/opencode").apply { mkdirs() }
-            val agentsMd = File(cfg, "AGENTS.md")
-            if (!agentsMd.exists() || agentsMd.length() < 50) {
-                agentsMd.writeText("""
+            val promptText = """
 # OpenCode Mobile Environment & Instructions (v2.0.1)
 
 You are running inside **OpenCode Mobile** directly on native Android (ARM64 / aarch64 architecture).
 
 ## 1. Environment & Packages
 - Platform: Android Linux Userspace (ARM64).
-- Package management: Always use `pkg` (e.g. `pkg install <package>`, do not pass `-y`) or `pip` / `npm`.
+- Package manager: Always use `pkg` (`pkg install <package>`, do not pass `-y`) or `pip` / `npm`.
 - Compilations: Target ARM64/aarch64 architecture.
 - Storage: `/root` is internal storage (${'$'}HOME). `/sdcard` or `/storage/emulated/0` is shared Android storage with `noexec` restriction. Always run scripts with explicit interpreter: `python script.py`, `bash script.sh`.
 
-## 2. Diff Statistics Reporting
-At the end of your response, if you created or modified any files, output a separate line with line additions and deletions:
+## 2. Diff Statistics Reporting (MANDATORY)
+At the very end of EVERY response, you MUST output a separate line with the line additions and deletions:
++N -M
 For example:
-`+120 -67`
++120 -67
+(If no files were edited, output: +0 -0)
 
 ## 3. Opening Android Apps
-You have the ability to launch other Android applications on the device!
-To open an app, run the command:
+To open any Android app, execute in bash:
 `openapp <app_name_or_package>`
 Examples:
 - `openapp telegram`
@@ -318,14 +317,20 @@ Examples:
 - `openapp vk`
 
 ## 4. Interactive Widgets & Actions
-You can provide interactive widgets using HTML and action buttons:
+You can render interactive widgets using HTML:
 `<button data-action="new_chat">Новый чат</button>`
 `<button data-action="open_app" data-target="telegram">Открыть Telegram</button>`
 `<button data-action="preview" data-path="index.html">Предпросмотр</button>`
 
 ## 5. Web Project Preview
-OpenCode Mobile has a built-in web preview for lightweight web projects (HTML + CSS + JS + Images).
-""".trimIndent())
+OpenCode Mobile provides built-in instant preview for HTML, CSS, JS and image projects.
+""".trimIndent()
+
+            val agentsMd1 = File(cfg, "AGENTS.md")
+            agentsMd1.writeText(promptText)
+            val agentsMd2 = File(home, "AGENTS.md")
+            if (!agentsMd2.exists() || agentsMd2.length() < 50) {
+                agentsMd2.writeText(promptText)
             }
 
             val readme = File(home, "README.md")

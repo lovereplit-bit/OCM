@@ -521,6 +521,8 @@ class MainActivity : ComponentActivity() {
         if (t.isEmpty()) return false
         val pm = packageManager
         val lower = t.lowercase()
+
+        // 1. Direct Package Launch via known aliases
         val known = mapOf(
             "telegram" to listOf("org.telegram.messenger", "org.telegram.messenger.web", "org.thunderdog.challegram", "org.telegram.plus"),
             "телеграм" to listOf("org.telegram.messenger", "org.telegram.messenger.web", "org.thunderdog.challegram", "org.telegram.plus"),
@@ -560,20 +562,63 @@ class MainActivity : ComponentActivity() {
         )
         val candidates = known[lower] ?: listOf(t)
         for (pkg in candidates) {
-            val launchIntent = pm.getLaunchIntentForPackage(pkg)
-            if (launchIntent != null) {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                val launchIntent = pm.getLaunchIntentForPackage(pkg)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    runOnUiThread {
+                        try {
+                            startActivity(launchIntent)
+                            Toast.makeText(this@MainActivity, "Запуск: $t", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(this@MainActivity, "Ошибка запуска $t: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    return true
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 2. Fallback to Intent URI or Category actions
+        val fallbackIntents = when {
+            lower in listOf("telegram", "телеграм", "телега", "tg", "тг") ->
+                listOf(Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve")), Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/")))
+            lower in listOf("youtube", "ютуб") ->
+                listOf(Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube:")), Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/")))
+            lower in listOf("vk", "вк", "вконтакте") ->
+                listOf(Intent(Intent.ACTION_VIEW, Uri.parse("vk://vk.com")), Intent(Intent.ACTION_VIEW, Uri.parse("https://vk.com/")))
+            lower in listOf("whatsapp", "ватсап", "вацап") ->
+                listOf(Intent(Intent.ACTION_VIEW, Uri.parse("whatsapp://send")))
+            lower in listOf("chrome", "хром", "browser", "браузер") ->
+                listOf(Intent(Intent.ACTION_VIEW, Uri.parse("https://google.com")))
+            lower in listOf("settings", "настройки") ->
+                listOf(Intent(android.provider.Settings.ACTION_SETTINGS))
+            lower in listOf("калькулятор", "calculator") ->
+                listOf(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CALCULATOR))
+            lower in listOf("музыка", "music") ->
+                listOf(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_MUSIC))
+            lower in listOf("камера", "camera") ->
+                listOf(Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE))
+            lower in listOf("фото", "photos", "галерея") ->
+                listOf(Intent(Intent.ACTION_VIEW).setType("image/*"))
+            lower in listOf("файлы", "files", "проводник") ->
+                listOf(Intent(Intent.ACTION_VIEW).setType("*/*"))
+            else -> emptyList()
+        }
+        for (fi in fallbackIntents) {
+            try {
+                fi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 runOnUiThread {
                     try {
-                        startActivity(launchIntent)
+                        startActivity(fi)
                         Toast.makeText(this@MainActivity, "Запуск: $t", Toast.LENGTH_SHORT).show()
-                    } catch (e: Exception) {
-                        Toast.makeText(this@MainActivity, "Ошибка запуска $t: ${e.message}", Toast.LENGTH_SHORT).show()
-                    }
+                    } catch (_: Exception) {}
                 }
                 return true
-            }
+            } catch (_: Exception) {}
         }
+
+        // 3. Search all installed applications by label / name
         try {
             val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
             for (info in apps) {
@@ -606,21 +651,43 @@ class MainActivity : ComponentActivity() {
 
     private fun prepareWebPreview(path: String): String {
         val u = uid()
-        val target = Runtime.hostPath(this, u, path.ifEmpty { "/root" })
+        val p = path.trim()
+        val candidate = File(p)
+        val target: File = when {
+            candidate.isAbsolute && candidate.exists() -> candidate
+            p.startsWith("/storage/") -> File(p)
+            p.isEmpty() || p == "." || p == "./" -> Runtime.hostPath(this, u, "/root")
+            else -> Runtime.hostPath(this, u, if (p.startsWith("/")) p else "/root/$p")
+        }
+
         val previewDir = File(cacheDir, "preview").apply {
             mkdirs()
             listFiles()?.forEach { it.deleteRecursively() }
         }
+
         val baseDir = if (target.isDirectory) target else target.parentFile ?: target
-        val entryName = if (target.isFile) target.name else "index.html"
+        var entryName = if (target.isFile) target.name else "index.html"
+
         if (baseDir.exists() && baseDir.isDirectory) {
+            // Find existing html entry if target was a folder
+            if (target.isDirectory) {
+                val hasIndex = File(baseDir, "index.html").exists()
+                if (!hasIndex) {
+                    val anyHtml = baseDir.listFiles { f -> f.extension.equals("html", true) || f.extension.equals("htm", true) }?.firstOrNull()
+                    if (anyHtml != null) {
+                        entryName = anyHtml.name
+                    }
+                }
+            }
+
+            // Copy web files
             baseDir.walkTopDown().maxDepth(4).forEach { f ->
                 val rel = f.relativeTo(baseDir).path
                 if (rel.isNotEmpty()) {
                     val dest = File(previewDir, rel)
                     if (f.isDirectory) {
                         dest.mkdirs()
-                    } else if (f.isFile && f.length() < 10_000_000) {
+                    } else if (f.isFile && f.length() < 12_000_000) {
                         dest.parentFile?.mkdirs()
                         f.copyTo(dest, true)
                     }
@@ -629,6 +696,53 @@ class MainActivity : ComponentActivity() {
         } else if (target.isFile) {
             target.copyTo(File(previewDir, entryName), true)
         }
+
+        // If index.html still doesn't exist, create an interactive HUD directory preview
+        val entryFile = File(previewDir, entryName)
+        if (!entryFile.exists()) {
+            val fileListHtml = StringBuilder()
+            previewDir.listFiles()?.forEach { f ->
+                val isH = f.name.endsWith(".html") || f.name.endsWith(".htm")
+                val isImg = listOf("png", "jpg", "jpeg", "webp", "gif", "svg").any { f.name.endsWith(it, true) }
+                fileListHtml.append("""
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #27272a;">
+                        <span style="font-family:monospace;color:#e4e4e7;">${f.name}</span>
+                        ${if (isH) "<a href=\"${f.name}\" style=\"color:#38bdf8;text-decoration:none;font-weight:600;\">Открыть ▶</a>" else if (isImg) "<a href=\"${f.name}\" style=\"color:#a1a1aa;text-decoration:none;\">Изображение 🖼</a>" else "<span style=\"color:#71717a;\">${f.length() / 1024} KB</span>"}
+                    </div>
+                """.trimIndent())
+            }
+            entryFile.writeText("""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <title>OpenCode Web Preview</title>
+                    <style>
+                        body { background: #0d0d0f; color: #f4f4f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; margin: 0; }
+                        .card { max-width: 540px; margin: 20px auto; background: #141417; border: 1px solid #27272a; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+                        .hdr { padding: 16px; border-bottom: 1px solid #27272a; display: flex; align-items: center; gap: 10px; }
+                        h2 { margin: 0; font-size: 16px; color: #38bdf8; }
+                        p { color: #a1a1aa; font-size: 13px; margin: 6px 0 0; }
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <div class="hdr">
+                            <div>
+                                <h2>🌐 Встроенный Веб-Предпросмотр</h2>
+                                <p>Проект: ${target.name}</p>
+                            </div>
+                        </div>
+                        <div>
+                            ${if (fileListHtml.isNotEmpty()) fileListHtml.toString() else "<div style='padding:24px;text-align:center;color:#71717a;'>В этой папке пока нет файлов проекта.<br>Создайте <b>index.html</b> или напишите агенту.</div>"}
+                        </div>
+                    </div>
+                </body>
+                </html>
+            """.trimIndent())
+        }
+
         return "https://appassets.androidplatform.net/_preview/$entryName"
     }
 

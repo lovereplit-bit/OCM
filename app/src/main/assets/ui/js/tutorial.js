@@ -44,39 +44,39 @@ O.runTutorial=function(force){
 
   const overlay=h('div',{class:'tutorial-cutscene-overlay'});
   
-  // Ghost Character
+  // Ghost Character in sleek gray HUD style
   const ghostMascot=h('div',{class:'cutscene-ghost-wrap'},
     h('div',{class:'cutscene-ghost-aura'}),
     h('div',{class:'cutscene-ghost-svg',html:`<svg viewBox="0 0 100 120" width="110" height="130" fill="none">
       <defs>
-        <radialGradient id="ghGlow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stop-color="#c084fc"/>
-          <stop offset="60%" stop-color="#9333ea"/>
-          <stop offset="100%" stop-color="#581c87"/>
+        <radialGradient id="ghGlow" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+          <stop offset="45%" stop-color="#d4d4d8" stop-opacity="0.9"/>
+          <stop offset="80%" stop-color="#71717a" stop-opacity="0.85"/>
+          <stop offset="100%" stop-color="#27272a" stop-opacity="0.8"/>
         </radialGradient>
         <filter id="auraGlow" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feGaussianBlur stdDeviation="4" result="blur"/>
           <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
         </filter>
       </defs>
-      <!-- Ghost body -->
+      <!-- Ghost body in sleek silver-gray -->
       <path d="M50 10 C25 10 15 35 15 65 C15 95 24 110 32 100 C40 90 44 110 52 100 C60 90 64 110 72 100 C80 90 85 105 85 65 C85 35 75 10 50 10 Z" fill="url(#ghGlow)" filter="url(#auraGlow)"/>
-      <!-- Soft highlight -->
-      <path d="M50 16 C30 16 22 38 22 62 C22 80 25 90 30 85 C34 80 38 90 46 82 C52 76 60 76 68 82 C74 88 78 80 78 62 C78 38 70 16 50 16 Z" fill="rgba(255,255,255,0.18)"/>
-      <!-- Glowing Eyes -->
+      <!-- Soft metallic highlight -->
+      <path d="M50 16 C30 16 22 38 22 62 C22 80 25 90 30 85 C34 80 38 90 46 82 C52 76 60 76 68 82 C74 88 78 80 78 62 C78 38 70 16 50 16 Z" fill="rgba(255,255,255,0.25)"/>
+      <!-- Glowing Eyes with sleek graphite pupil -->
       <ellipse cx="38" cy="50" rx="6" ry="8" fill="#ffffff" class="ghost-eye-left"/>
       <ellipse cx="62" cy="50" rx="6" ry="8" fill="#ffffff" class="ghost-eye-right"/>
-      <ellipse cx="40" cy="50" rx="3" ry="4" fill="#18181b"/>
-      <ellipse cx="64" cy="50" rx="3" ry="4" fill="#18181b"/>
-      <!-- Cute mouth -->
-      <ellipse cx="50" cy="68" rx="6" ry="7" fill="#1e1829" class="ghost-mouth"/>
-      <!-- Rosy cheeks -->
-      <circle cx="28" cy="62" r="5" fill="rgba(244,114,182,0.4)"/>
-      <circle cx="72" cy="62" r="5" fill="rgba(244,114,182,0.4)"/>
+      <ellipse cx="39" cy="50" rx="3.5" ry="4.5" fill="#18181b"/>
+      <ellipse cx="63" cy="50" rx="3.5" ry="4.5" fill="#18181b"/>
+      <circle cx="37" cy="48" r="1.5" fill="#ffffff"/>
+      <circle cx="61" cy="48" r="1.5" fill="#ffffff"/>
+      <!-- Minimalist mouth -->
+      <path d="M44 68 Q50 73 56 68" stroke="#18181b" stroke-width="2.5" stroke-linecap="round" fill="none"/>
     </svg>`})
   );
 
-  // Floating particles
+  // Floating ambient sparkles (neutral silver)
   const particles=h('div',{class:'cutscene-particles'});
   for(let i=0;i<8;i++){
     particles.append(h('div',{class:'magic-sparkle',style:{
@@ -86,7 +86,7 @@ O.runTutorial=function(force){
     }}));
   }
 
-  // RPG Dialog Box
+  // RPG Dialog Box in sleek monochrome HUD
   const nameLabel=h('b',{class:'cutscene-char-name'},SCENES[0].title);
   const badgeLabel=h('span',{class:'cutscene-char-badge'},SCENES[0].badge);
   const textEl=h('div',{class:'cutscene-dialog-text'});
