@@ -59,18 +59,17 @@ jobs:
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          ./gradlew --no-daemon :app:assembleRelease --stacktrace \
-            -PappVersionName="${{ env.VERSION_NAME }}" \
-            -PappVersionCode="${{ env.VERSION_CODE }}"
+          ./gradlew --no-daemon :app:assembleRelease --stacktrace 2>&1 | tee gradle-build.log
           cp app/build/outputs/apk/release/app-release.apk "OpenCode-${{ env.VERSION_NAME }}.apk"
 
-      - name: Print diagnosis on failure
-        if: failure()
-        run: |
-          echo "=== LINT REPORTS ==="
-          find . -name "*lint*" -type f -exec cat {} + || true
-          echo "=== BUILD LOGS / REPORTS ==="
-          find app/build/reports -type f -exec head -n 100 {} + || true
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            gradle-build.log
+            app/build/reports/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
