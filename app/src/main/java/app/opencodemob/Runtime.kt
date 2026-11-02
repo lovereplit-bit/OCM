@@ -278,7 +278,79 @@ object Runtime {
         return pb.start()
     }
 
+    fun ensureDefaults(c: Context, uid: String) {
+        try {
+            val root = rootfs(c)
+            val binDir = File(root, "usr/local/bin").apply { mkdirs() }
+            val openappScript = File(binDir, "openapp")
+            openappScript.writeText("#!/bin/sh\nif [ -z \"$1\" ]; then echo \"Usage: openapp <app_name>\"; exit 1; fi\necho \"$*\" > /tmp/.openapp\necho \"Opening $* on Android...\"\n")
+            try { Os.chmod(openappScript.path, 0x1ED) } catch (_: Exception) {}
+
+            val home = home(c, uid)
+            val cfg = File(home, ".config/opencode").apply { mkdirs() }
+            val agentsMd = File(cfg, "AGENTS.md")
+            if (!agentsMd.exists() || agentsMd.length() < 50) {
+                agentsMd.writeText("""
+# OpenCode Mobile Environment & Instructions (v2.0.1)
+
+You are running inside **OpenCode Mobile** directly on native Android (ARM64 / aarch64 architecture).
+
+## 1. Environment & Packages
+- Platform: Android Linux Userspace (ARM64).
+- Package management: Always use `pkg` (e.g. `pkg install <package>`, do not pass `-y`) or `pip` / `npm`.
+- Compilations: Target ARM64/aarch64 architecture.
+- Storage: `/root` is internal storage (${'$'}HOME). `/sdcard` or `/storage/emulated/0` is shared Android storage with `noexec` restriction. Always run scripts with explicit interpreter: `python script.py`, `bash script.sh`.
+
+## 2. Diff Statistics Reporting
+At the end of your response, if you created or modified any files, output a separate line with line additions and deletions:
+For example:
+`+120 -67`
+
+## 3. Opening Android Apps
+You have the ability to launch other Android applications on the device!
+To open an app, run the command:
+`openapp <app_name_or_package>`
+Examples:
+- `openapp telegram`
+- `openapp youtube`
+- `openapp chrome`
+- `openapp settings`
+- `openapp vk`
+
+## 4. Interactive Widgets & Actions
+You can provide interactive widgets using HTML and action buttons:
+`<button data-action="new_chat">Новый чат</button>`
+`<button data-action="open_app" data-target="telegram">Открыть Telegram</button>`
+`<button data-action="preview" data-path="index.html">Предпросмотр</button>`
+
+## 5. Web Project Preview
+OpenCode Mobile has a built-in web preview for lightweight web projects (HTML + CSS + JS + Images).
+""".trimIndent())
+            }
+
+            val readme = File(home, "README.md")
+            if (!readme.exists()) {
+                readme.writeText("""
+# 🚀 OpenCode Mobile v2.0.1
+
+Добро пожаловать в **OpenCode Mobile** — полноценную среду разработки и ИИ-ассистента на Android!
+
+### 🌟 Возможности
+- 🤖 **Топовые ИИ-модели**: Бесплатные и платные модели (Claude, GPT-4o, DeepSeek, Qwen).
+- 🐧 **Настоящий Linux**: Терминал, компиляторы, Python, Node.js, Git.
+- ⚡ **120Hz HUD**: Сверхплавный интерфейс с поддержкой высокой частоты обновления.
+- 🌐 **Встроенный Веб-Предпросмотр**: Запуск сайтов и HTML/CSS/JS проектов прямо в приложении.
+- 📱 **Интеграция с Android**: Открытие приложений (`openapp telegram`).
+- 📊 **Подсчёт диффов**: Автоматический вывод `+N -M` в конце сообщений.
+
+Удачного кодинга! ✨
+""".trimIndent())
+            }
+        } catch (_: Exception) {}
+    }
+
     fun startServer(c: Context, uid: String, port: Int, password: String, noSeccomp: Boolean): Process {
+        ensureDefaults(c, uid)
         val lib = c.applicationInfo.nativeLibraryDir
         val root = rootfs(c)
         val home = home(c, uid)

@@ -147,7 +147,50 @@ function fillPart(el,p,m,fresh){
   case'patch':el.className='part';el.textContent='';el.append(h('span',{class:'chip'},O.icon('edit'),h('span',null,'Изменено файлов: '+((p.files||[]).length))));break;
   case'retry':el.className='part warn s';el.textContent='Повтор: '+((p.error&&p.error.data&&p.error.data.message)||'запрос не удался');break;
   case'compaction':el.className='part sep';el.textContent='Контекст сжат';break}}
-function render(el){const p=el._p;if(el._t===p.text)return;el._t=p.text;O.mdInto(el,p.text)}
+function getMsgDiff(m){
+  let added=0,deleted=0,found=false;
+  for(const p of m.parts){
+    if(p.type==='patch'){
+      found=true;
+      if(Array.isArray(p.files)){
+        p.files.forEach(f=>{
+          if(typeof f.additions==='number')added+=f.additions;
+          if(typeof f.deletions==='number')deleted+=f.deletions;
+        });
+      }
+      if(p.diff){
+        String(p.diff).split('\n').forEach(l=>{
+          if(l.startsWith('+')&&!l.startsWith('+++'))added++;
+          else if(l.startsWith('-')&&!l.startsWith('---'))deleted++;
+        });
+      }
+    }
+    if(p.type==='tool'&&p.metadata&&p.metadata.diff){
+      found=true;
+      String(p.metadata.diff).split('\n').forEach(l=>{
+        if(l.startsWith('+')&&!l.startsWith('+++'))added++;
+        else if(l.startsWith('-')&&!l.startsWith('---'))deleted++;
+      });
+    }
+    if(p.type==='text'&&p.text){
+      const mMatch=p.text.match(/(?:^|\n)\s*([+]\d+)\s+([-]\d+)\s*(?:$|\n)/);
+      if(mMatch){
+        found=true;
+        if(added===0&&deleted===0){
+          added=parseInt(mMatch[1].replace('+',''),10)||0;
+          deleted=parseInt(mMatch[2].replace('-',''),10)||0;
+        }
+      }
+    }
+  }
+  return{added,deleted,found};
+}
+
+function render(el){
+  const p=el._p;if(el._t===p.text)return;el._t=p.text;
+  O.mdInto(el,p.text);
+  if(O.initCustomWidgets)O.initCustomWidgets(el);
+}
 function renderR(el,b){const p=el._p;if(b._t===p.text)return;b._t=p.text;O.mdInto(b,p.text);
   const run=!(p.time&&p.time.end);el._d.firstChild.textContent=run?'Думает…':'Размышления'}
 function sched(id,fn){if(timers.has(id))return;timers.set(id,setTimeout(()=>{timers.delete(id);fn();if(stick)scrollEnd()},100))}
@@ -160,6 +203,24 @@ function metaUpdate(el,m){
     if(i.tokens&&(i.tokens.output||i.tokens.input))t.push(O.fmtK((i.tokens.input||0)+(i.tokens.output||0))+' tok');
     if(i.cost)t.push('$'+i.cost.toFixed(4));
     meta.append(h('span',null,t.join('  ')));
+
+    const diffStat=getMsgDiff(m);
+    const oldDiffBadge=el.firstChild.querySelector('.msg-diff-badge');
+    if(diffStat.found||diffStat.added>0||diffStat.deleted>0){
+      const badge=h('button',{
+        class:'msg-diff-badge',
+        title:O.tr('View session changes','Посмотреть изменения в сессии'),
+        onclick:()=>O.setTab('changes')
+      },
+      O.icon('edit'),
+      h('span',{class:'diff-add'},'+'+diffStat.added),
+      h('span',{class:'diff-del'},'-'+diffStat.deleted));
+      if(oldDiffBadge)oldDiffBadge.replaceWith(badge);
+      else el.firstChild.append(badge);
+    }else if(oldDiffBadge){
+      oldDiffBadge.remove();
+    }
+
     if(i.error&&i.error.name!=='MessageAbortedError'){const old=el.firstChild.querySelector('.errbox');if(old)old.remove();
       let em=(i.error.data&&i.error.data.message)||i.error.name||'Ошибка';
       if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|\b429\b/i.test(String(em))){
@@ -413,6 +474,10 @@ const BUILTINS=[
  {n:'sessions',d:'Переключить сессию',i:'list',run:()=>O.openSessions()},
  {n:'models',d:'Выбрать модель',i:'cpu',run:()=>O.openModels()},
  {n:'agents',d:'Выбрать агента',i:'bot',run:()=>O.openAgents()},
+ {n:'widgets',d:'Интерактивные виджеты HUD',i:'sliders',run:()=>O.openWidgetsModal()},
+ {n:'preview',d:'Веб-предпросмотр проекта',i:'globe',run:arg=>O.openPreview(arg)},
+ {n:'open',d:'Открыть приложение Android (например /open telegram)',i:'out',run:arg=>O.dispatchAction('open_app',arg)},
+ {n:'tutorial',d:'Пройти обучение с Призраком',i:'ghost',run:()=>O.runTutorial(true)},
  {n:'connect',d:'Подключить провайдера (OpenCode Zen, OpenAI, ...)',i:'key',run:()=>O.openConnect()},
  {n:'init',d:'Создать или обновить AGENTS.md',i:'doc',run:()=>doInit()},
  {n:'undo',d:'Отменить последнее сообщение и его изменения файлов',i:'undo',run:()=>doUndo()},
@@ -472,9 +537,16 @@ async function onSend(){
   if(busy()&&!ta.value.trim()&&!atts.length){try{await api('POST','/session/'+S.sid+'/abort',{})}catch(e){O.toast(e.message)}return}
   const text=ta.value.trim();if(!text&&!atts.length)return;
   const cm=/^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text);
-  if(cm){const b=BUILTINS.find(x=>x.n===cm[1]);if(b){clear();b.run();return}
+  if(cm){const b=BUILTINS.find(x=>x.n===cm[1]);if(b){clear();b.run(cm[2]);return}
     const sc=(S.commands||[]).find(c=>c.name===cm[1]);
     if(sc){if(!S.model)return O.openConnect();clear();try{const sid=await sess();api('POST','/session/'+sid+'/command',{command:sc.name,arguments:cm[2]||'',agent:S.agent,model:modelStr()},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}}
+  
+  // Natural language app opening trigger (e.g. "открой телеграм", "запусти youtube")
+  const appMatch=/^(?:открой|запусти|open|launch)\s+([a-zA-Zа-яА-Я0-9_.-]+)$/i.exec(text);
+  if(appMatch){
+    O.dispatchAction('open_app',appMatch[1]);
+  }
+
   if(!S.model){O.toast('Подключите провайдера, чтобы выбрать модель');O.openConnect();return}
   if(text.startsWith('!')){const cmd=text.slice(1).trim();
     if(/^opencode(\s+tui)?\s*$/i.test(cmd)){O.toast('Приложение уже является интерфейсом OpenCode. TUI — во вкладке «Терминал» → Shell, агент — во вкладке «Чат»',6000);clear();return}

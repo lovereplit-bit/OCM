@@ -9,10 +9,13 @@ function build(){
   if(built)return;built=true;
   const app=O.$('#app');
 
-  // Minimal Top Header matching Screenshot 1: Hamburger on left, Ghost mascot on right
+  // Minimal Top Header matching Screenshot 1: Hamburger on left, Tokens badge right next to it, Ghost mascot on right
   T.menu=h('button',{class:'top-menu-btn',onclick:()=>O.openSessions()},O.icon('menu'));
+  T.tokensVal=h('span',{class:'top-tokens-val'},'⚡ 0 tok');
+  T.tokens=h('button',{class:'top-tokens-btn',title:O.tr('Session Tokens / Context','Токены сессии / Контекст'),onclick:()=>O.openTokensModal()},T.tokensVal);
+  const topLeft=h('div',{class:'top-left-box'},T.menu,T.tokens);
   T.ghost=h('button',{class:'top-ghost-btn',onclick:()=>{if(O.spawnBats)O.spawnBats();O.openGhost()}},O.icon('ghost'));
-  const top=h('div',{id:'top'},T.menu,T.ghost);
+  const top=h('div',{id:'top'},topLeft,T.ghost);
 
   T.banner=h('div',{id:'banner',class:'hide'});
 
@@ -86,8 +89,62 @@ O.setTab=t=>{
   if(t==='changes')O.refreshChanges();
 };
 
+O.calcSessionTokens=sid=>{
+  const msgs=O.visibleMsgs(sid||S.sid);
+  let input=0,output=0,reasoning=0,total=0;
+  for(const m of msgs){
+    const info=m.info;
+    if(info&&info.tokens){
+      input+=(info.tokens.input||0);
+      output+=(info.tokens.output||0);
+      reasoning+=(info.tokens.reasoning||0);
+    }
+  }
+  total=input+output+reasoning;
+  const usage=O.contextUsage(sid||S.sid);
+  return{input,output,reasoning,total,pct:usage?usage.pct:null,lim:usage?usage.lim:null};
+};
+
+O.openTokensModal=()=>{
+  const tok=O.calcSessionTokens(S.sid);
+  const card=h('div',{class:'settings-card'},
+    h('div',{class:'settings-row'},
+      h('div',{class:'settings-row-icon amber'},O.icon('cpu')),
+      h('div',{class:'settings-row-text'},
+        h('b',null,O.tr('Total Tokens in Session','Всего токенов в сессии')),
+        h('span',null,tok.total.toLocaleString()+' ('+O.fmtK(tok.total)+')'))),
+    h('div',{class:'settings-row'},
+      h('div',{class:'settings-row-icon blue'},O.icon('down')),
+      h('div',{class:'settings-row-text'},
+        h('b',null,O.tr('Prompt Tokens (Input)','Входящие токены (Промпт)')),
+        h('span',null,tok.input.toLocaleString()))),
+    h('div',{class:'settings-row'},
+      h('div',{class:'settings-row-icon green'},O.icon('up')),
+      h('div',{class:'settings-row-text'},
+        h('b',null,O.tr('Completion Tokens (Output)','Исходящие токены (Генерация)')),
+        h('span',null,tok.output.toLocaleString()))),
+    tok.reasoning?h('div',{class:'settings-row'},
+      h('div',{class:'settings-row-icon purple'},O.icon('bulb')),
+      h('div',{class:'settings-row-text'},
+        h('b',null,O.tr('Reasoning Tokens','Токены размышлений')),
+        h('span',null,tok.reasoning.toLocaleString()))):null,
+    tok.pct!=null?h('div',{class:'settings-row'},
+      h('div',{class:'settings-row-icon purple'},O.icon('memory')),
+      h('div',{class:'settings-row-text'},
+        h('b',null,O.tr('Context Window Utilization','Заполненность контекста')),
+        h('span',null,tok.pct+'%'+(tok.lim?' / '+O.fmtK(tok.lim)+' tok':'')))):null
+  );
+  O.sheet(O.tr('Token Statistics','Статистика токенов'),card);
+};
+
 function updateTop(){
   if(!built)return;
+  if(T.tokensVal){
+    const tok=O.calcSessionTokens(S.sid);
+    const txt=tok.total>0?(O.fmtK(tok.total)+' tok'):'0 tok';
+    const pct=tok.pct!=null?(' · '+tok.pct+'%'):'';
+    T.tokensVal.textContent='⚡ '+txt+pct;
+  }
   // Ghost icon status dot/indicator if MCP needs attention
   const v=Object.values(S.mcp||{});
   const hasErr=v.some(x=>x.status==='failed'||x.status==='needs_auth');
@@ -118,8 +175,26 @@ O.openGhost=()=>{
       h('div',{class:'settings-row'},
         h('div',{class:'settings-row-icon purple'},O.icon('ghost')),
         h('div',{class:'settings-row-text'},
-          h('b',null,'OpenCode Mobile v2.0'),
-          h('span',null,S.up?(O.tr('Core Runtime Active · Linux ARM64','Ядро активно · Linux ARM64')):(O.tr('Connecting...','Подключение...'))))),
+          h('b',null,'OpenCode Mobile v2.0.1'),
+          h('span',null,S.up?(O.tr('Core Active · Linux ARM64 · 120Hz ⚡','Ядро активно · Linux ARM64 · 120Hz ⚡')):(O.tr('Connecting...','Подключение...'))))),
+      h('div',{class:'settings-row',onclick:()=>{s.close();O.openWidgetsModal()}},
+        h('div',{class:'settings-row-icon amber'},O.icon('sliders')),
+        h('div',{class:'settings-row-text'},
+          h('b',null,O.tr('HUD Widgets & Soundboard','Интерактивные виджеты и звуки')),
+          h('span',null,O.tr('3 detailed widgets + custom actions','3 детализированных виджета + действия'))),
+        O.icon('chevR')),
+      h('div',{class:'settings-row',onclick:()=>{s.close();O.openPreview()}},
+        h('div',{class:'settings-row-icon blue'},O.icon('globe')),
+        h('div',{class:'settings-row-text'},
+          h('b',null,O.tr('In-App Web Preview','Веб-Предпросмотр сайтов')),
+          h('span',null,O.tr('Preview HTML, CSS, JS, images inside app','Просмотр сайтов и проектов в приложении'))),
+        O.icon('chevR')),
+      h('div',{class:'settings-row',onclick:()=>{s.close();if(O.runTutorial)O.runTutorial(true)}},
+        h('div',{class:'settings-row-icon green'},O.icon('bulb')),
+        h('div',{class:'settings-row-text'},
+          h('b',null,O.tr('Ghost RPG Cutscene Tutorial','Обучение от Призрака')),
+          h('span',null,O.tr('Play interactive story cutscene','Пройти обучение с анимациями заново'))),
+        O.icon('chevR')),
       h('div',{class:'settings-row',onclick:()=>{s.close();O.openStatus()}},
         h('div',{class:'settings-row-icon green'},O.icon('server')),
         h('div',{class:'settings-row-text'},
@@ -149,6 +224,9 @@ O.enter=async opt=>{
   updateTop();
   refreshStatus();
   O.iconsReady.then(()=>{O.refreshFiles(false)});
+  setTimeout(()=>{
+    if(O.runTutorial)O.runTutorial(false);
+  },800);
 };
 
 O.reconnect=async()=>{

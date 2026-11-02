@@ -66,10 +66,12 @@ class MainActivity : ComponentActivity() {
 
     private val loader by lazy {
         val resp = File(cacheDir, "resp").apply { mkdirs() }
+        val preview = File(cacheDir, "preview").apply { mkdirs() }
         WebViewAssetLoader.Builder()
             .setDomain("appassets.androidplatform.net")
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .addPathHandler("/_resp/", WebViewAssetLoader.InternalStoragePathHandler(this, resp))
+            .addPathHandler("/_preview/", WebViewAssetLoader.InternalStoragePathHandler(this, preview))
             .build()
     }
 
@@ -95,6 +97,34 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.setFlags(
+            android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+        )
+        // Unlock 90Hz / 120Hz / 144Hz high refresh rate display mode
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                window.attributes.preferredRefreshRate = 120f
+                val modes = display?.supportedModes
+                val maxMode = modes?.maxByOrNull { it.refreshRate }
+                if (maxMode != null && maxMode.refreshRate >= 90f) {
+                    val lp = window.attributes
+                    lp.preferredDisplayModeId = maxMode.modeId
+                    window.attributes = lp
+                }
+            } catch (_: Exception) {}
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                @Suppress("DEPRECATION")
+                val modes = windowManager.defaultDisplay?.supportedModes
+                val maxMode = modes?.maxByOrNull { it.refreshRate }
+                if (maxMode != null && maxMode.refreshRate >= 90f) {
+                    val lp = window.attributes
+                    lp.preferredDisplayModeId = maxMode.modeId
+                    window.attributes = lp
+                }
+            } catch (_: Exception) {}
+        }
         window.statusBarColor = 0xFF0D0D0F.toInt()
         window.navigationBarColor = 0xFF0D0D0F.toInt()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -116,6 +146,7 @@ class MainActivity : ComponentActivity() {
         }
         web = WebView(this).apply {
             setBackgroundColor(0xFF0D0D0F.toInt())
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
@@ -142,6 +173,7 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(web, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
+        checkOpenAppTrigger()
 
         onBackPressedDispatcher.addCallback(this) {
             web.evaluateJavascript("(window.OCM&&OCM.back&&OCM.back())===true") { r -> if (r != "true") moveTaskToBack(true) }
@@ -470,6 +502,136 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ---------- OpenApp & Web Preview helpers ----------
+
+    private fun checkOpenAppTrigger() {
+        try {
+            val f = File(Runtime.rootfs(this), "tmp/.openapp")
+            if (f.exists()) {
+                val app = f.readText().trim()
+                f.delete()
+                if (app.isNotEmpty()) launchApp(app)
+            }
+        } catch (_: Exception) {}
+        ui.postDelayed({ checkOpenAppTrigger() }, 1000)
+    }
+
+    fun launchApp(target: String): Boolean {
+        val t = target.trim()
+        if (t.isEmpty()) return false
+        val pm = packageManager
+        val lower = t.lowercase()
+        val known = mapOf(
+            "telegram" to listOf("org.telegram.messenger", "org.telegram.messenger.web", "org.thunderdog.challegram", "org.telegram.plus"),
+            "телеграм" to listOf("org.telegram.messenger", "org.telegram.messenger.web", "org.thunderdog.challegram", "org.telegram.plus"),
+            "телега" to listOf("org.telegram.messenger", "org.thunderdog.challegram"),
+            "tg" to listOf("org.telegram.messenger", "org.thunderdog.challegram"),
+            "тг" to listOf("org.telegram.messenger", "org.thunderdog.challegram"),
+            "vk" to listOf("com.vkontakte.android", "com.vk.im"),
+            "вк" to listOf("com.vkontakte.android", "com.vk.im"),
+            "вконтакте" to listOf("com.vkontakte.android", "com.vk.im"),
+            "youtube" to listOf("com.google.android.youtube"),
+            "ютуб" to listOf("com.google.android.youtube"),
+            "chrome" to listOf("com.android.chrome"),
+            "хром" to listOf("com.android.chrome"),
+            "browser" to listOf("com.android.chrome", "org.mozilla.firefox", "com.opera.browser"),
+            "браузер" to listOf("com.android.chrome", "org.mozilla.firefox"),
+            "github" to listOf("com.github.android"),
+            "гитхаб" to listOf("com.github.android"),
+            "settings" to listOf("com.android.settings"),
+            "настройки" to listOf("com.android.settings"),
+            "камера" to listOf("com.android.camera", "com.google.android.GoogleCamera"),
+            "camera" to listOf("com.android.camera", "com.google.android.GoogleCamera"),
+            "галерея" to listOf("com.google.android.apps.photos", "com.android.gallery3d"),
+            "photos" to listOf("com.google.android.apps.photos"),
+            "фото" to listOf("com.google.android.apps.photos"),
+            "диск" to listOf("com.google.android.apps.docs"),
+            "файлы" to listOf("com.google.android.documentsui", "com.android.documentsui"),
+            "files" to listOf("com.google.android.documentsui", "com.android.documentsui"),
+            "проводник" to listOf("com.google.android.documentsui", "com.android.documentsui"),
+            "whatsapp" to listOf("com.whatsapp"),
+            "ватсап" to listOf("com.whatsapp"),
+            "вацап" to listOf("com.whatsapp"),
+            "калькулятор" to listOf("com.google.android.calculator", "com.android.calculator2"),
+            "calculator" to listOf("com.google.android.calculator", "com.android.calculator2"),
+            "музыка" to listOf("com.google.android.apps.youtube.music", "ru.yandex.music"),
+            "music" to listOf("com.google.android.apps.youtube.music", "ru.yandex.music"),
+            "яндекс" to listOf("ru.yandex.searchplugin")
+        )
+        val candidates = known[lower] ?: listOf(t)
+        for (pkg in candidates) {
+            val launchIntent = pm.getLaunchIntentForPackage(pkg)
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                runOnUiThread {
+                    try {
+                        startActivity(launchIntent)
+                        Toast.makeText(this@MainActivity, "Запуск: $t", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(this@MainActivity, "Ошибка запуска $t: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                return true
+            }
+        }
+        try {
+            val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+            for (info in apps) {
+                val label = pm.getApplicationLabel(info).toString().lowercase()
+                if (label == lower || label.contains(lower) || info.packageName.lowercase().contains(lower)) {
+                    val launchIntent = pm.getLaunchIntentForPackage(info.packageName)
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runOnUiThread {
+                            try {
+                                startActivity(launchIntent)
+                                Toast.makeText(this@MainActivity, "Запуск: ${pm.getApplicationLabel(info)}", Toast.LENGTH_SHORT).show()
+                            } catch (_: Exception) {}
+                        }
+                        return true
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        if (t.contains("://")) {
+            runOnUiThread { openExternal(Uri.parse(t)) }
+            return true
+        }
+        runOnUiThread {
+            Toast.makeText(this@MainActivity, "Приложение «$t» не найдено", Toast.LENGTH_SHORT).show()
+        }
+        return false
+    }
+
+    private fun prepareWebPreview(path: String): String {
+        val u = uid()
+        val target = Runtime.hostPath(this, u, path.ifEmpty { "/root" })
+        val previewDir = File(cacheDir, "preview").apply {
+            mkdirs()
+            listFiles()?.forEach { it.deleteRecursively() }
+        }
+        val baseDir = if (target.isDirectory) target else target.parentFile ?: target
+        val entryName = if (target.isFile) target.name else "index.html"
+        if (baseDir.exists() && baseDir.isDirectory) {
+            baseDir.walkTopDown().maxDepth(4).forEach { f ->
+                val rel = f.relativeTo(baseDir).path
+                if (rel.isNotEmpty()) {
+                    val dest = File(previewDir, rel)
+                    if (f.isDirectory) {
+                        dest.mkdirs()
+                    } else if (f.isFile && f.length() < 10_000_000) {
+                        dest.parentFile?.mkdirs()
+                        f.copyTo(dest, true)
+                    }
+                }
+            }
+        } else if (target.isFile) {
+            target.copyTo(File(previewDir, entryName), true)
+        }
+        return "https://appassets.androidplatform.net/_preview/$entryName"
+    }
+
     // ---------- JS bridge ----------
 
     inner class Bridge {
@@ -680,6 +842,10 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface fun openLink(url: String) { runOnUiThread { openExternal(Uri.parse(url)) } }
+
+        @JavascriptInterface fun openApp(target: String): Boolean = this@MainActivity.launchApp(target)
+
+        @JavascriptInterface fun preparePreview(path: String): String = this@MainActivity.prepareWebPreview(path)
 
         // --- OTA ---
         @JavascriptInterface fun checkUpdates() {

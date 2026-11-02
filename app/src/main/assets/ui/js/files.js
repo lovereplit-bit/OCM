@@ -1,13 +1,24 @@
 (function(){
 const O=window.OCM,h=O.h,S=O.S,api=O.api,bus=O.bus;
-let treeEl,titleEl,exp=new Set(),cache=new Map(),gst={};
+let treeEl,titleEl,exp=new Set(),cache=new Map(),gst={},filterQuery='';
 const sortN=a=>a.sort((x,y)=>(x.type===y.type?0:x.type==='directory'?-1:1)||x.name.localeCompare(y.name));
 const absOf=n=>n.absolute||(S.dir+'/'+n.path);
 O.filesInit=root=>{
   titleEl=h('b',{class:'grow',style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},'Файлы');
-  treeEl=h('div',{id:'tree'});
-  root.append(h('div',{class:'pane-h'},O.icon('folder'),titleEl,
-    h('button',{class:'ibtn s',onclick:()=>newEntry('',false)},O.icon('plus')),h('button',{class:'ibtn s',onclick:()=>O.refreshFiles(true)},O.icon('refresh'))),treeEl);
+  treeEl=h('div',{id:'tree',class:'modern-tree'});
+  const searchInp=h('input',{class:'files-search-inp',placeholder:'Поиск в проекте...',oninput:e=>{filterQuery=e.target.value.toLowerCase().trim();draw()}});
+  const searchWrap=h('div',{class:'files-search-wrap'},O.icon('search'),searchInp,
+    h('button',{class:'ibtn s',style:{marginLeft:'auto'},onclick:()=>{searchInp.value='';filterQuery='';draw()}},O.icon('x')));
+  root.append(
+    h('div',{class:'pane-h'},
+      O.icon('folder'),titleEl,
+      h('button',{class:'ibtn s',title:'Веб-предпросмотр',onclick:()=>O.openPreview&&O.openPreview('.')},O.icon('globe')),
+      h('button',{class:'ibtn s',title:'Новый файл',onclick:()=>newEntry('',false)},O.icon('plus')),
+      h('button',{class:'ibtn s',title:'Обновить',onclick:()=>O.refreshFiles(true)},O.icon('refresh'))
+    ),
+    searchWrap,
+    treeEl
+  );
   bus.on('files',O.debounce(()=>O.refreshFiles(false),600));bus.on('dir',()=>{exp.clear();cache.clear();treeEl.textContent='';titleEl.textContent=O.basename(S.dir)||'/'});
   bus.on('idle',()=>O.refreshFiles(false))};
 async function list(p){
@@ -19,10 +30,48 @@ O.refreshFiles=async force=>{titleEl.textContent=O.basename(S.dir)||'/';
   await list('.');for(const p of exp)if(!cache.has(p)||force)await list(p);
   try{const st=await api('GET','/file/status');gst={};(st||[]).forEach(f=>gst[f.path]=f.status);S.gstatus=gst}catch{}
   draw()};
-function draw(){const fr=document.createDocumentFragment();const walk=(p,depth)=>{(cache.get(p)||[]).forEach(n=>{
+function draw(){
+  const fr=document.createDocumentFragment();
+  if(filterQuery){
+    const matches=[];
+    const searchWalk=p=>{(cache.get(p)||[]).forEach(n=>{
+      if(n.name.toLowerCase().includes(filterQuery))matches.push(n);
+      if(n.type==='directory')searchWalk(n.path);
+    })};
+    searchWalk('.');
+    if(!matches.length){
+      fr.append(h('div',{class:'mut',style:{padding:'24px',textAlign:'center'}},'Ничего не найдено по запросу "'+filterQuery+'"'));
+    }else{
+      matches.forEach(n=>{
+        const isDir=n.type==='directory',st=gst[n.path],isHtml=!isDir&&(n.name.endsWith('.html')||n.name.endsWith('.htm'));
+        const row=h('div',{class:'tn file-row-modern'+(n.ignored?' ign':'')+(st==='modified'?' m':st==='added'?' a':''),style:{paddingLeft:'12px'}},
+          O.fileIcon(n.name,isDir,false),
+          h('div',{class:'grow',style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginLeft:'6px'}},
+            h('span',{class:'nm'},n.name),
+            h('span',{class:'mut s',style:{display:'block',fontSize:'11px'}},n.path)
+          ),
+          isHtml?h('button',{class:'ibtn s file-preview-quick-btn',title:'Веб-предпросмотр',onclick:e=>{e.stopPropagation();O.openPreview(absOf(n))}},O.icon('globe')):null,
+          st?h('span',{class:'s'},st==='added'?'A':st==='deleted'?'D':'M'):null
+        );
+        let lp=null,fired=false;
+        row.addEventListener('pointerdown',()=>{fired=false;lp=setTimeout(()=>{fired=true;nodeActions(n)},480)});
+        ['pointerup','pointerleave','pointermove','pointercancel'].forEach(ev=>row.addEventListener(ev,()=>clearTimeout(lp)));
+        row.addEventListener('click',async()=>{if(fired)return;if(isDir){filterQuery='';draw()}else O.openFile(n)});
+        fr.append(row);
+      });
+    }
+    treeEl.textContent='';treeEl.append(fr);
+    return;
+  }
+  const walk=(p,depth)=>{(cache.get(p)||[]).forEach(n=>{
     const isDir=n.type==='directory',isOpen=isDir&&exp.has(n.path),st=gst[n.path];
-    const row=h('div',{class:'tn'+(n.ignored?' ign':'')+(st==='modified'?' m':st==='added'?' a':''),style:{paddingLeft:(10+depth*14)+'px'}},
-      isDir?O.icon(isOpen?'chevD':'chevR'):h('span',{style:{width:'20px',flex:'none'}}),O.fileIcon(n.name,isDir,isOpen),h('span',{class:'nm grow'},n.name),st?h('span',{class:'s'},st==='added'?'A':st==='deleted'?'D':'M'):null);
+    const isHtml=!isDir&&(n.name.endsWith('.html')||n.name.endsWith('.htm'));
+    const row=h('div',{class:'tn file-row-modern'+(n.ignored?' ign':'')+(st==='modified'?' m':st==='added'?' a':''),style:{paddingLeft:(10+depth*14)+'px'}},
+      isDir?O.icon(isOpen?'chevD':'chevR'):h('span',{style:{width:'20px',flex:'none'}}),
+      O.fileIcon(n.name,isDir,isOpen),
+      h('span',{class:'nm grow'},n.name),
+      isHtml?h('button',{class:'ibtn s file-preview-quick-btn',title:'Веб-предпросмотр',onclick:e=>{e.stopPropagation();O.openPreview(absOf(n))}},O.icon('globe')):null,
+      st?h('span',{class:'s'},st==='added'?'A':st==='deleted'?'D':'M'):null);
     let lp=null,fired=false;
     row.addEventListener('pointerdown',()=>{fired=false;lp=setTimeout(()=>{fired=true;nodeActions(n)},480)});
     ['pointerup','pointerleave','pointermove','pointercancel'].forEach(ev=>row.addEventListener(ev,()=>clearTimeout(lp)));
@@ -30,15 +79,17 @@ function draw(){const fr=document.createDocumentFragment();const walk=(p,depth)=
       if(isDir){if(exp.has(n.path))exp.delete(n.path);else{exp.add(n.path);if(!cache.has(n.path))await list(n.path)}draw()}else O.openFile(n)});
     fr.append(row);if(isOpen)walk(n.path,depth+1)})};
   walk('.',0);treeEl.textContent='';treeEl.append(fr);
-  if(!treeEl.firstChild)treeEl.append(h('div',{class:'mut',style:{padding:'20px',textAlign:'center'}},'Файлов пока нет'))}
+  if(!treeEl.firstChild)treeEl.append(h('div',{class:'mut',style:{padding:'24px',textAlign:'center'}},'Файлов пока нет'))}
 function nodeActions(n){const isDir=n.type==='directory',abs=absOf(n);
+  const isHtml=!isDir&&(n.name.endsWith('.html')||n.name.endsWith('.htm'));
   O.actions(n.name,[
     {label:'Спросить агента об этом',icon:'at',fn:()=>O.addMention(abs,isDir)},
+    (isDir||isHtml)?{label:'Веб-предпросмотр (внутри)',icon:'globe',fn:()=>O.openPreview(abs)}:null,
     isDir?{label:'Новый файл здесь',icon:'plus',fn:()=>newEntry(n.path,false)}:null,
     isDir?{label:'Новая папка здесь',icon:'folder',fn:()=>newEntry(n.path,true)}:null,
     {label:'Переименовать',icon:'edit',fn:async()=>{const v=await O.ask('Переименование',null,n.name);if(!v||v===n.name)return;const r=O.native.fs('rename',abs,v);r.ok?O.refreshFiles(true):O.toast(r.err||'Не удалось')}},
     {label:'Копировать путь',icon:'copy',fn:()=>O.native.copy(abs)},
-    {label:'Удалить',icon:'trash',danger:true,fn:async()=>{if(await O.confirm('Удалить '+n.name+'?','Это действие нельзя отменить.','Удалить',true)){const r=O.native.fs('delete',abs);r.ok?O.refreshFiles(true):O.toast(r.err||'Не удалось')}}}])}
+    {label:'Удалить',icon:'trash',danger:true,fn:async()=>{if(await O.confirm('Удалить '+n.name+'?','Это действие нельзя отменить.','Удалить',true)){const r=O.native.fs('delete',abs);r.ok?O.refreshFiles(true):O.toast(r.err||'Не удалось')}}}].filter(Boolean))}
 async function newEntry(dirRel,isDir){const name=await O.ask(isDir?'Новая папка':'Новый файл','Название');if(!name)return;
   const base=dirRel&&dirRel!=='.'?S.dir+'/'+dirRel:S.dir;const r=O.native.fs(isDir?'mkdir':'create',base+'/'+name);
   if(!r.ok)return O.toast(r.err||'Не удалось');if(dirRel)exp.add(dirRel);O.refreshFiles(true)}
@@ -51,6 +102,10 @@ O.openFile=async n=>{const rel=typeof n==='string'?n:n.path,abs=typeof n==='stri
   const s=O.sheet(O.basename(abs),body,{full:true,actions});
   const paint=()=>{body.textContent='';actions.textContent='';
     if(text==null){body.append(img?h('div',{style:{padding:'12px',overflow:'auto'}},h('img',{src:img,style:{maxWidth:'100%'}})):h('div',{class:'mut',style:{padding:'20px'}},'Бинарный файл — не отображается'));return}
+    const isHtml=abs.endsWith('.html')||abs.endsWith('.htm');
+    if(isHtml){
+      actions.append(h('button',{class:'ibtn',title:'Веб-предпросмотр',onclick:()=>O.openPreview(abs)},O.icon('globe')));
+    }
     actions.append(h('button',{class:'ibtn',onclick:()=>O.addMention(abs,false)||s.close()},O.icon('at')),h('button',{class:'ibtn',onclick:()=>O.native.copy(text)},O.icon('copy')),
       h('button',{class:'ibtn',onclick:()=>{editing=!editing;paint()}},O.icon(editing?'check':'edit')));
     if(editing){const ta=h('textarea',{class:'editor',spellcheck:'false'});ta.value=text;body.append(ta,h('div',{class:'cmdline'},h('button',{class:'btn grow',onclick:()=>{editing=false;paint()}},'Отмена'),h('button',{class:'btn pri grow',onclick:()=>{const r=O.native.writeText(abs,ta.value);if(r.ok){text=ta.value;editing=false;O.toast('Сохранено',1200);paint();O.refreshFiles(false)}else O.toast(r.err||'Не удалось сохранить')}},'Сохранить')))}

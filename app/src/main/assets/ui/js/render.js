@@ -29,20 +29,52 @@ O.unifiedEl=txt=>{const box=h('div',{class:'diff'});String(txt||'').split('\n').
   const c=l.startsWith('+')&&!l.startsWith('+++')?'a':l.startsWith('-')&&!l.startsWith('---')?'d':l.startsWith('@@')?'h':(l.startsWith('---')||l.startsWith('+++')||l.startsWith('Index')||l.startsWith('==='))?'c':'';
   box.append(h('div',{class:c},l))});return box};
 
-// ---- file icons (SVGs come from the upstream opencode repo, copied at build time) ----
-let idx=new Set();
-O.iconsReady=fetch('icons/files/index.json').then(r=>r.json()).then(a=>{idx=new Set(a)}).catch(()=>{});
-const EXT={py:'python',pyw:'python',js:'javascript',mjs:'javascript',cjs:'javascript',ts:'typescript',mts:'typescript',tsx:'react_ts',jsx:'react',json:'json',jsonc:'json',md:'markdown',mdx:'markdown',html:'html',htm:'html',css:'css',scss:'sass',sass:'sass',less:'less',go:'go',rs:'rust',java:'java',kt:'kotlin',kts:'kotlin',swift:'swift',c:'c',h:'h',cpp:'cpp',cc:'cpp',cxx:'cpp',hpp:'hpp',cs:'csharp',php:'php',rb:'ruby',lua:'lua',sh:'console',bash:'console',zsh:'console',fish:'console',ps1:'powershell',yml:'yaml',yaml:'yaml',toml:'toml',xml:'xml',svg:'svg',png:'image',jpg:'image',jpeg:'image',gif:'image',webp:'image',ico:'image',bmp:'image',pdf:'pdf',zip:'zip',gz:'zip',tar:'zip',tgz:'zip',rar:'zip','7z':'zip',sql:'database',db:'database',sqlite:'database',lock:'lock',txt:'document',log:'log',env:'tune',vue:'vue',svelte:'svelte',dart:'dart',r:'r',scala:'scala',ex:'elixir',exs:'elixir',erl:'erlang',hs:'haskell',zig:'zig',nim:'nim',tf:'terraform',proto:'proto',gradle:'gradle',csv:'table',ini:'settings',conf:'settings',cfg:'settings',gitignore:'git',apk:'android',jar:'java',wasm:'webassembly',astro:'astro',prisma:'prisma',graphql:'graphql',gql:'graphql',mp3:'audio',wav:'audio',mp4:'video',mov:'video'};
-const NAME={'package.json':'nodejs','package-lock.json':'nodejs','tsconfig.json':'tsconfig','dockerfile':'docker','docker-compose.yml':'docker','docker-compose.yaml':'docker','readme.md':'readme','license':'certificate','license.md':'certificate','makefile':'makefile','.gitignore':'git','.gitattributes':'git','.env':'tune','bun.lock':'bun','bun.lockb':'bun','yarn.lock':'yarn','pnpm-lock.yaml':'pnpm','vite.config.ts':'vite','vite.config.js':'vite','agents.md':'markdown','opencode.json':'json','build.gradle':'gradle','build.gradle.kts':'gradle','cargo.toml':'rust','go.mod':'go','requirements.txt':'python'};
-const FILE_FB='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#9a9595" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5"/></svg>');
-const DIR_FB='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#9a9595" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>');
-O.fileIcon=(name,isDir,open)=>{const light=document.documentElement.dataset.theme==='light';
-  const pick=(...c)=>{for(const n of c){if(!n)continue;if(light&&idx.has(n+'_light'))return n+'_light';if(idx.has(n))return n}return null};
-  const low=String(name).toLowerCase();let n;
-  if(isDir){const k=low.replace(/^\./,'');n=pick(open?'folder-'+k+'-open':null,'folder-'+k,open?'folder-open':'folder')}
-  else n=pick(NAME[low],EXT[O.ext(name)],O.ext(name),'document');
-  const img=h('img',{class:'fi',alt:'',loading:'lazy'});img.src=n?'icons/files/'+n+'.svg':(isDir?DIR_FB:FILE_FB);
-  img.onerror=()=>{img.onerror=null;img.src=isDir?DIR_FB:FILE_FB};return img};
+// ---- vibrant modern file icons ----
+const FOLDER_SVG='<svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M3 7a2 2 0 012-2h4.5l2 2H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" fill="#f59e0b"/><path d="M3 9.5h18v6.5a2 2 0 01-2 2H5a2 2 0 01-2-2V9.5z" fill="#fbbf24" opacity="0.95"/></svg>';
+const FOLDER_OPEN_SVG='<svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M3 6a2 2 0 012-2h4.5l2 2H19a2 2 0 012 2v2H6a2 2 0 00-1.9 1.4L2.5 17.5A2 2 0 002 18V6z" fill="#f59e0b"/><path d="M4.5 19h15.2a2 2 0 001.9-1.4l2.1-7a1.5 1.5 0 00-1.4-1.9H6.1a2 2 0 00-1.9 1.4l-2.3 7.5A1.5 1.5 0 003.3 21h1.2z" fill="#fbbf24"/></svg>';
+
+const RICH_ICONS={
+  html:'<svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 3h16l-1.5 15.5L12 21l-6.5-2.5L4 3z" fill="#ea580c"/><path d="M12 5v14l4.8-1.8 1.1-12.2H12z" fill="#f97316"/><path d="M8 8h8M8 11h8M8 14h5" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  css:'<svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 3h16l-1.5 15.5L12 21l-6.5-2.5L4 3z" fill="#0284c7"/><path d="M12 5v14l4.8-1.8 1.1-12.2H12z" fill="#38bdf8"/><text x="7" y="15" fill="#fff" font-size="9" font-weight="bold" font-family="monospace">#</text></svg>',
+  js:'<svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="4" fill="#eab308"/><text x="6" y="16.5" fill="#18181b" font-size="11" font-weight="900" font-family="sans-serif">JS</text></svg>',
+  ts:'<svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="4" fill="#2563eb"/><text x="6" y="16.5" fill="#ffffff" font-size="11" font-weight="900" font-family="sans-serif">TS</text></svg>',
+  py:'<svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="4" fill="#1e293b"/><path d="M12 6c-2.5 0-2.3 1.1-2.3 1.1l.02 1.2h2.3v.3H8.3S6 8.3 6 10.8s2 2.4 2 2.4h1.2v-1.2s-.1-1.3 1.3-1.3h2.3s1.2-.1 1.2-1.2V8.3s.2-2.3-2-2.3zm-1.2.7a.5.5 0 110 1 .5.5 0 010-1z" fill="#38bdf8"/><path d="M12 18c2.5 0 2.3-1.1 2.3-1.1l-.02-1.2h-2.3v-.3h3.7s2.3.3 2.3-2.2-2-2.4-2-2.4h-1.2v1.2s.1 1.3-1.3 1.3h-2.3s-1.2.1-1.2 1.2v1.2s-.2 2.3 2 2.3zm1.2-.7a.5.5 0 110-1 .5.5 0 010 1z" fill="#facc15"/></svg>',
+  json:'<svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="4" fill="#15803d"/><text x="6" y="16.5" fill="#ffffff" font-size="11" font-weight="bold" font-family="monospace">{}</text></svg>',
+  md:'<svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="4" fill="#7c3aed"/><text x="5" y="16.5" fill="#ffffff" font-size="10" font-weight="900" font-family="sans-serif">M↓</text></svg>',
+  img:'<svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="4" fill="#059669"/><circle cx="8" cy="8" r="2" fill="#a7f3d0"/><path d="M5 18l5-5 3 3 4-4 4 4v2H5z" fill="#ecfdf5"/></svg>',
+  sh:'<svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="4" fill="#0f172a"/><path d="M7 9l3 3-3 3M12 15h5" stroke="#4ade80" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  git:'<svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="18" height="18" rx="4" fill="#ea580c"/><circle cx="9" cy="15" r="2" fill="#fff"/><circle cx="15" cy="9" r="2" fill="#fff"/><path d="M9 13V9l4-2M15 11v4" stroke="#fff" stroke-width="1.5"/></svg>',
+  doc:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none"><rect x="4" y="3" width="16" height="18" rx="3" fill="#27272a"/><path d="M8 8h8M8 12h8M8 16h5" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round"/></svg>'
+};
+
+O.fileIcon=(name,isDir,open)=>{
+  const span=document.createElement('span');
+  span.className='fi';
+  span.style.display='inline-flex';
+  span.style.alignItems='center';
+  span.style.justifyContent='center';
+  span.style.flex='0 0 20px';
+  if(isDir){
+    span.innerHTML=open?FOLDER_OPEN_SVG:FOLDER_SVG;
+    return span;
+  }
+  const ext=O.ext(name).toLowerCase();
+  const low=String(name).toLowerCase();
+  let iconHtml=RICH_ICONS.doc;
+  if(ext==='html'||ext==='htm')iconHtml=RICH_ICONS.html;
+  else if(ext==='css'||ext==='scss'||ext==='sass'||ext==='less')iconHtml=RICH_ICONS.css;
+  else if(ext==='js'||ext==='mjs'||ext==='cjs'||ext==='jsx')iconHtml=RICH_ICONS.js;
+  else if(ext==='ts'||ext==='mts'||ext==='tsx')iconHtml=RICH_ICONS.ts;
+  else if(ext==='py'||ext==='pyw')iconHtml=RICH_ICONS.py;
+  else if(ext==='json'||ext==='jsonc'||ext==='yaml'||ext==='yml'||ext==='toml')iconHtml=RICH_ICONS.json;
+  else if(ext==='md'||ext==='mdx'||ext==='txt')iconHtml=RICH_ICONS.md;
+  else if(['png','jpg','jpeg','gif','svg','webp','ico','bmp'].includes(ext))iconHtml=RICH_ICONS.img;
+  else if(['sh','bash','zsh','fish'].includes(ext))iconHtml=RICH_ICONS.sh;
+  else if(low.includes('git')||low==='.gitignore')iconHtml=RICH_ICONS.git;
+  span.innerHTML=iconHtml;
+  return span;
+};
+O.iconsReady=Promise.resolve();
 // language for highlight.js
 const LANG={py:'python',js:'javascript',mjs:'javascript',cjs:'javascript',ts:'typescript',tsx:'typescript',jsx:'javascript',json:'json',jsonc:'json',md:'markdown',html:'xml',htm:'xml',xml:'xml',svg:'xml',css:'css',scss:'scss',less:'less',go:'go',rs:'rust',java:'java',kt:'kotlin',kts:'kotlin',swift:'swift',c:'c',h:'c',cpp:'cpp',cc:'cpp',hpp:'cpp',cs:'csharp',php:'php',rb:'ruby',lua:'lua',sh:'bash',bash:'bash',zsh:'bash',yml:'yaml',yaml:'yaml',toml:'ini',ini:'ini',sql:'sql',dockerfile:'dockerfile',gradle:'groovy',vue:'xml',diff:'diff',patch:'diff'};
 O.langOf=p=>LANG[O.ext(p)]||(O.basename(p).toLowerCase()==='dockerfile'?'dockerfile':null);
