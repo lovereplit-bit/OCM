@@ -1,27 +1,101 @@
 (function(){
 const O=window.OCM,h=O.h,S=O.S,api=O.api,bus=O.bus;
-const search=(ph,fn)=>h('input',{placeholder:ph,oninput:e=>fn(e.target.value.toLowerCase()),style:{marginBottom:'8px'}});
+const search=(ph,fn)=>h('input',{placeholder:ph,class:'drawer-search-input',oninput:e=>fn(e.target.value.toLowerCase()),style:{marginBottom:'8px'}});
 
-// ---- sessions drawer ----
+// Pinned sessions helper
+const getPinned=()=>new Set(O.store.get('pinnedSessions',[]));
+const togglePin=sid=>{
+  const s=getPinned();
+  if(s.has(sid))s.delete(sid);else s.add(sid);
+  O.store.set('pinnedSessions',[...s]);
+  bus.emit('sessions');
+};
+
+// ---- sessions drawer (ChatGPT style) ----
 O.openSessions=()=>{
-  const list=h('div'),q=search('Поиск по сессиям',()=>draw());
-  const s=O.sheet('Сессии',h('div',null,h('button',{class:'btn pri wide',onclick:async()=>{s.close();try{await O.newSession()}catch(e){O.toast(e.message)}}},O.icon('plus'),'Новая сессия'),h('div',{style:{height:'10px'}}),q,list),{drawer:true,
-    actions:h('button',{class:'ibtn',onclick:()=>{s.close();O.openSettings()}},O.icon('sliders'))});
-  function draw(){list.textContent='';const f=q.value.toLowerCase();
-    const items=S.sessions.filter(x=>O.sessionTitle(x).toLowerCase().includes(f));
-    if(!items.length)list.append(h('div',{class:'mut',style:{padding:'20px',textAlign:'center'}},'Сессий пока нет'));
-    items.forEach(x=>{const st=S.status[x.id],b=st&&st.type!=='idle',sm=x.summary;
-      list.append(h('div',{class:'li'+(x.id===S.sid?' on':'')},
+  const list=h('div'),pinnedList=h('div');
+  const q=search('Поиск по чатам...',()=>draw());
+  const navBox=h('div',{style:{display:'flex',flexDirection:'column',gap:'2px',marginBottom:'10px'}});
+
+  navBox.append(
+    O.listRow(O.icon('image'),'Изображения и артефакты','Сгенерированные файлы и результаты',null,()=>{s.close();O.openArtifacts()}),
+    O.listRow(O.icon('book'),'Библиотека файлов','Файлы проекта и проводник',null,()=>{s.close();O.setTab('files')}),
+    O.listRow(O.icon('folder'),'Проекты',O.basename(S.dir)||'/root',null,()=>{s.close();O.openProjects()}),
+    O.listRow(O.icon('laptop'),'Удаленно','Подключение к компьютеру / Warp',null,()=>{s.close();O.openRemote()}),
+    O.listRow(O.icon('clock'),'Запланировано','Фоновые задачи и расписание',null,()=>{s.close();O.openScheduled()}),
+    O.listRow(O.icon('plug'),'Плагины и MCP','Серверы MCP, LSP и навыки',null,()=>{s.close();O.openStatus()})
+  );
+
+  const content=h('div',null,
+    q,
+    navBox,
+    h('div',{class:'drawer-section-title pin-hdr hide'},'Закрепленное'),
+    pinnedList,
+    h('div',{class:'drawer-section-title'},'Чаты'),
+    list
+  );
+
+  const st=O.native.state();
+  const avatarLetter=(st.name||st.user||'G').charAt(0).toUpperCase();
+  const newChatBtn=h('button',{class:'drawer-new-chat-btn',onclick:async()=>{
+    s.close();
+    try{await O.newSession()}catch(e){O.toast(e.message)}
+  }},O.icon('plus'),'Новый чат');
+  const avatarBtn=h('button',{class:'drawer-avatar',title:st.name||'Профиль',onclick:()=>{s.close();O.openSettings()}},avatarLetter);
+  const quickSetBtn=h('button',{class:'ibtn',title:'Настройки',onclick:()=>{s.close();O.openSettings()}},O.icon('sliders'));
+  const footer=h('div',{class:'drawer-footer'},newChatBtn,avatarBtn,quickSetBtn);
+
+  const s=O.sheet('OpenCode',h('div',null,content,footer),{
+    drawer:true,
+    actions:h('button',{class:'ibtn',title:'Настройки',onclick:()=>{s.close();O.openSettings()}},O.icon('sliders'))
+  });
+
+  function draw(){
+    list.textContent='';pinnedList.textContent='';
+    const f=q.value.toLowerCase();
+    const pinSet=getPinned();
+    const all=S.sessions.filter(x=>O.sessionTitle(x).toLowerCase().includes(f));
+    const pinned=all.filter(x=>pinSet.has(x.id));
+    const recent=all.filter(x=>!pinSet.has(x.id));
+
+    const pinHdr=content.querySelector('.pin-hdr');
+    if(pinHdr)pinHdr.classList.toggle('hide',!pinned.length);
+
+    const makeRow=x=>{
+      const isSel=x.id===S.sid,st=S.status[x.id],b=st&&st.type!=='idle',sm=x.summary;
+      const isPin=pinSet.has(x.id);
+      return h('div',{class:'li'+(isSel?' on':'')},
         h('button',{class:'t',style:{textAlign:'left',flex:1,minWidth:0},onclick:()=>{s.close();O.openSession(x.id)}},
           h('b',{style:{display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},O.sessionTitle(x)),
-          h('span',{class:'mut s',style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},O.ago(x.time.updated)+(sm&&(sm.additions||sm.deletions)?'  +'+sm.additions+' -'+sm.deletions:''))),
-        b?h('span',{class:'spin',style:{flex:'none'}}):null,h('button',{class:'ibtn s',style:{flex:'none'},onclick:()=>sessActions(x)},O.icon('dots'))))})}
-  draw();bus.on('sessions',()=>{if(s.root.isConnected)draw()})};
-function sessActions(x){O.actions(O.sessionTitle(x),[
-  {label:'Переименовать',icon:'edit',fn:async()=>{const v=await O.ask('Переименование сессии',null,O.sessionTitle(x));if(v)try{await api('PATCH','/session/'+x.id,{title:v})}catch(e){O.toast(e.message)}}},
-  {label:x.share?'Отключить шаринг':'Поделиться',icon:'share',fn:async()=>{try{if(x.share){await api('DELETE','/session/'+x.id+'/share')}else{const r=await api('POST','/session/'+x.id+'/share',{});if(r.share){O.native.copy(r.share.url);O.native.share(r.share.url)}}}catch(e){O.toast(e.message)}}},
-  {label:'Форк',icon:'branch',fn:async()=>{try{const r=await api('POST','/session/'+x.id+'/fork',{});await O.loadSessions();O.openSession(r.id)}catch(e){O.toast(e.message)}}},
-  {label:'Удалить',icon:'trash',danger:true,fn:async()=>{if(await O.confirm('Удалить сессию?',O.sessionTitle(x),'Удалить',true))try{await api('DELETE','/session/'+x.id);S.sessions=S.sessions.filter(y=>y.id!==x.id);if(S.sid===x.id)O.openSession(S.sessions[0]&&S.sessions[0].id||null);bus.emit('sessions')}catch(e){O.toast(e.message)}}}])}
+          h('span',{class:'mut s',style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+            (isPin?'📌 ':'')+O.ago(x.time.updated)+(sm&&(sm.additions||sm.deletions)?'  +'+sm.additions+' -'+sm.deletions:''))),
+        b?h('span',{class:'spin',style:{flex:'none'}}):null,
+        h('button',{class:'ibtn s',style:{flex:'none'},title:'Действия',onclick:()=>sessActions(x)},O.icon('dots'))
+      );
+    };
+
+    pinned.forEach(x=>pinnedList.append(makeRow(x)));
+    if(!recent.length&&!pinned.length){
+      list.append(h('div',{class:'mut',style:{padding:'16px',textAlign:'center'}},'Сессий пока нет'));
+    }else{
+      recent.forEach(x=>list.append(makeRow(x)));
+    }
+  }
+
+  draw();
+  bus.on('sessions',()=>{if(s.root.isConnected)draw()});
+};
+
+function sessActions(x){
+  const pinSet=getPinned(),isPin=pinSet.has(x.id);
+  O.actions(O.sessionTitle(x),[
+    {label:isPin?'Открепить':'Закрепить',icon:'pin',fn:()=>togglePin(x.id)},
+    {label:'Переименовать',icon:'edit',fn:async()=>{const v=await O.ask('Переименование сессии',null,O.sessionTitle(x));if(v)try{await api('PATCH','/session/'+x.id,{title:v})}catch(e){O.toast(e.message)}}},
+    {label:x.share?'Отключить шаринг':'Поделиться',icon:'share',fn:async()=>{try{if(x.share){await api('DELETE','/session/'+x.id+'/share')}else{const r=await api('POST','/session/'+x.id+'/share',{});if(r.share){O.native.copy(r.share.url);O.native.share(r.share.url)}}}catch(e){O.toast(e.message)}}},
+    {label:'Форк',icon:'branch',fn:async()=>{try{const r=await api('POST','/session/'+x.id+'/fork',{});await O.loadSessions();O.openSession(r.id)}catch(e){O.toast(e.message)}}},
+    {label:'Удалить',icon:'trash',danger:true,fn:async()=>{if(await O.confirm('Удалить сессию?',O.sessionTitle(x),'Удалить',true))try{await api('DELETE','/session/'+x.id);S.sessions=S.sessions.filter(y=>y.id!==x.id);if(S.sid===x.id)O.openSession(S.sessions[0]&&S.sessions[0].id||null);bus.emit('sessions')}catch(e){O.toast(e.message)}}}
+  ]);
+}
 
 // ---- projects + folder browser ----
 O.openProjects=()=>{
@@ -41,11 +115,103 @@ O.browseDir=(start,cb)=>{let path=start||'/root';
     list.append(h('button',{class:'btn wide',style:{marginTop:'10px'},onclick:async()=>{const n=await O.ask('Новая папка','Название');if(!n)return;const rr=O.native.fs('mkdir',(path==='/'?'':path)+'/'+n);rr.ok?load():O.toast(rr.err||'Не удалось')}},O.icon('plus'),'Новая папка'))}
   load()};
 
-// ---- models / agents ----
+// ---- models bottom sheet (Image 3 style) ----
 O.openModels=()=>{
+  const all=O.allModels();
+  const currentModelStr=S.model?S.model.providerID+'/'+S.model.modelID:'';
+
+  // Curated free/fast models list for quick selection (Image 3 style)
+  const defaultFreeList=[
+    {name:'DeepSeek V4.1 Flash Free',pid:'opencode',mid:'deepseek-v4.1-flash',tags:'200k context · images · reasoning'},
+    {name:'Flint 40B Free',pid:'opencode',mid:'flint-40b',tags:'262k context · reasoning'},
+    {name:'Nemotron 3.5 Super VL Free',pid:'opencode',mid:'nemotron-3.5-super-vl',tags:'1048k context · images · reasoning'},
+    {name:'Beam Free',pid:'opencode',mid:'beam-free',tags:'1048k context · reasoning'}
+  ];
+
+  const featuredList=[];
+  // Add models from actual connected providers
+  all.forEach(x=>{
+    const c=x.m.cost,free=(c&&c.input===0&&c.output===0)||(x.pid==='opencode'),ctx=x.m.limit&&x.m.limit.context;
+    const tagList=[];
+    if(ctx)tagList.push(O.fmtK(ctx)+' context');
+    if(x.m.attachment!==false)tagList.push('images');
+    if(x.m.variants&&Object.keys(x.m.variants).length)tagList.push('reasoning');
+    if(free)tagList.push('бесплатно');
+    featuredList.push({
+      name:x.name,
+      pid:x.pid,
+      mid:x.mid,
+      tags:tagList.join(' · ')||x.mid,
+      free:free
+    });
+  });
+
+  // If no connected provider models, show defaults
+  const displayList=featuredList.length?featuredList:defaultFreeList;
+
+  const cardContainer=h('div',{style:{display:'flex',flexDirection:'column',gap:'4px'}});
+
+  displayList.forEach(m=>{
+    const isSelected=currentModelStr===(m.pid+'/'+m.mid)||(S.model&&S.model.modelID===m.mid);
+    const row=h('button',{
+      class:'li model-card-item'+(isSelected?' selected on':''),
+      onclick:()=>{
+        const r=O.store.get('recentModels',[]).filter(k=>k!==m.pid+'/'+m.mid);
+        r.unshift(m.pid+'/'+m.mid);
+        O.store.set('recentModels',r.slice(0,6));
+        O.setModel(m.pid,m.mid);
+        s.close();
+      }
+    },
+      h('div',{class:'t'},
+        h('b',{class:'model-card-title'},m.name),
+        h('span',{class:'model-card-meta'},m.tags)
+      ),
+      isSelected?O.icon('check','ok'):null
+    );
+    cardContainer.append(row);
+  });
+
+  const note=h('div',{class:'model-banner-note'},
+    'Бесплатные модели делят общий суточный лимит по сети. Подключите больше провайдеров в Настройки → Провайдеры.'
+  );
+
+  const curEffort=S.variant?S.variant.charAt(0).toUpperCase()+S.variant.slice(1):'Default';
+  const effortBtn=h('button',{class:'model-action-row',onclick:()=>{s.close();O.openEffort()}},
+    h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+      h('b',null,'Усилие (Effort)'),
+      h('span',{class:'badge-recommended'},'Рекомендуется')
+    ),
+    h('div',{style:{display:'flex',alignItems:'center',gap:'6px',color:'var(--mut)'}},
+      h('span',null,curEffort),
+      O.icon('chevR')
+    )
+  );
+
+  const moreBtn=h('button',{class:'model-action-row',onclick:()=>{s.close();openFullModels()}},
+    h('b',null,'Больше моделей (каталог)'),
+    O.icon('chevR')
+  );
+
+  const s=O.sheet('Select model',h('div',null,
+    cardContainer,
+    note,
+    effortBtn,
+    moreBtn
+  ));
+};
+
+// Full models catalog search
+function openFullModels(){
   const list=h('div'),q=search('Поиск моделей',()=>draw());
-  const s=O.sheet('Модели',h('div',null,h('button',{class:'btn wide',onclick:()=>{s.close();O.openConnect()}},O.icon('key'),'Подключить провайдера'),h('div',{style:{height:'8px'}}),q,list));
-  function draw(){list.textContent='';const f=q.value.toLowerCase();const all=O.allModels();
+  const s=O.sheet('Все модели',h('div',null,
+    h('button',{class:'btn wide',onclick:()=>{s.close();O.openConnect()}},O.icon('key'),'Подключить провайдера'),
+    h('div',{style:{height:'8px'}}),
+    q,list
+  ),{full:true});
+
+  function draw(){
+    list.textContent='';const f=q.value.toLowerCase();const all=O.allModels();
     if(!all.length)list.append(h('div',{class:'mut',style:{padding:'16px'}},'Моделей пока нет. Подключите провайдера или используйте бесплатные модели OpenCode Zen.'));
     const rec=O.store.get('recentModels',[]).map(k=>all.find(x=>x.pid+'/'+x.mid===k)).filter(Boolean);
     const groups=[];if(rec.length&&!f)groups.push(['Недавние',rec]);
@@ -55,7 +221,65 @@ O.openModels=()=>{
       items.forEach(x=>{const on=S.model&&S.model.providerID===x.pid&&S.model.modelID===x.mid,c=x.m.cost,free=c&&c.input===0&&c.output===0,ctx=x.m.limit&&x.m.limit.context;
         list.append(O.listRow('cpu',x.name,x.mid+(ctx?'  '+O.fmtK(ctx)+' конт.':'')+(free?'  бесплатно':''),on?O.icon('check','ok'):null,()=>{
           const r=O.store.get('recentModels',[]).filter(k=>k!==x.pid+'/'+x.mid);r.unshift(x.pid+'/'+x.mid);O.store.set('recentModels',r.slice(0,6));O.setModel(x.pid,x.mid);s.close()}))})})}
-  draw()};
+  draw();
+}
+
+// ---- effort picker sheet ----
+O.openEffort=()=>{
+  const vs=[
+    {id:'',name:'Default',desc:'Стандартный баланс скорости и глубины анализа'},
+    {id:'low',name:'Low',desc:'Быстрые и краткие ответы без долгих рассуждений'},
+    {id:'medium',name:'Medium',desc:'Оптимальное размышление для сложных задач (рекомендуется)'},
+    {id:'high',name:'High',desc:'Максимальная глубина проверки кода и архитектуры'}
+  ];
+  const s=O.sheet('Усилие размышлений (Effort)',h('div',null,
+    vs.map(v=>O.listRow('bulb',v.name,v.desc,(S.variant===v.id||(!S.variant&&!v.id))?O.icon('check','ok'):null,()=>{
+      O.setVariant(v.id||null);
+      O.toast('Усилие: '+v.name,1200);
+      s.close();
+    })),
+    h('div',{class:'note',style:{marginTop:'12px'}},'Высокое усилие размышлений заставляет модель тщательнее продумывать код и тесты, но расходует больше токенов.')
+  ));
+};
+
+// ---- remote connect sheet ----
+O.openRemote=()=>{
+  const s=O.sheet('Удаленные устройства',h('div',null,
+    h('div',{class:'note'},'Вы можете подключить этот телефон к OpenCode, запущенному на вашем компьютере или сервере в локальной сети.'),
+    h('div',{class:'grp'},'Быстрый запуск на ПК'),
+    h('div',{class:'field'},
+      h('label',null,'Выполните на компьютере в терминале:'),
+      h('div',{style:{display:'flex',gap:'6px'}},
+        h('input',{class:'mono s',readonly:true,value:'curl -fsSL https://raw.githubusercontent.com/mistqkw/opencode-mobile/main/tools/connect-qr.sh | sh'}),
+        h('button',{class:'btn',onclick:()=>O.native.copy('curl -fsSL https://raw.githubusercontent.com/mistqkw/opencode-mobile/main/tools/connect-qr.sh | sh')},O.icon('copy'))
+      )
+    ),
+    h('div',{class:'grp'},'Warp CLI-агент'),
+    h('button',{class:'btn wide',onclick:()=>O.openUrl('https://docs.warp.dev/agents/cli-agents/opencode/')},O.icon('globe'),'Открыть документацию Warp CLI-агента')
+  ));
+};
+
+// ---- scheduled tasks sheet ----
+O.openScheduled=()=>{
+  const s=O.sheet('Запланированные задачи',h('div',null,
+    h('div',{class:'note'},'OpenCode Mobile поддерживает автономную фоновую работу через демон и Foreground-службу Android.'),
+    O.listRow('clock','Фоновые задачи агента','Служба удерживает сервер активным даже при блокировке экрана',O.icon('check','ok')),
+    O.listRow('bell','Уведомления о статусе','Оповещения в шторку Android по завершении задач',O.icon('check','ok')),
+    h('button',{class:'btn wide',style:{marginTop:'12px'},onclick:()=>{O.toast('Фоновая служба активна');s.close()}},O.icon('refresh'),'Проверить статус службы')
+  ));
+};
+
+// ---- artifacts sheet ----
+O.openArtifacts=()=>{
+  const r=O.native.ls(S.dir||'/root');
+  const items=(r.items||[]).filter(x=>!x.dir&&(x.name.endsWith('.html')||x.name.endsWith('.md')||x.name.endsWith('.png')||x.name.endsWith('.svg')));
+  const s=O.sheet('Артефакты и результаты',h('div',null,
+    h('div',{class:'note'},'Сгенерированные файлы, страницы и отчеты в текущем проекте:'),
+    items.length?items.map(x=>O.listRow(O.fileIcon(x.name),x.name,'Файл проекта',O.icon('ext'),()=>{s.close();O.viewFile(S.dir+'/'+x.name)}))
+    :h('div',{class:'mut',style:{padding:'16px',textAlign:'center'}},'Артефактов в проекте пока нет. Попросите агента создать HTML или документ.')
+  ));
+};
+
 O.openAgents=()=>{const ags=O.primaryAgents();
   const s=O.sheet('Агенты',h('div',null,ags.map(a=>O.listRow('bot',a.name,a.description||'',a.name===S.agent?O.icon('check','ok'):null,()=>{O.setAgent(a.name);s.close()})),
     h('div',{class:'note',style:{marginTop:'12px'}},'Своих агентов добавляйте в Настройки → Агенты и правила.')))};
@@ -180,9 +404,9 @@ O.openCustomProvider=parentSheet=>{
 };
 
 // ---- themes / help ----
-O.openThemes=()=>{const th=[['opencode','OpenCode','#131010','#fab283'],['light','Светлая','#fafaf8','#c2641c'],['tokyonight','Tokyo Night','#1a1b26','#7aa2f7'],['gruvbox','Gruvbox','#282828','#fabd2f']];
+O.openThemes=()=>{const th=[['opencode','OpenCode Dark (2.0)','#09090b','#3b82f6'],['light','Светлая','#fafaf8','#2563eb'],['tokyonight','Tokyo Night','#1a1b26','#7aa2f7'],['gruvbox','Gruvbox','#282828','#fabd2f']];
   const s=O.sheet('Оформление',h('div',null,th.map(t=>O.listRow(h('span',{style:{width:'22px',height:'22px',borderRadius:'6px',background:t[2],border:'3px solid '+t[3],flex:'none'}}),t[1],'',S.opts.theme===t[0]?O.icon('check','ok'):null,()=>{S.opts.theme=t[0];O.saveOpts();s.close()})),
     h('div',{class:'grp'},'Размер текста'),h('div',{class:'seg'},[13,14,15,16,18].map(n=>h('button',{class:S.opts.fs===n?'on':'',onclick:()=>{S.opts.fs=n;O.saveOpts();s.close()}},n)))))};
-O.openHelp=()=>O.sheet('Справка',h('div',null,h('div',{class:'grp'},'Команды'),O.builtins.map(b=>O.listRow(b.i,'/'+b.n,b.d,null,()=>{O.back();b.run()})),
-  h('div',{class:'grp'},'Подсказки ввода'),h('div',{class:'note'},'@файл — упомянуть файл или папку.  !команда — выполнить команду оболочки в сессии.  Долгое нажатие на файл в дереве открывает действия.')));
+O.openHelp=()=>O.sheet('Справка OpenCode 2.0',h('div',null,h('div',{class:'grp'},'Команды'),O.builtins.map(b=>O.listRow(b.i,'/'+b.n,b.d,null,()=>{O.back();b.run()})),
+  h('div',{class:'grp'},'Подсказки ввода'),h('div',{class:'note'},'@файл — упомянуть файл или папку в сообщении.  !команда — выполнить команду в оболочке.  Долгое нажатие на файл в дереве открывает действия.')));
 })();

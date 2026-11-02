@@ -3,8 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val appVersionName = (findProperty("appVersionName") as String?) ?: "1.0.8"
-val appVersionCode = ((findProperty("appVersionCode") as String?) ?: "1").toInt()
+val appVersionName = (findProperty("appVersionName") as String?) ?: "2.0.0"
+val appVersionCode = ((findProperty("appVersionCode") as String?) ?: "200").toInt()
 val ksPass = System.getenv("KEYSTORE_PASSWORD")?.takeIf { it.isNotEmpty() } ?: "opencodemob"
 
 android {

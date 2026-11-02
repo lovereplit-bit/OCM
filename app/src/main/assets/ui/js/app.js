@@ -4,17 +4,24 @@ let built=false,tab='chat',sideTab='term',T={},P={},TB={},SB={},SP={};
 const wide=()=>innerWidth>=820;
 function build(){if(built)return;built=true;const app=O.$('#app');
   const dots=h('div',{class:'traffic-lights'},h('span',{class:'tl-dot red'}),h('span',{class:'tl-dot yellow'}),h('span',{class:'tl-dot green'}));
-  T.menu=h('button',{class:'ibtn',onclick:()=>O.openSessions()},O.icon('grid'));
+  T.menu=h('button',{class:'ibtn',onclick:()=>O.openSessions(),title:'Меню сессий'},O.icon('menu'));
   T.t=h('b',null,'Сессия');T.s=h('span',null,'');
   T.tabClose=h('button',{class:'tab-close',onclick:e=>{e.stopPropagation();O.newSession()}},O.icon('x'));
   T.tab=h('div',{class:'top-tab',onclick:()=>O.openSessions()},O.icon('pen'),T.t,T.tabClose);
-  T.plus=h('button',{class:'top-add-btn',onclick:()=>O.newSession()},O.icon('plus'));
+  T.plus=h('button',{class:'top-add-btn',title:'Новый чат',onclick:()=>O.newSession()},O.icon('plus'));
   T.subBtn=h('button',{class:'sub-btn grow',style:{textAlign:'left'},onclick:()=>O.openProjects()},T.s);
   T.ttl=h('div',{class:'ttl grow',style:{display:'flex',alignItems:'center',gap:'6px'}},T.tab,T.plus,T.subBtn);
   T.dot=h('span',{class:'dot',style:{position:'absolute',top:'8px',right:'7px',width:'7px',height:'7px'}});
+  T.usage=h('span',{class:'top-usage-pill hide'});
+  T.mascot=h('button',{class:'ibtn mascot-btn',title:'cl0udly',onclick:()=>{
+    S.ghostMode=!S.ghostMode;
+    T.mascot.classList.toggle('active',!!S.ghostMode);
+    O.toast(S.ghostMode?'cl0udly: Инкогнито включено!':'Обычный режим',1500);
+    bus.emit('ghost');
+  }},O.icon('ghost'));
   T.status=h('button',{class:'ibtn',style:{position:'relative'},onclick:()=>O.openStatus()},O.icon('server'),T.dot);
-  T.set=h('button',{class:'ibtn',onclick:()=>O.openSettings()},O.icon('sliders'));
-  const top=h('div',{id:'top'},T.menu,dots,T.ttl,T.status,T.set);
+  T.set=h('button',{class:'ibtn',title:'Настройки',onclick:()=>O.openSettings()},O.icon('sliders'));
+  const top=h('div',{id:'top'},T.menu,dots,T.ttl,T.usage,T.mascot,T.status,T.set);
   T.banner=h('div',{id:'banner',class:'hide'});
   P.files=h('div',{id:'pane-files',class:'pane'});P.chat=h('div',{id:'pane-chat',class:'pane'});P.side=h('div',{id:'pane-side',class:'pane'});
   SP.term=h('div',{class:'side-pane'});SP.changes=h('div',{class:'side-pane'});
@@ -42,6 +49,8 @@ O.setTab=t=>{tab=t;if(t==='term'||t==='changes')sideTab=t;
 function updateTop(){if(!built)return;const s=S.sessions.find(x=>x.id===S.sid)||O.child(S.sid);
   T.t.textContent=s?O.sessionTitle(s):'Сессия';const u=S.sid&&O.contextUsage(S.sid);
   T.s.textContent=[O.basename(S.dir)||'/',S.branch||'Нет Git',u?O.fmtK(u.tot)+' ток'+(u.pct!=null?' ('+u.pct+'%)':''):''].filter(Boolean).join('  /  ');
+  if(u&&u.tot){T.usage.textContent=O.fmtK(u.tot)+' ток'+(u.pct!=null?' ('+u.pct+'%)':'');T.usage.classList.remove('hide')}
+  else{T.usage.classList.add('hide')}
   O.updateBadges()}
 O.updateBadges=()=>{if(!built)return;const set=(k,n)=>{let b=TB[k].querySelector('.badge');if(!n){if(b)b.remove();return}if(!b){b=h('span',{class:'badge'});TB[k].append(b)}b.textContent=n};
   set('chat',S.perms.length+S.questions.length);set('changes',O.changesCount())};

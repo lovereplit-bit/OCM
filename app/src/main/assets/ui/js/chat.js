@@ -1,6 +1,6 @@
 (function(){
 const O=window.OCM,h=O.h,S=O.S,api=O.api,bus=O.bus;
-let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn,nokeyEl,comp,projChip,vcsChip,projTxt,vcsTxt,footerPrompt,chatRoot;
+let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn,nokeyEl,comp,projChip,vcsChip,projTxt,vcsTxt,footerPrompt,chatRoot,memChip;
 const msgEls=new Map(),partEls=new Map(),open=new Set(),timers=new Map();
 let atts=[],mentions=[],stick=true,revKey='',trail=[];
 O.rel=p=>{p=String(p||'');return S.dir&&p.startsWith(S.dir+'/')?p.slice(S.dir.length+1):p};
@@ -17,19 +17,31 @@ O.chatInit=root=>{
   dockEl=h('div',{id:'dock'});statusEl=h('div',{class:'status-line hide'});
   popEl=h('div',{id:'pop',class:'hide'});attsEl=h('div',{class:'atts hide'});
   nokeyEl=h('div',{class:'nokey hide'},h('span',{class:'grow'},'Модели не подключены — бесплатные недоступны.'),h('button',{class:'btn sm',onclick:()=>O.openConnect()},O.icon('key'),'Подключить'));
-  ta=h('textarea',{rows:1,placeholder:'Спросите о чём угодно (/ команды, @ файлы)...',oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
+  ta=h('textarea',{rows:1,placeholder:'Chat with OpenCode...',oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
   fileIn=h('input',{type:'file',multiple:true,class:'hide',accept:'image/*,application/pdf,text/*',onchange:onFiles});
   agentChip=h('button',{class:'chip agent',onclick:()=>O.openAgents()},O.icon('bot'),h('span'));
   modelChip=h('button',{class:'chip model',onclick:()=>O.openModels()},O.icon('cube'),h('span'));
   varChip=h('button',{class:'chip keep',onclick:cycleVariant},O.icon('bulb'),h('span'));
-  sendBtn=h('button',{id:'send',onclick:onSend},O.icon('send'));
-  const plusBtn=h('button',{class:'ibtn s attach-btn',onclick:()=>fileIn.click()},O.icon('plus'));
-  const cbar=h('div',{class:'cbar grow'},plusBtn,agentChip,modelChip,varChip);
+  sendBtn=h('button',{id:'send',title:'Отправить',onclick:onSend},O.icon('arrowUp'));
+
+  const plusBtn=h('button',{class:'ibtn s attach-btn',title:'Прикрепить или действие',onclick:()=>openPlusActions()},O.icon('plus'));
+  const micBtn=h('button',{class:'ibtn s mic-btn',title:'Голос / Диктовка',onclick:()=>{
+    O.toast('Диктовка активна: говорите ваш запрос',2000);
+    ta.focus();
+  }},O.icon('mic'));
+
+  const cbar=h('div',{class:'cbar grow'},plusBtn,agentChip,modelChip,varChip,micBtn);
   projTxt=h('span',{class:'pill-text'},'Проект по умолчанию');
   projChip=h('button',{class:'context-pill sub-chip',onclick:()=>O.openProjects()},O.icon('folder'),projTxt,O.icon('chevD'));
   vcsTxt=h('span',{class:'pill-text'},'Нет Git');
   vcsChip=h('button',{class:'context-pill sub-chip',onclick:()=>O.setTab('changes')},O.icon('branch'),vcsTxt);
-  const subBar=h('div',{class:'comp-sub-bar'},projChip,vcsChip);
+  memChip=h('button',{class:'context-pill sub-chip',onclick:()=>{
+    S.memoryOn=!S.memoryOn;
+    memChip.classList.toggle('on',!!S.memoryOn);
+    O.toast(S.memoryOn?'Память активирована':'Память отключена',1200);
+  }},O.icon('memory'),h('span',null,'Память вкл'));
+
+  const subBar=h('div',{class:'comp-sub-bar'},projChip,vcsChip,memChip);
   footerPrompt=h('button',{class:'opencode-footer-link',onclick:()=>O.openConnect()},'Подключить провайдеров (Claude, GPT, Gemini и др.) ›');
   comp=h('div',{id:'composer'},popEl,h('div',{class:'cbox'},subBar,nokeyEl,attsEl,ta,h('div',{class:'cbar-row',style:{display:'flex',alignItems:'center',gap:'6px',marginTop:'6px'}},cbar,sendBtn)),footerPrompt,fileIn);
   const wrap=h('div',{class:'chat-msgs-wrap',style:{position:'relative',flex:1,minHeight:0,display:'flex',flexDirection:'column'}},msgsEl,jumpEl);
@@ -44,11 +56,23 @@ O.chatInit=root=>{
   bus.on('session',()=>{const k=revisionKey();if(k!==revKey)renderAll();else renderRevert()});
   bus.on('sessions',()=>{renderRevert()});
   bus.on('meta',updateChips);bus.on('conn',updateChips);
+  bus.on('ghost',()=>renderAll());
   bus.on('serror',p=>{if(p&&(!p.sessionID||p.sessionID===S.sid)){const e=p.error;const t=e&&(e.data&&e.data.message||e.name);if(t&&e.name!=='MessageAbortedError'){
     if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|\b429\b/i.test(String(t)))O.toast(quotaHint(),8000);
     else O.toast(t,4000)}}});
   updateChips();renderAll();
 };
+
+function openPlusActions(){
+  O.actions('Добавить в чат',[
+    {label:'Прикрепить файл или фото',icon:'paperclip',fn:()=>fileIn.click()},
+    {label:'Упомянуть файл (@)',icon:'at',fn:()=>{ta.value=(ta.value?ta.value+' ':'')+'@';ta.focus();onInput()}},
+    {label:'Команды и навыки (/)',icon:'slash',fn:()=>{ta.value='/';ta.focus();onInput()}},
+    {label:'Телефонные инструменты и MCP',icon:'server',fn:()=>O.openStatus()},
+    {label:'Выбрать другую папку проекта',icon:'folder',fn:()=>O.openProjects()}
+  ]);
+}
+
 const nearBottom=()=>msgsEl.scrollHeight-msgsEl.scrollTop-msgsEl.clientHeight<140;
 const scrollEnd=f=>{requestAnimationFrame(()=>{msgsEl.scrollTop=msgsEl.scrollHeight;if(f){stick=true;jumpEl.classList.add('hide')}})};
 const revisionKey=()=>{const s=cur();return s&&s.revert?s.revert.messageID:''};
@@ -58,10 +82,37 @@ function renderAll(){
   const list=S.sid?O.visibleMsgs(S.sid):[];
   if(!list.length)showEmpty();else{if(chatRoot)chatRoot.classList.remove('is-empty');const fr=document.createDocumentFragment();list.forEach(m=>{const e=buildMsg(m);fr.append(e)});msgsEl.append(fr)}
   scrollEnd(true);renderDock();renderStatus();renderRevert();renderTodos();updateSend();updateChips()}
+
 function showEmpty(){
   if(chatRoot)chatRoot.classList.add('is-empty');
-  const wm=h('div',{class:'watermark-box'},O.wordmark('100%','auto'),h('div',{class:'watermark-sub'},'The open source AI coding agent'));
-  msgsEl.append(h('div',{class:'empty'},wm))}
+
+  const mascotWrap=h('div',{class:'watermark-mascot-wrap',title:'cl0udly',onclick:()=>{
+    O.toast('cl0udly: Привет! Чем я могу помочь сегодня?',2200);
+    mascotWrap.style.transform='scale(1.2) rotate(8deg)';
+    setTimeout(()=>{mascotWrap.style.transform='';},300);
+  }},O.icon('ghost'));
+  const svg=mascotWrap.querySelector('svg');
+  if(svg){svg.style.width='56px';svg.style.height='56px'}
+
+  const starters=[
+    'Объясни архитектуру проекта',
+    'Найди и исправь баги',
+    'Напиши тесты для кода',
+    'Помоги спланировать фичу'
+  ];
+  const chipsBox=h('div',{class:'starter-prompts'},starters.map(p=>
+    h('button',{class:'starter-chip',onclick:()=>{ta.value=p;autosize();updateSend();ta.focus()}},O.icon('sparkle'),p)
+  ));
+
+  const wm=h('div',{class:'watermark-box'},
+    mascotWrap,
+    O.wordmark('100%','auto'),
+    h('div',{class:'watermark-sub'},S.ghostMode?'cl0udly anonymous session':'The open source AI coding agent'),
+    chipsBox
+  );
+  msgsEl.append(h('div',{class:'empty'},wm));
+}
+
 function ensureMsg(m){
   const rv=revisionKey();if(rv&&m.info.id>=rv)return;
   let el=msgEls.get(m.info.id);
@@ -69,12 +120,15 @@ function ensureMsg(m){
     let before=null;for(const c of msgsEl.children){if(c.dataset.id&&c.dataset.id>m.info.id){before=c;break}}
     msgsEl.insertBefore(el,before)}
   else{syncParts(el,m);metaUpdate(el,m)}}
+
 function buildMsg(m){
   const el=h('div',{class:'msg '+m.info.role,'data-id':m.info.id},h('div',{class:'m-body'}),h('div',{class:'m-meta'}));
   msgEls.set(m.info.id,el);syncParts(el,m);metaUpdate(el,m);return el}
+
 function showPart(m,p){
   if(m.info.role==='user')return(p.type==='text'&&!p.synthetic&&!p.ignored)||p.type==='file'||p.type==='agent';
   switch(p.type){case'text':return true;case'reasoning':return S.opts.thinking&&String(p.text||'').trim()!=='';case'tool':case'patch':case'retry':case'compaction':return true}return false}
+
 function syncParts(el,m){
   const body=el.firstChild;const keep=new Set();let prev=null;
   for(const p of m.parts){if(!showPart(m,p))continue;keep.add(p.id);
@@ -84,6 +138,7 @@ function syncParts(el,m){
     if(pe.parentNode!==body||want!==pe)body.insertBefore(pe,want);
     fillPart(pe,p,m,fresh);prev=pe}
   for(const c of [...body.children]){if(!keep.has(c.dataset.pid)){partEls.delete(c.dataset.pid);c.remove()}}}
+
 function fillPart(el,p,m,fresh){
   el._p=p;
   switch(p.type){
@@ -102,6 +157,7 @@ function fillPart(el,p,m,fresh){
   case'patch':el.className='part';el.textContent='';el.append(h('span',{class:'chip'},O.icon('edit'),h('span',null,'Изменено файлов: '+((p.files||[]).length))));break;
   case'retry':el.className='part warn s';el.textContent='Повтор: '+((p.error&&p.error.data&&p.error.data.message)||'запрос не удался');break;
   case'compaction':el.className='part sep';el.textContent='Контекст сжат';break}}
+
 function render(el){const p=el._p;if(el._t===p.text)return;el._t=p.text;O.mdInto(el,p.text)}
 function renderR(el,b){const p=el._p;if(b._t===p.text)return;b._t=p.text;O.mdInto(b,p.text);
   const run=!(p.time&&p.time.end);el._d.firstChild.textContent=run?'Думает…':'Размышления'}
@@ -121,6 +177,7 @@ function metaUpdate(el,m){
       el.firstChild.append(h('div',{class:'errbox'},em))}
     else if(i.error)meta.append(h('span',{class:'warn'},'прервано'))}
   meta.append(h('span',{class:'grow'}),h('button',{class:'ibtn s',onclick:()=>msgActions(m)},O.icon('dots')))}
+
 function msgText(m){return m.parts.filter(p=>p.type==='text'&&!p.synthetic).map(p=>p.text).join('\n')}
 function msgActions(m){O.actions(m.info.role==='user'?'Сообщение':'Ответ',[
   {label:'Копировать текст',icon:'copy',fn:()=>O.native.copy(msgText(m))},
@@ -146,6 +203,7 @@ function toolMeta(p){const st=p.state||{},i=st.input||{},r=O.rel;
   case'todowrite':case'todoread':return{ic:'list',t:'Задачи',s:(i.todos||[]).length?(i.todos.length+' шт.'):''};
   case'skill':return{ic:'bulb',t:'Навык',s:i.name};
   default:return{ic:'code',t:st.title||p.tool,s:''}}}
+
 function toolBody(p){const st=p.state||{},i=st.input||{},md=st.metadata||{};
   const out=O.stripAnsi(st.output!=null?st.output:(md.output||''));const b=h('div');
   const pre=(t,c)=>h('pre',{class:c||'term-pre'},t);
@@ -159,12 +217,14 @@ function toolBody(p){const st=p.state||{},i=st.input||{},md=st.metadata||{};
     if(sid)b.append(h('button',{class:'btn sm',style:{marginTop:'8px'},onclick:()=>openChild(sid)},'Открыть сессию субагента'));if(out)b.append(pre(out.slice(0,3000),'code-pre'));break}
   default:if(Object.keys(i).length)b.append(pre(JSON.stringify(i,null,2).slice(0,3000),'code-pre'));if(out)b.append(pre(out.slice(0,6000),'code-pre'))}
   if(st.status==='error'&&st.error)b.append(h('div',{class:'errbox'},String(st.error)));return b}
+
 function fillTool(el,p){const st=p.state||{},m=toolMeta(p),isOpen=S.opts.details&&open.has(p.id);
   el.className='part tool '+(st.status||'pending')+(isOpen?' open':'');el.textContent='';el._p=p;
   const stat=st.status==='running'||st.status==='pending'?h('span',{class:'spin'}):st.status==='error'?O.icon('alert','err'):O.icon('check','ok');
   el.append(h('button',{class:'tool-h',onclick:()=>{if(!S.opts.details)return;el._auto=2;open.has(p.id)?open.delete(p.id):open.add(p.id);fillTool(el,el._p)}},
     O.icon(m.ic),h('span',{class:'t'},m.t),h('span',{class:'sub grow'},m.s||''),stat,S.opts.details?O.icon('chevR','chev'):null));
   if(isOpen)el.append(h('div',{class:'tool-b'},toolBody(p)))}
+
 async function openChild(sid){try{if(!O.child(sid)){const s=await api('GET','/session/'+sid);(S.childSessions=S.childSessions||{})[sid]=s}}catch{}trail.push(S.sid);await O.openSession(sid);bus.emit('session')}
 
 // ---- banners / dock ----
@@ -172,20 +232,24 @@ function renderRevert(){const s=cur();revEl.textContent='';
   if(trail.length&&S.sid&&O.child(S.sid)){revEl.classList.remove('hide');revEl.append(h('div',{class:'card warn',style:{display:'flex',alignItems:'center',gap:'8px'}},h('span',{class:'grow'},'Сессия субагента'),h('button',{class:'btn sm',onclick:()=>{const p=trail.pop();O.openSession(p)}},'Назад')));return}
   if(s&&s.revert){revEl.classList.remove('hide');revEl.append(h('div',{class:'card warn',style:{display:'flex',alignItems:'center',gap:'8px'}},h('span',{class:'grow'},'Изменения отменены'),h('button',{class:'btn sm',onclick:doRedo},O.icon('redo'),'Вернуть')))}
   else revEl.classList.add('hide')}
+
 function renderTodos(){const t=(S.todos[S.sid]||[]);todoEl.textContent='';
   if(!t.length||t.every(x=>x.status==='completed')){todoEl.classList.add('hide');return}
   todoEl.classList.remove('hide');const done=t.filter(x=>x.status==='completed').length;
   const list=h('div',{class:'hide',style:{marginTop:'6px'}},t.map(x=>h('div',{class:'todo-i'+(x.status==='completed'?' done':'')},O.icon(x.status==='completed'?'check':'chevR'),x.content)));
   todoEl.append(h('div',{class:'card',style:{padding:'8px 12px'}},h('button',{style:{display:'flex',alignItems:'center',gap:'8px',width:'100%'},onclick:()=>list.classList.toggle('hide')},O.icon('list'),h('b',{class:'grow',style:{textAlign:'left'}},'Задачи '+done+'/'+t.length),O.icon('chevD')),list))}
+
 function renderStatus(){const s=S.status[S.sid];statusEl.textContent='';
   if(!s||s.type==='idle'){statusEl.classList.add('hide');return}
   statusEl.classList.remove('hide');statusEl.append(h('span',{class:'spin'}),h('span',null,s.type==='retry'?('Повтор (попытка '+s.attempt+')'+(s.message?': '+s.message:'')):'Выполняется'))}
+
 function renderDock(){dockEl.textContent='';
   S.perms.filter(p=>p.sessionID===S.sid).forEach(p=>dockEl.append(permCard(p)));
   S.questions.filter(q=>q.sessionID===S.sid).forEach(q=>dockEl.append(questionCard(q)));
   const other=S.perms.filter(p=>p.sessionID!==S.sid)[0]||S.questions.filter(q=>q.sessionID!==S.sid)[0];
   if(other)dockEl.append(h('button',{class:'card warn',style:{textAlign:'left'},onclick:()=>O.openSession(other.sessionID)},O.icon('alert','warn'),'Другая сессия ждёт вас'));
   O.updateBadges&&O.updateBadges()}
+
 function permCard(p){const btns=[];
   const reply=async r=>{btns.forEach(b=>b.disabled=true);try{await O.replyPermission(p,r)}catch(e){btns.forEach(b=>b.disabled=false);O.toast(e.message)}};
   btns.push(h('button',{class:'btn dng',onclick:()=>reply('reject')},'Отклонить'),h('button',{class:'btn',onclick:()=>reply('once')},'Разрешить раз'),h('button',{class:'btn pri',onclick:()=>reply('always')},'Всегда'));
@@ -193,6 +257,7 @@ function permCard(p){const btns=[];
   return h('div',{class:'card warn'},h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},O.icon('shield','warn'),h('b',null,'Разрешение: '+p.title)),
     p.patterns.length?h('div',{class:'mono s mut',style:{marginTop:'4px',wordBreak:'break-all'}},p.patterns.join('\n')):null,
     diff?h('details',{style:{marginTop:'6px'}},h('summary',{class:'s'},'Показать изменения'),O.unifiedEl(diff)):null,h('div',{class:'row'},btns))}
+
 function questionCard(q){const qs=q.questions||[];const sel=qs.map(()=>new Set());const custom=qs.map(()=>'');
   const send=async()=>{try{await api('POST','/question/'+q.id+'/reply',{answers:qs.map((_,i)=>[...sel[i],...(custom[i]?[custom[i]]:[])])});S.questions=S.questions.filter(x=>x.id!==q.id);renderDock()}catch(e){O.toast(e.message)}};
   const rej=async()=>{try{await api('POST','/question/'+q.id+'/reject',{});S.questions=S.questions.filter(x=>x.id!==q.id);renderDock()}catch(e){O.toast(e.message)}};
@@ -206,6 +271,7 @@ function questionCard(q){const qs=q.questions||[];const sel=qs.map(()=>new Set()
 const quotaHint=()=>S.account&&S.account.email
   ?'Квота этой модели исчерпана. Перезапустите сервер (Настройки → Совместимость), выберите другую модель или подключите свой ключ: Настройки → Модели → Подключить провайдера'
   :'Квота исчерпана. Войдите в аккаунт opencode (Google/GitHub): Настройки → Аккаунт opencode — или подключите свой ключ: Настройки → Модели → Подключить провайдера';
+
 function updateChips(){const m=S.model,mi=m&&O.modelInfo(m.providerID,m.modelID);
   agentChip.lastChild.textContent=S.agent;modelChip.lastChild.textContent=mi?(mi.name||m.modelID):'Выберите модель';
   const vs=mi&&mi.variants?Object.keys(mi.variants):[];
@@ -215,12 +281,22 @@ function updateChips(){const m=S.model,mi=m&&O.modelInfo(m.providerID,m.modelID)
   if(projTxt)projTxt.textContent=O.basename(S.dir)||'Проект по умолчанию';
   if(vcsTxt)vcsTxt.textContent=S.branch||'Нет Git';
   const nokey=!m&&!S.offline&&S.up;nokeyEl.classList.toggle('hide',!nokey);
-  ta.disabled=!!S.offline&&!S.up;ta.placeholder=ta.disabled?'Офлайн — чтение кэшированных чатов':'Спросите о чём угодно (/ команды, @ файлы)...';updateSend()}
+  ta.disabled=!!S.offline&&!S.up;ta.placeholder=ta.disabled?'Офлайн — чтение кэшированных чатов':'Chat with OpenCode...';updateSend()}
+
 function cycleVariant(){const mi=O.modelInfo(S.model.providerID,S.model.modelID),vs=[null,...Object.keys(mi&&mi.variants||{})];
   if(vs.length>1){O.setVariant(vs[(vs.indexOf(S.variant)+1)%vs.length])}
   else{S.opts.thinking=!S.opts.thinking;O.saveOpts();updateChips();renderAll();O.toast(S.opts.thinking?'Мышление включено':'Мышление отключено',1200)}}
-function updateSend(){const b=busy(),has=ta.value.trim()||atts.length;sendBtn.classList.toggle('stop',b&&!has);sendBtn.textContent='';sendBtn.append(O.icon(b&&!has?'stop':'send'));sendBtn.disabled=!b&&!has}
+
+function updateSend(){
+  const b=busy(),has=ta.value.trim()||atts.length;
+  sendBtn.classList.toggle('stop',b&&!has);
+  sendBtn.textContent='';
+  sendBtn.append(O.icon(b&&!has?'stop':'arrowUp'));
+  sendBtn.disabled=!b&&!has;
+}
+
 function autosize(){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
+
 const BUILTINS=[
  {n:'new',d:'Начать новую сессию',i:'plus',run:()=>O.newSession()},
  {n:'sessions',d:'Переключить сессию',i:'list',run:()=>O.openSessions()},
@@ -243,6 +319,7 @@ const BUILTINS=[
  {n:'settings',d:'Настройки приложения',i:'sliders',run:()=>O.openSettings()},
  {n:'help',d:'Что я умею',i:'info',run:()=>O.openHelp()},
  {n:'exit',d:'Свернуть приложение (сервер продолжает работать)',i:'out',run:()=>OC.minimize()}];
+
 async function sess(){if(S.sid)return S.sid;const s=await O.newSession();return s.id}
 async function doInit(){if(!S.model)return O.openConnect();try{const sid=await sess();api('POST','/session/'+sid+'/init',{messageID:O.mid(),providerID:S.model.providerID,modelID:S.model.modelID},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}}
 async function doUndo(){const l=O.visibleMsgs(S.sid||'').filter(m=>m.info.role==='user');if(!l.length)return O.toast('Нечего отменять');revertTo(l[l.length-1])}
@@ -255,6 +332,7 @@ O.builtins=BUILTINS;
 function hidePop(){popEl.classList.add('hide');popEl.textContent=''}
 function showPop(items){popEl.textContent='';if(!items.length){hidePop();return}popEl.classList.remove('hide');
   items.slice(0,40).forEach(it=>popEl.append(h('button',{class:'it',style:{width:'100%',textAlign:'left'},onclick:it.pick},it.icon?it.icon:null,h('b',null,it.t),h('span',{class:'d grow'},it.d||''))))}
+
 let atTimer;
 function onInput(){autosize();updateSend();const v=ta.value,pos=ta.selectionStart||0,before=v.slice(0,pos);
   const sm=/^\/(\S*)$/.exec(before);
@@ -269,18 +347,22 @@ function onInput(){autosize();updateSend();const v=ta.value,pos=ta.selectionStar
     const fi=(files||[]).map(f=>{const dir=f.endsWith('/');return{t:O.basename(f),d:f,icon:O.fileIcon(O.basename(f),dir),pick:()=>insertMention('@'+f,{type:'file',mime:dir?'application/x-directory':'text/plain',url:'file://'+S.dir+'/'+f.replace(/\/$/,''),filename:O.basename(f),source:{type:'file',path:S.dir+'/'+f.replace(/\/$/,''),text:{value:'@'+f,start:0,end:0}}},pos-q.length-1,pos)}});
     if(ta.value.slice(0,pos)===before)showPop([...ags,...fi])},160);return}
   hidePop()}
+
 O.subagents=()=>(S.agents||[]).filter(a=>a.mode==='subagent'||a.mode==='all');
 function insertMention(tok,part,from,to){ta.value=ta.value.slice(0,from)+tok+' '+ta.value.slice(to);const p=from+tok.length+1;ta.setSelectionRange(p,p);mentions.push({tok,part});hidePop();ta.focus();onInput()}
 O.addMention=(path,isDir)=>{const rel=O.rel(path);const tok='@'+rel;const abs=path.startsWith('/')?path:S.dir+'/'+path;
   ta.value=(ta.value?ta.value+' ':'')+tok+' ';mentions.push({tok,part:{type:'file',mime:isDir?'application/x-directory':'text/plain',url:'file://'+abs,filename:O.basename(path),source:{type:'file',path:abs,text:{value:tok,start:0,end:0}}}});O.setTab('chat');ta.focus();onInput()};
 O.insertText=t=>{ta.value=t;onInput();ta.focus()};
+
 function onFiles(){const files=[...fileIn.files];fileIn.value='';for(const f of files){
   const mi=S.model&&O.modelInfo(S.model.providerID,S.model.modelID);
   if(!(f.type||'').startsWith('text/')&&mi&&mi.attachment===false){O.toast('Эта модель не принимает вложения');continue}
   if(f.size>8e6){O.toast(f.name+' слишком большой (макс. 8 МБ)');continue}
   const r=new FileReader();r.onload=()=>{atts.push({type:'file',mime:f.type||'application/octet-stream',filename:f.name,url:r.result});renderAtts()};r.readAsDataURL(f)}}
+
 function renderAtts(){attsEl.textContent='';attsEl.classList.toggle('hide',!atts.length);
   atts.forEach((a,i)=>attsEl.append(h('span',{class:'chip'},a.mime.startsWith('image/')?h('img',{src:a.url,style:{height:'22px',borderRadius:'4px'}}):O.fileIcon(a.filename),h('span',null,a.filename),h('button',{onclick:()=>{atts.splice(i,1);renderAtts();updateSend()}},O.icon('x')))));updateSend()}
+
 async function onSend(){
   if(busy()&&!ta.value.trim()&&!atts.length){try{await api('POST','/session/'+S.sid+'/abort',{})}catch(e){O.toast(e.message)}return}
   const text=ta.value.trim();if(!text&&!atts.length)return;
@@ -301,6 +383,7 @@ async function onSend(){
     m.parts=parts.map((p,i)=>Object.assign({id:'prt_local'+i,sessionID:sid,messageID:mid},p));bus.emit('msg',sid,m);scrollEnd(true);
     await api('POST','/session/'+sid+'/prompt_async',{messageID:mid,agent:S.agent,model:S.model,variant:S.variant||undefined,parts},{timeout:30000});
   }catch(e){const s=O.msgs(S.sid);s.list=s.list.filter(x=>x.info.id!==mid);s.idx.delete(mid);const el=msgEls.get(mid);if(el){el.remove();msgEls.delete(mid)}O.toast(e.message,4000);ta.value=text;onInput()}}
+
 function clear(){ta.value='';atts=[];mentions=[];renderAtts();autosize();hidePop();updateSend()}
 O.chat={renderAll,sess,focus:()=>ta&&ta.focus()};
 })();
