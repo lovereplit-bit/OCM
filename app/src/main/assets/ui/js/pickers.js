@@ -79,6 +79,7 @@ O.openConnect=async()=>{
     body.append(h('button',{class:'btn pri wide',onclick:()=>{s.close();O.openAccount()}},O.icon('user'),'Войти через Google / GitHub (аккаунт opencode)'),
       h('div',{class:'note',style:{margin:'10px 0'}},'Вход в аккаунт opencode делает квоту Zen персональной — как в opencode на компьютере. Либо подключите провайдера своим ключом ниже.'));
   }
+  body.append(h('button',{class:'btn wide',style:{margin:'8px 0'},onclick:()=>O.openCustomProvider(s)},O.icon('cpu'),'Свой провайдер / Прозвон моделей'));
   body.append(q,list);draw();
   const after=async()=>{try{await api('POST','/instance/dispose',null)}catch{}await O.loadMeta();O.toast('Подключено');s.close()};
   const pick=p=>{const ms=(auth[p.id]||[]).map((m,i)=>({m,i}));if(!ms.length)ms.push({m:{type:'api',label:'API-ключ'},i:0});
@@ -117,6 +118,66 @@ O.openStatus=async()=>{
       plugins.forEach(p=>body.append(O.listRow('plug',p,'',h('span',{class:'dot ok'}))));
       body.append(h('button',{class:'btn wide',style:{marginTop:'10px'},onclick:()=>{s.close();O.openPlugins()}},'Настроить плагины'))}]];
   defs.forEach((d,i)=>tabs.append(h('button',{class:i===0?'on':'',onclick:e=>{tabs.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===e.currentTarget));d[1]()}},d[0])));defs[0][1]()};
+
+// ---- custom provider & model probing ----
+O.openCustomProvider=parentSheet=>{
+  const idInp=h('input',{placeholder:'id (латиница), напр. localai или groq'});
+  const nameInp=h('input',{placeholder:'Отображаемое имя, напр. LocalAI'});
+  const urlInp=h('input',{class:'mono',placeholder:'https://api.openai.com/v1 или http://127.0.0.1:11434/v1'});
+  const keyInp=h('input',{type:'password',class:'mono',placeholder:'API-ключ (необязательно для Ollama/LM Studio)'});
+  const statusBox=h('div',{class:'mut s',style:{margin:'8px 0'}});
+  const modelList=h('div',{class:'hide',style:{maxHeight:'240px',overflowY:'auto',margin:'8px 0',border:'1px solid var(--line)',borderRadius:'8px',padding:'6px'}});
+  let foundModels=[];const sel=new Set();
+  const probeBtn=h('button',{class:'btn wide',style:{marginTop:'10px'},onclick:async()=>{
+    let url=urlInp.value.trim().replace(/\/+$/,'');if(!url)return O.toast('Введите Base URL');
+    if(!url.startsWith('http://')&&!url.startsWith('https://'))url='https://'+url;
+    urlInp.value=url;const key=keyInp.value.trim();
+    probeBtn.disabled=true;statusBox.textContent='Прозваниваю API...';
+    try{
+      const target=url.endsWith('/models')?url:(url+'/models');
+      const hd={'Accept':'application/json'};if(key)hd['Authorization']='Bearer '+key;
+      const resp=await fetch(target,{method:'GET',headers:hd});
+      if(!resp.ok)throw new Error('HTTP '+resp.status);
+      const json=await resp.json();
+      const raw=Array.isArray(json)?json:(json.data||json.models||[]);
+      foundModels=raw.map(m=>typeof m==='string'?m:(m.id||m.name)).filter(Boolean);
+      if(!foundModels.length){statusBox.textContent='Ответ получен, но список моделей пуст.';modelList.classList.add('hide');return}
+      statusBox.textContent='Найдено '+foundModels.length+' моделей:';
+      modelList.textContent='';modelList.classList.remove('hide');sel.clear();
+      foundModels.forEach(mid=>{sel.add(mid);
+        const chk=h('input',{type:'checkbox',checked:true,style:{width:'auto',margin:'0 8px 0 0'}});
+        chk.onchange=()=>{if(chk.checked)sel.add(mid);else sel.delete(mid)};
+        modelList.append(h('label',{style:{display:'flex',alignItems:'center',padding:'5px 4px',fontSize:'13px',cursor:'pointer'}},chk,h('span',{class:'mono grow'},mid)))});
+      O.toast('Найдено моделей: '+foundModels.length,2000);
+    }catch(e){statusBox.textContent='Ошибка: '+e.message;O.toast('Ошибка прозвона: '+e.message,4000)}
+    finally{probeBtn.disabled=false}}
+  },O.icon('search'),'Прозвонить API (получить список моделей)');
+
+  const saveBtn=h('button',{class:'btn pri wide',style:{marginTop:'10px'},onclick:async()=>{
+    const pid=idInp.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'')||('custom-'+Date.now().toString(36));
+    const pname=nameInp.value.trim()||pid;
+    let url=urlInp.value.trim().replace(/\/+$/,'');if(!url)return O.toast('Введите Base URL');
+    if(!url.startsWith('http://')&&!url.startsWith('https://'))url='https://'+url;
+    const key=keyInp.value.trim();
+    const mo={};if(sel.size>0){sel.forEach(mid=>{mo[mid]={name:mid}})}else mo['default']={name:'Default Model'};
+    const t=O.native.cfgRead();let obj={};try{if(t.trim())obj=O.parseJsonc(t)}catch{}
+    obj.provider=obj.provider||{};
+    obj.provider[pid]={name:pname,npm:'@ai-sdk/openai',options:{baseURL:url,apiKey:key||'dummy'},models:mo};
+    const w=O.native.cfgWrite(JSON.stringify(obj,null,2));
+    if(!w.ok)return O.toast(w.err||'Ошибка записи');
+    if(key)try{await api('PUT','/auth/'+pid,{type:'api',key})}catch(_){}
+    try{await api('POST','/instance/dispose',null)}catch(_){}
+    await O.loadMeta();O.toast('Провайдер '+pname+' подключён ('+Object.keys(mo).length+' моделей)!',3000);
+    sh.close();if(parentSheet&&parentSheet.close)parentSheet.close()}
+  },O.icon('check'),'Сохранить и подключить');
+
+  const sh=O.sheet('Свой провайдер / Прозвон моделей',h('div',null,
+    h('div',{class:'field'},h('label',null,'ID провайдера (латиница)'),idInp),
+    h('div',{class:'field'},h('label',null,'Отображаемое имя'),nameInp),
+    h('div',{class:'field'},h('label',null,'Base URL (OpenAI-совместимый)'),urlInp),
+    h('div',{class:'field'},h('label',null,'API-ключ (необязательно для локальных)'),keyInp),
+    probeBtn,statusBox,modelList,saveBtn),{full:true});
+};
 
 // ---- themes / help ----
 O.openThemes=()=>{const th=[['opencode','OpenCode','#131010','#fab283'],['light','Светлая','#fafaf8','#c2641c'],['tokyonight','Tokyo Night','#1a1b26','#7aa2f7'],['gruvbox','Gruvbox','#282828','#fabd2f']];

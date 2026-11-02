@@ -80,7 +80,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        val root = FrameLayout(this).apply { setBackgroundColor(0xFF131010.toInt()) }
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(0xFF131010.toInt())
+            keepScreenOn = true
+        }
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, ins ->
             val i = ins.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
             v.setPadding(i.left, i.top, i.right, i.bottom)

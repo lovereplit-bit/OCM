@@ -28,9 +28,38 @@ O.child=sid=>S.childSessions&&S.childSessions[sid];
 const saveMsgs=O.debounce(sid=>{const l=O.msgs(sid).list.slice(-400).map(m=>({info:m.info,parts:m.parts}));O.kv.set('msgs:'+sid,l)},1200);
 
 // ---- server events ----
+let liveSyncTimer=null;
+O.syncSessionMessages=async(sid)=>{
+  if(!sid||sid!==S.sid)return;
+  try{
+    const arr=await api('GET','/session/'+sid+'/message',null,{timeout:15000});
+    if(!Array.isArray(arr))return;
+    for(const m of arr){
+      O.upsertMsg(m.info);
+      if(Array.isArray(m.parts)){
+        for(const pt of m.parts) O.upsertPart(pt);
+      }
+    }
+    bus.emit('msg',sid);
+    saveMsgs(sid);
+  }catch(e){}
+};
+O.startLiveSync=(sid)=>{
+  if(liveSyncTimer)return;
+  liveSyncTimer=setInterval(()=>{
+    const st=S.status[S.sid];
+    if(!st||st.type==='idle'){O.stopLiveSync();return}
+    O.syncSessionMessages(S.sid);
+  },1500);
+};
+O.stopLiveSync=()=>{
+  if(liveSyncTimer){clearInterval(liveSyncTimer);liveSyncTimer=null;}
+};
+
 O.onServerEvent=raw=>{let o;try{o=JSON.parse(raw)}catch{return}
   const ev=o.payload||o,p=ev.properties||{};
-  if(o.directory&&o.directory!=='global'&&S.dir&&o.directory!==S.dir&&!/^(permission|question)\./.test(ev.type))return;
+  const targetSid=p.sessionID||(p.info&&p.info.sessionID)||(p.part&&p.part.sessionID);
+  if(o.directory&&o.directory!=='global'&&S.dir&&o.directory!==S.dir&&targetSid!==S.sid&&!/^(permission|question)\./.test(ev.type))return;
   switch(ev.type){
   case'server.connected':S.up=true;bus.emit('conn');break;
   case'session.created':case'session.updated':{const i=p.info;if(!i)break;
@@ -38,15 +67,25 @@ O.onServerEvent=raw=>{let o;try{o=JSON.parse(raw)}catch{return}
     const k=S.sessions.findIndex(x=>x.id===i.id);if(k>=0)S.sessions[k]=i;else S.sessions.unshift(i);
     S.sessions.sort((a,b)=>b.time.updated-a.time.updated);bus.emit('sessions');if(i.id===S.sid)bus.emit('session');break}
   case'session.deleted':S.sessions=S.sessions.filter(x=>x.id!==(p.info&&p.info.id));bus.emit('sessions');if(p.info&&p.info.id===S.sid){S.sid=null;bus.emit('open',null)}break;
-  case'session.status':S.status[p.sessionID]=p.status;bus.emit('status',p.sessionID);break;
-  case'session.idle':S.status[p.sessionID]={type:'idle'};bus.emit('status',p.sessionID);bus.emit('idle',p.sessionID);break;
+  case'session.status':
+    S.status[p.sessionID]=p.status;bus.emit('status',p.sessionID);
+    if(p.sessionID===S.sid&&p.status&&p.status.type!=='idle')O.startLiveSync(p.sessionID);
+    break;
+  case'session.idle':
+    S.status[p.sessionID]={type:'idle'};bus.emit('status',p.sessionID);bus.emit('idle',p.sessionID);
+    if(p.sessionID===S.sid){O.stopLiveSync();O.syncSessionMessages(p.sessionID)}
+    break;
   case'session.error':bus.emit('serror',p);break;
   case'session.diff':S.diffs[p.sessionID]=p.diff||[];bus.emit('diff',p.sessionID);break;
   case'message.updated':{const m=O.upsertMsg(p.info);bus.emit('msg',p.info.sessionID,m);saveMsgs(p.info.sessionID);break}
   case'message.removed':{const s=O.msgs(p.sessionID);s.list=s.list.filter(m=>m.info.id!==p.messageID);s.idx.delete(p.messageID);bus.emit('msg-removed',p.sessionID,p.messageID);break}
   case'message.part.updated':{const m=O.upsertPart(p.part);bus.emit('part',p.part.sessionID,m,p.part);saveMsgs(p.part.sessionID);break}
-  case'message.part.delta':{const s=O.msgs(p.sessionID),m=s.idx.get(p.messageID);if(!m)break;const pt=m.parts.find(x=>x.id===p.partID);if(!pt)break;
-    pt[p.field||'text']=(pt[p.field||'text']||'')+p.delta;bus.emit('part',p.sessionID,m,pt);break}
+  case'message.part.delta':{
+    const s=O.msgs(p.sessionID);let m=s.idx.get(p.messageID);
+    if(!m)m=O.upsertMsg({id:p.messageID,sessionID:p.sessionID,role:'assistant',time:{created:Date.now()}});
+    let pt=m.parts.find(x=>x.id===p.partID);
+    if(!pt){pt={id:p.partID,sessionID:p.sessionID,messageID:p.messageID,type:'text',[p.field||'text']:'',time:{start:Date.now()}};m.parts.push(pt)}
+    const f=p.field||'text';pt[f]=(pt[f]||'')+p.delta;bus.emit('part',p.sessionID,m,pt);break}
   case'message.part.removed':{const m=O.msgs(p.sessionID).idx.get(p.messageID);if(m){m.parts=m.parts.filter(x=>x.id!==p.partID);bus.emit('part-removed',p.sessionID,m,p.partID)}break}
   case'permission.updated':case'permission.asked':{const q=normPerm(p);if(!S.perms.some(x=>x.id===q.id))S.perms.push(q);bus.emit('perm');break}
   case'permission.replied':{const id=p.permissionID||p.requestID||p.id;S.perms=S.perms.filter(x=>x.id!==id);bus.emit('perm');break}

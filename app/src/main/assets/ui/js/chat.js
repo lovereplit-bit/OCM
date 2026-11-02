@@ -1,6 +1,6 @@
 (function(){
 const O=window.OCM,h=O.h,S=O.S,api=O.api,bus=O.bus;
-let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn,nokeyEl,comp;
+let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn,nokeyEl,comp,projChip,vcsChip,footerPrompt,chatRoot;
 const msgEls=new Map(),partEls=new Map(),open=new Set(),timers=new Map();
 let atts=[],mentions=[],stick=true,revKey='',trail=[];
 O.rel=p=>{p=String(p||'');return S.dir&&p.startsWith(S.dir+'/')?p.slice(S.dir.length+1):p};
@@ -9,6 +9,7 @@ const modelStr=()=>S.model?S.model.providerID+'/'+S.model.modelID:undefined;
 const busy=()=>{const s=S.status[S.sid];return !!s&&s.type!=='idle'};
 
 O.chatInit=root=>{
+  chatRoot=root;
   msgsEl=h('div',{id:'msgs',class:'sel',onscroll:()=>{stick=nearBottom();jumpEl.classList.toggle('hide',stick)}});
   jumpEl=h('button',{id:'jump',class:'btn sm hide',onclick:()=>scrollEnd(true)},O.icon('chevD'));
   revEl=h('div',{class:'hide',style:{padding:'0 10px 6px'}});
@@ -16,15 +17,20 @@ O.chatInit=root=>{
   dockEl=h('div',{id:'dock'});statusEl=h('div',{class:'status-line hide'});
   popEl=h('div',{id:'pop',class:'hide'});attsEl=h('div',{class:'atts hide'});
   nokeyEl=h('div',{class:'nokey hide'},h('span',{class:'grow'},'Модели не подключены — бесплатные недоступны.'),h('button',{class:'btn sm',onclick:()=>O.openConnect()},O.icon('key'),'Подключить'));
-  ta=h('textarea',{rows:1,placeholder:'Спросите что угодно, / команды, @ файлы',oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
+  ta=h('textarea',{rows:1,placeholder:'Спросите что угодно, / — команды, @ — контекст...',oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
   fileIn=h('input',{type:'file',multiple:true,class:'hide',accept:'image/*,application/pdf,text/*',onchange:onFiles});
   agentChip=h('button',{class:'chip agent',onclick:()=>O.openAgents()},O.icon('bot'),h('span'));
-  modelChip=h('button',{class:'chip model',onclick:()=>O.openModels()},O.icon('cpu'),h('span'));
+  modelChip=h('button',{class:'chip model',onclick:()=>O.openModels()},O.icon('cube'),h('span'));
   varChip=h('button',{class:'chip keep',onclick:cycleVariant},O.icon('bulb'),h('span'));
   sendBtn=h('button',{id:'send',onclick:onSend},O.icon('send'));
-  const cbar=h('div',{class:'cbar grow'},h('button',{class:'ibtn s',onclick:()=>fileIn.click()},O.icon('paperclip')),agentChip,modelChip,varChip);
-  comp=h('div',{id:'composer'},popEl,h('div',{class:'cbox'},nokeyEl,attsEl,ta,h('div',{style:{display:'flex',alignItems:'center',gap:'6px',marginTop:'4px'}},cbar,sendBtn)),fileIn);
-  const wrap=h('div',{style:{position:'relative',flex:1,minHeight:0,display:'flex',flexDirection:'column'}},msgsEl,jumpEl);
+  const plusBtn=h('button',{class:'ibtn s attach-btn',onclick:()=>fileIn.click()},O.icon('plus'));
+  const cbar=h('div',{class:'cbar grow'},plusBtn,agentChip,modelChip,varChip);
+  projChip=h('button',{class:'context-pill sub-chip',onclick:()=>O.openProjects()},O.icon('folder'),h('span',null,'Проект по умолчанию'),O.icon('chevD'));
+  vcsChip=h('button',{class:'context-pill sub-chip',onclick:()=>O.setTab('changes')},O.icon('branch'),h('span',null,'Нет Git'));
+  const subBar=h('div',{class:'comp-sub-bar'},projChip,vcsChip);
+  footerPrompt=h('button',{class:'opencode-footer-link',onclick:()=>O.openConnect()},'Подключитесь к более чем 75 провайдерам, чтобы использовать другие модели, включая Claude, GPT, Gemini и другие ›');
+  comp=h('div',{id:'composer'},popEl,h('div',{class:'cbox'},subBar,nokeyEl,attsEl,ta,h('div',{class:'cbar-row',style:{display:'flex',alignItems:'center',gap:'6px',marginTop:'6px'}},cbar,sendBtn)),footerPrompt,fileIn);
+  const wrap=h('div',{class:'chat-msgs-wrap',style:{position:'relative',flex:1,minHeight:0,display:'flex',flexDirection:'column'}},msgsEl,jumpEl);
   root.append(wrap,revEl,todoEl,statusEl,dockEl,comp);
   bus.on('open',()=>{renderAll()});
   bus.on('msg',(sid,m)=>{if(sid!==S.sid)return;const was=stick;ensureMsg(m);if(was)scrollEnd()});
@@ -48,14 +54,16 @@ const revisionKey=()=>{const s=cur();return s&&s.revert?s.revert.messageID:''};
 function renderAll(){
   msgsEl.innerHTML='';msgEls.clear();partEls.clear();revKey=revisionKey();
   const list=S.sid?O.visibleMsgs(S.sid):[];
-  if(!list.length)showEmpty();else{const fr=document.createDocumentFragment();list.forEach(m=>{const e=buildMsg(m);fr.append(e)});msgsEl.append(fr)}
+  if(!list.length)showEmpty();else{if(chatRoot)chatRoot.classList.remove('is-empty');const fr=document.createDocumentFragment();list.forEach(m=>{const e=buildMsg(m);fr.append(e)});msgsEl.append(fr)}
   scrollEnd(true);renderDock();renderStatus();renderRevert();renderTodos();updateSend();updateChips()}
-function showEmpty(){msgsEl.append(h('div',{class:'empty'},O.logo(40),h('b',{style:{color:'var(--fg)',fontSize:'17px'}},'OpenCode'),h('span',{class:'mono s'},S.dir||''),
-  h('span',null,'Опишите задачу, введите / для команд или @ для упоминания файла.')))}
+function showEmpty(){
+  if(chatRoot)chatRoot.classList.add('is-empty');
+  const wm=h('div',{class:'watermark-box'},O.wordmark('100%','auto'),h('div',{class:'watermark-sub'},'The open source AI coding agent'));
+  msgsEl.append(h('div',{class:'empty'},wm))}
 function ensureMsg(m){
   const rv=revisionKey();if(rv&&m.info.id>=rv)return;
   let el=msgEls.get(m.info.id);
-  if(!el){const e=msgsEl.querySelector('.empty');if(e)e.remove();el=buildMsg(m);
+  if(!el){const e=msgsEl.querySelector('.empty');if(e)e.remove();if(chatRoot)chatRoot.classList.remove('is-empty');el=buildMsg(m);
     let before=null;for(const c of msgsEl.children){if(c.dataset.id&&c.dataset.id>m.info.id){before=c;break}}
     msgsEl.insertBefore(el,before)}
   else{syncParts(el,m);metaUpdate(el,m)}}
@@ -198,10 +206,17 @@ const quotaHint=()=>S.account&&S.account.email
   :'Квота исчерпана. Войдите в аккаунт opencode (Google/GitHub): Настройки → Аккаунт opencode — или подключите свой ключ: Настройки → Модели → Подключить провайдера';
 function updateChips(){const m=S.model,mi=m&&O.modelInfo(m.providerID,m.modelID);
   agentChip.lastChild.textContent=S.agent;modelChip.lastChild.textContent=mi?(mi.name||m.modelID):'Выберите модель';
-  const vs=mi&&mi.variants?Object.keys(mi.variants):[];varChip.classList.toggle('hide',!vs.length);varChip.lastChild.textContent=S.variant||'по умолчанию';
-  const nokey=!m&&!S.offline&&S.up;nokeyEl.classList.toggle('hide',!nokey);if(nokey)ta.placeholder='Спросите что угодно, / команды, @ файлы';
-  ta.disabled=!!S.offline&&!S.up;ta.placeholder=ta.disabled?'Офлайн — чтение кэшированных чатов':'Спросите что угодно, / команды, @ файлы';updateSend()}
-function cycleVariant(){const mi=O.modelInfo(S.model.providerID,S.model.modelID),vs=[null,...Object.keys(mi.variants||{})];O.setVariant(vs[(vs.indexOf(S.variant)+1)%vs.length])}
+  const vs=mi&&mi.variants?Object.keys(mi.variants):[];
+  varChip.classList.remove('hide');
+  varChip.lastChild.textContent=vs.length?(S.variant||'по умолчанию'):(S.opts.thinking?'Мышление':'Без мышления');
+  varChip.classList.toggle('on',!!S.opts.thinking);
+  if(projChip)projChip.querySelector('span').textContent=O.basename(S.dir)||'Проект по умолчанию';
+  if(vcsChip)vcsChip.querySelector('span').textContent=S.branch||'Нет Git';
+  const nokey=!m&&!S.offline&&S.up;nokeyEl.classList.toggle('hide',!nokey);
+  ta.disabled=!!S.offline&&!S.up;ta.placeholder=ta.disabled?'Офлайн — чтение кэшированных чатов':'Спросите что угодно, / — команды, @ — контекст...';updateSend()}
+function cycleVariant(){const mi=O.modelInfo(S.model.providerID,S.model.modelID),vs=[null,...Object.keys(mi&&mi.variants||{})];
+  if(vs.length>1){O.setVariant(vs[(vs.indexOf(S.variant)+1)%vs.length])}
+  else{S.opts.thinking=!S.opts.thinking;O.saveOpts();updateChips();renderAll();O.toast(S.opts.thinking?'Мышление включено':'Мышление отключено',1200)}}
 function updateSend(){const b=busy(),has=ta.value.trim()||atts.length;sendBtn.classList.toggle('stop',b&&!has);sendBtn.textContent='';sendBtn.append(O.icon(b&&!has?'stop':'send'));sendBtn.disabled=!b&&!has}
 function autosize(){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
 const BUILTINS=[

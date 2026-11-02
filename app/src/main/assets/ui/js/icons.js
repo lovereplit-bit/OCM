@@ -21,6 +21,7 @@ user:'<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 0
 doc:'<path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5M9 13h6M9 17h6"/>',
 tg:'<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>',out:'<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>',
 cpu:'<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
+cube:'<path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/>',
 bot:'<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M8.5 14h.01M15.5 14h.01"/>',
 plug:'<path d="M9 2v6M15 2v6M7 8h10v4a5 5 0 01-10 0zM12 17v5"/>',
 server:'<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/>',
@@ -42,10 +43,18 @@ shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
 info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
 cloud:'<path d="M18 10h-1.3A8 8 0 109 18h9a4 4 0 000-8z"/>',
 play:'<path d="M6 4l14 8-14 8z" fill="currentColor"/>',
+layout:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h18"/>',
+grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+pen:'<path d="M18 2l4 4-14 14H4v-4L18 2z"/>',
 logo:'<path d="M5 3h14v18H5zM9 7h6v10H9z" fill="currentColor" fill-rule="evenodd" stroke="none"/>'
 };
 O.icon=(n,c)=>{const s=document.createElement('span');s.className='ic'+(c?' '+c:'');
   s.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(I[n]||I.file)+'</svg>';return s};
-O.logo=(w)=>{const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('viewBox','0 0 48 60');s.setAttribute('class','logo');s.style.width=(w||42)+'px';s.style.height=((w||42)*1.25)+'px';
-  s.innerHTML='<path fill="currentColor" fill-rule="evenodd" d="M0 0h48v60H0zM12 12h24v36H12z"/>';return s};
+O.logo=(w)=>{const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('viewBox','0 0 512 512');s.setAttribute('class','logo');s.style.width=(w||42)+'px';s.style.height=(w||42)+'px';
+  s.innerHTML='<path d="M320 224V352H192V224H320Z" fill="var(--mut)" opacity="0.6"/><path fill-rule="evenodd" clip-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" fill="currentColor"/>';return s};
+O.wordmark=(w,h)=>{const s=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  s.setAttribute('viewBox','0 0 640 115');s.setAttribute('class','opencode-wordmark');
+  s.setAttribute('fill','none');if(w)s.style.width=w;if(h)s.style.height=h;
+  s.innerHTML='<g class="wm-fill"><path d="M49.2346 82.1433H16.4141V49.2861H49.2346V82.1433Z"/><path d="M131.281 82.1433H98.4609V49.2861H131.281V82.1433Z"/><path d="M229.746 65.7139V82.1424H180.516V65.7139H229.746Z"/><path d="M295.383 98.5718H262.562V49.2861H295.383V98.5718Z"/><path d="M393.848 82.1433H344.617V49.2861H393.848V82.1433Z"/><path d="M459.485 82.1433H426.664V49.2861H459.485V82.1433Z"/><path d="M541.539 82.1433H508.719V49.2861H541.539V82.1433Z"/><path d="M639.996 65.7139V82.1424H590.766V65.7139H639.996Z"/></g><g class="wm-stroke"><path d="M49.2308 32.8573H16.4103V82.143H49.2308V32.8573ZM65.641 98.5716H0V16.4287H65.641V98.5716Z"/><path d="M98.4649 82.143H131.285V32.8573H98.4649V82.143ZM147.696 98.5716H98.4649V115H82.0547V16.4287H147.696V98.5716Z"/><path d="M229.743 65.7144H180.512V82.143H229.743V98.5716H164.102V16.4287H229.743V65.7144ZM180.512 49.2859H213.332V32.8573H180.512V49.2859Z"/><path d="M295.387 32.8573H262.567V98.5716H246.156V16.4287H295.387V32.8573ZM311.797 98.5716H295.387V32.8573H311.797V98.5716Z"/><path d="M393.844 32.8573H344.613V82.143H393.844V98.5716H328.203V16.4287H393.844V32.8573Z"/><path d="M459.489 32.8573H426.668V82.143H459.489V32.8573ZM475.899 98.5716H410.258V16.4287H475.899V98.5716Z"/><path d="M541.535 32.8571H508.715V82.1428H541.535V32.8571ZM557.946 98.5714H492.305V16.4286H541.535V0H557.946V98.5714Z"/><path d="M590.77 32.8573V49.2859H623.59V32.8573H590.77ZM640 65.7144H590.77V82.143H640V98.5716H574.359V16.4287H640V65.7144Z"/></g>';
+  return s};
 })();
