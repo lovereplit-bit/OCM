@@ -7,39 +7,95 @@ const restartBar=()=>h('button',{class:'btn wide',style:{marginTop:'12px'},oncli
 const sub=(t,b,o)=>O.sheet(t,b,Object.assign({full:true},o));
 
 // ---- main ----
+// ---- main ----
 O.openSettings=()=>{
   const st=O.native.state(),fl=st.flags||{};
-  const body=h('div');const s=O.sheet('Настройки',body);
-  // профиль: у каждого гостя — свой случайный ник и пароль (никогда общий аккаунт)
-  const prof=h('div',{class:'card',style:{display:'flex',alignItems:'center',gap:'10px'}},
-    O.icon('user'),
-    h('div',{class:'grow'},
+  const body=h('div');
+  const s=O.sheet(O.tr('Settings','Настройки'),body,{hud:true});
+  
+  // 1. Profile & Account
+  body.append(h('div',{class:'settings-section-title'},O.tr('Profile & Account','Профиль и аккаунт')));
+  const profCard=h('div',{class:'settings-card'});
+  const profRow=h('div',{class:'settings-row'},
+    h('div',{class:'settings-row-icon purple'},O.icon('user')),
+    h('div',{class:'settings-row-text'},
       h('b',null,st.name||'Гость'),
-      h('div',{class:'mut s'},st.guest?('Гостевой профиль · ник создан случайно'):(st.user?('Профиль: '+st.user):'Профиль не выбран')),
-      st.guest&&st.pw?h('div',{class:'mut s',style:{display:'flex',alignItems:'center',gap:'6px'}},h('span',{class:'mono'},'Пароль профиля: '+st.pw),h('button',{class:'ibtn s',onclick:()=>O.native.copy(st.pw)},O.icon('copy'))):null),
-    h('button',{class:'btn sm',onclick:async()=>{if(await O.confirm('Сменить профиль?','Чаты и файлы останутся на телефоне и будут доступны при повторном входе.','Сменить'))OC.signOut()}},O.icon('out'),'Сменить'));
-  body.append(prof);
-  const g=t=>body.append(h('div',{class:'grp'},t)),r=(i,t,sb,fn)=>body.append(O.listRow(i,t,sb,O.icon('chevR'),fn));
-  g('Аккаунт opencode');
-  const accRow=O.listRow('user','Аккаунт opencode','проверяем...',O.icon('chevR'),()=>O.openAccount());body.append(accRow);
-  const accSub=()=>{const sp=accRow.querySelector('.t span');if(!sp)return;
-    sp.textContent=S.account&&S.account.email?('Вход выполнен: '+S.account.email):(S.account&&S.account.checked?'Не выполнен — квота Zen общая':'проверяем...')};
+      h('span',null,st.guest?('Гостевой профиль · ник создан случайно'):(st.user?('Профиль: '+st.user):'Профиль не выбран')),
+      st.guest&&st.pw?h('div',{class:'mut s',style:{display:'flex',alignItems:'center',gap:'6px',marginTop:'4px'}},
+        h('span',{class:'mono'},'Пароль: '+st.pw),
+        h('button',{class:'ibtn s',onclick:()=>O.native.copy(st.pw)},O.icon('copy'))):null),
+    h('button',{class:'btn sm',onclick:async()=>{if(await O.confirm(O.tr('Change profile?','Сменить профиль?'),O.tr('Chats and local files will be preserved.','Чаты и файлы останутся на телефоне и будут доступны при повторном входе.'),O.tr('Change','Сменить')))OC.signOut()}},O.icon('out'),O.tr('Change','Сменить')));
+  
+  const accRow=O.listRow('cloud',O.tr('OpenCode Zen Account','Аккаунт opencode'),'проверяем...',O.icon('chevR'),()=>O.openAccount());
+  const accSub=()=>{const sp=accRow.querySelector('.settings-row-text span');if(!sp)return;
+    sp.textContent=S.account&&S.account.email?(O.tr('Logged in: ','Вход выполнен: ')+S.account.email):(S.account&&S.account.checked?O.tr('Not logged in (shared quota)','Не выполнен — квота общая'):'проверяем...')};
   accSub();O.checkAccount().then(accSub);
-  g('Модели');r('key','Подключить провайдера','OpenCode Zen, OpenAI, Anthropic, GitHub Copilot, Google и другие',()=>O.openConnect());
-  r('cpu','Модель',S.model?S.model.providerID+'/'+S.model.modelID:'не выбрана',()=>O.openModels());
-  g('Оформление');r('palette','Тема и размер текста',({opencode:'OpenCode',light:'Светлая',tokyonight:'Tokyo Night',gruvbox:'Gruvbox'})[S.opts.theme]||S.opts.theme+', '+S.opts.fs+'px',()=>O.openThemes());
-  body.append(O.toggleRow('bulb','Показывать размышления','Блоки размышлений в ответах',S.opts.thinking,v=>{S.opts.thinking=v;O.saveOpts();O.chat.renderAll()}));
-  body.append(O.toggleRow('code','Раскрытие деталей инструментов','Нажмите на карточку инструмента, чтобы увидеть команды, вывод и изменения',S.opts.details,v=>{S.opts.details=v;O.saveOpts();O.chat.renderAll()}));
-  g('Звуки и уведомления');
-  [['snd_done','Задача завершена','Агент закончил работу','done'],['snd_action','Требуется действие','Ожидается разрешение или вопрос','action'],['snd_quota','Квота исчерпана','Превышен лимит модели или запросов','quota']].forEach(([k,t,d,kind])=>
-    body.append(h('div',{style:{display:'flex',alignItems:'center'}},h('div',{class:'grow'},O.toggleRow('bell',t,d,fl[k]!==false,v=>OC.setFlag(k,v))),h('button',{class:'ibtn',onclick:()=>OC.testSound(kind)},O.icon('play')))));
-  g('Агенты');r('doc','Агенты и правила','Загрузите AGENTS.md, агентов и команды',()=>openAgents());
-  r('server','Серверы MCP','Добавить, изменить, подключить',()=>O.openMcp());r('plug','Плагины','npm-пакеты и локальные файлы',()=>O.openPlugins());
-  r('code','Файл конфигурации','Редактировать opencode.json напрямую',()=>openConfig());
-  g('Приложение');r('down','Обновления','Приложение и ядро OpenCode (1.x)',()=>openUpdates());r('shield','Разрешения','Файлы, уведомления, фон, установка',()=>openPerms());
-  r('bat','Совместимость и логи','Безопасный режим, перезапуск сервера',()=>openCompat());r('info','О приложении','',()=>openAbout());
-  r('globe','OpenCode CLI-агент (Warp)','docs.warp.dev/agents/cli-agents/opencode',()=>O.openUrl('https://docs.warp.dev/agents/cli-agents/opencode/'));
-  r('tg','Сообщество','t.me/OpenCodeMob',()=>O.openUrl('https://t.me/OpenCodeMob'))};
+  profCard.append(profRow,accRow);
+  body.append(profCard);
+
+  // 2. Models & Providers
+  body.append(h('div',{class:'settings-section-title'},O.tr('Models & Providers','Модели и провайдеры')));
+  const modelsCard=h('div',{class:'settings-card'});
+  modelsCard.append(
+    O.listRow('cpu',O.tr('Active Model','Текущая модель'),S.model?S.model.providerID+'/'+S.model.modelID:O.tr('Not selected','Не выбрана'),O.icon('chevR'),()=>O.openModels()),
+    O.listRow('key',O.tr('Connect Providers','Подключить провайдеров'),'OpenCode Zen, OpenAI, Anthropic, Gemini, DeepSeek...',O.icon('chevR'),()=>O.openConnect()),
+    O.listRow('search',O.tr('Custom API / Local Models','Свой API / Локальные модели'),'Ollama, LM Studio, vLLM, OpenAI-compatible',O.icon('chevR'),()=>O.openCustomProvider(s))
+  );
+  body.append(modelsCard);
+
+  // 3. Appearance & Interface
+  body.append(h('div',{class:'settings-section-title'},O.tr('Appearance & Interface','Оформление и интерфейс')));
+  const appCard=h('div',{class:'settings-card'});
+  const curLang=O.store.get('lang','ru');
+  const langRow=O.listRow('globe',O.tr('Language / Язык','Язык / Language'),curLang==='en'?'English':'Русский',O.icon('chevR'),()=>{
+    const nxt=curLang==='en'?'ru':'en';
+    O.store.set('lang',nxt);
+    O.toast(nxt==='en'?'Language changed to English':'Язык переключён на Русский',1500);
+    s.close();
+    setTimeout(()=>location.reload(),400);
+  });
+  const themeName={opencode:'OpenCode (Dark)',light:'Light',tokyonight:'Tokyo Night',gruvbox:'Gruvbox'}[S.opts.theme]||S.opts.theme;
+  const themeRow=O.listRow('palette',O.tr('Theme & Font Size','Тема и размер текста'),themeName+', '+S.opts.fs+'px',O.icon('chevR'),()=>O.openThemes());
+  const thinkRow=O.toggleRow('bulb',O.tr('Show Reasoning / Thinking','Показывать размышления'),O.tr('Display model thought process in responses','Блоки размышлений в ответах'),S.opts.thinking,v=>{S.opts.thinking=v;O.saveOpts();O.chat.renderAll()});
+  const detailRow=O.toggleRow('code',O.tr('Expand Tool Details','Детали инструментов'),O.tr('Show commands, output and file diffs','Команды, вывод терминала и правки'),S.opts.details,v=>{S.opts.details=v;O.saveOpts();O.chat.renderAll()});
+  appCard.append(langRow,themeRow,thinkRow,detailRow);
+  body.append(appCard);
+
+  // 4. Notifications & Sounds
+  body.append(h('div',{class:'settings-section-title'},O.tr('Notifications & Sounds','Звуки и уведомления')));
+  const sndCard=h('div',{class:'settings-card'});
+  [['snd_done',O.tr('Task Completed','Задача завершена'),O.tr('Sound when agent finishes task','Агент закончил работу'),'done'],
+   ['snd_action',O.tr('Action Required','Требуется действие'),O.tr('Sound on questions and permissions','Ожидается разрешение или вопрос'),'action'],
+   ['snd_quota',O.tr('Quota Limit Reached','Квота исчерпана'),O.tr('Sound when model rate limit hit','Превышен лимит запросов'),'quota']].forEach(([k,t,d,kind])=>{
+    sndCard.append(h('div',{style:{display:'flex',alignItems:'center'}},
+      h('div',{class:'grow'},O.toggleRow('bell',t,d,fl[k]!==false,v=>OC.setFlag(k,v))),
+      h('button',{class:'ibtn',style:{marginRight:'12px'},onclick:()=>OC.testSound(kind)},O.icon('play'))));
+  });
+  body.append(sndCard);
+
+  // 5. Agents, MCP & Plugins
+  body.append(h('div',{class:'settings-section-title'},O.tr('Agents, MCP & Rules','Агенты, MCP и правила')));
+  const agentCard=h('div',{class:'settings-card'});
+  agentCard.append(
+    O.listRow('doc',O.tr('Agents & Rules','Агенты и правила'),O.tr('Upload or edit AGENTS.md, agents & commands','Загрузите AGENTS.md, агентов и команды'),O.icon('chevR'),()=>openAgents()),
+    O.listRow('server',O.tr('MCP Servers','Серверы MCP'),O.tr('Configure tools and integrations','Добавить, изменить, подключить'),O.icon('chevR'),()=>O.openMcp()),
+    O.listRow('plug',O.tr('Plugins','Плагины'),O.tr('npm packages and local scripts','npm-пакеты и локальные файлы'),O.icon('chevR'),()=>O.openPlugins()),
+    O.listRow('code',O.tr('Configuration File','Файл конфигурации'),'opencode.json',O.icon('chevR'),()=>openConfig())
+  );
+  body.append(agentCard);
+
+  // 6. Application & System
+  body.append(h('div',{class:'settings-section-title'},O.tr('System & Application','Система и приложение')));
+  const sysCard=h('div',{class:'settings-card'});
+  sysCard.append(
+    O.listRow('down',O.tr('Updates','Обновления'),O.tr('OpenCode Mobile & Core Runtime','Приложение и ядро OpenCode (1.x)'),O.icon('chevR'),()=>openUpdates()),
+    O.listRow('shield',O.tr('Permissions','Разрешения'),O.tr('Storage, notifications, background execution','Файлы, уведомления, фон'),O.icon('chevR'),()=>openPerms()),
+    O.listRow('bat',O.tr('Logs & Diagnostics','Совместимость и логи'),O.tr('Safe mode, core runtime restart','Безопасный режим, перезапуск сервера'),O.icon('chevR'),()=>openCompat()),
+    O.listRow('info',O.tr('About OpenCode Mobile','О приложении'),'',O.icon('chevR'),()=>openAbout()),
+    O.listRow('tg',O.tr('Community & Telegram','Сообщество Telegram'),'t.me/OpenCodeMob',O.icon('chevR'),()=>O.openUrl('https://t.me/OpenCodeMob'))
+  );
+  body.append(sysCard);
+};
 
 // ---- agents / rules upload ----
 function openAgents(){const list=h('div');

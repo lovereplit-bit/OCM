@@ -1,60 +1,186 @@
 (function(){
 const O=window.OCM,h=O.h,S=O.S,api=O.api,bus=O.bus;
-let built=false,tab='chat',sideTab='term',T={},P={},TB={},SB={},SP={};
+let built=false,tab='chat',sideTab='term',T={},P={},B={},SP={},SB={};
 const wide=()=>innerWidth>=820;
-function build(){if(built)return;built=true;const app=O.$('#app');
-  const dots=h('div',{class:'traffic-lights'},h('span',{class:'tl-dot red'}),h('span',{class:'tl-dot yellow'}),h('span',{class:'tl-dot green'}));
-  T.menu=h('button',{class:'ibtn',onclick:()=>O.openSessions()},O.icon('grid'));
-  T.t=h('b',null,'Сессия');T.s=h('span',null,'');
-  T.tabClose=h('button',{class:'tab-close',onclick:e=>{e.stopPropagation();O.newSession()}},O.icon('x'));
-  T.tab=h('div',{class:'top-tab',onclick:()=>O.openSessions()},O.icon('pen'),T.t,T.tabClose);
-  T.plus=h('button',{class:'top-add-btn',onclick:()=>O.newSession()},O.icon('plus'));
-  T.subBtn=h('button',{class:'sub-btn grow',style:{textAlign:'left'},onclick:()=>O.openProjects()},T.s);
-  T.ttl=h('div',{class:'ttl grow',style:{display:'flex',alignItems:'center',gap:'6px'}},T.tab,T.plus,T.subBtn);
-  T.dot=h('span',{class:'dot',style:{position:'absolute',top:'8px',right:'7px',width:'7px',height:'7px'}});
-  T.status=h('button',{class:'ibtn',style:{position:'relative'},onclick:()=>O.openStatus()},O.icon('server'),T.dot);
-  T.set=h('button',{class:'ibtn',onclick:()=>O.openSettings()},O.icon('sliders'));
-  const top=h('div',{id:'top'},T.menu,dots,T.ttl,T.status,T.set);
+
+O.tr=(en,ru)=>(O.store.get('lang','ru')==='en'?en:ru);
+
+function build(){
+  if(built)return;built=true;
+  const app=O.$('#app');
+
+  // Minimal Top Header matching Screenshot 1: Hamburger on left, Ghost mascot on right
+  T.menu=h('button',{class:'top-menu-btn',onclick:()=>O.openSessions()},O.icon('menu'));
+  T.ghost=h('button',{class:'top-ghost-btn',onclick:()=>O.openGhost()},O.icon('ghost'));
+  const top=h('div',{id:'top'},T.menu,T.ghost);
+
   T.banner=h('div',{id:'banner',class:'hide'});
-  P.files=h('div',{id:'pane-files',class:'pane'});P.chat=h('div',{id:'pane-chat',class:'pane'});P.side=h('div',{id:'pane-side',class:'pane'});
-  SP.term=h('div',{class:'side-pane'});SP.changes=h('div',{class:'side-pane'});
-  SB.term=h('button',{onclick:()=>O.setTab('term')},'Терминал');SB.changes=h('button',{onclick:()=>O.setTab('changes')},'Изменения');
+
+  // Panes
+  P.files=h('div',{id:'pane-files',class:'pane'});
+  P.chat=h('div',{id:'pane-chat',class:'pane'});
+  P.side=h('div',{id:'pane-side',class:'pane'});
+
+  SP.term=h('div',{class:'side-pane'});
+  SP.changes=h('div',{class:'side-pane'});
+  SB.term=h('button',{onclick:()=>O.setTab('term')},O.tr('Terminal','Терминал'));
+  SB.changes=h('button',{onclick:()=>O.setTab('changes')},O.tr('Changes','Изменения'));
   P.side.append(h('div',{id:'side-tabs'},SB.term,SB.changes),SP.term,SP.changes);
+
   const main=h('div',{id:'main'},P.files,P.chat,P.side);
-  const tb=(k,ic,l)=>{TB[k]=h('button',{onclick:()=>O.setTab(k)},O.icon(ic),h('span',null,l));return TB[k]};
-  const bar=h('div',{id:'tabbar'},tb('chat','chat','Чат'),tb('files','folder','Файлы'),tb('term','terminal','Терминал'),tb('changes','branch','Изменения'));
-  app.append(top,T.banner,main,bar);
-  O.filesInit(P.files);O.chatInit(P.chat);O.termInit(SP.term);O.changesInit(SP.changes);
+
+  // Bottom Pill Bar matching Screenshot 1: Centered [Chat] and [Memory on]
+  let memOn=O.store.get('memory',true);
+  const memLabel=()=>memOn?(O.tr('Memory on','Память вкл')):(O.tr('Memory off','Память выкл'));
+  B.chat=h('button',{class:'bottom-pill active',onclick:()=>O.setTab('chat')},O.icon('chat'),h('span',null,O.tr('Chat','Чат')));
+  B.memTxt=h('span',null,memLabel());
+  B.memory=h('button',{class:'bottom-pill'+(memOn?' active':''),onclick:()=>{
+    memOn=!memOn;
+    O.store.set('memory',memOn);
+    B.memTxt.textContent=memLabel();
+    B.memory.classList.toggle('active',memOn);
+    O.toast(memOn?(O.tr('Memory active: persistent project rules enabled','Память активна: правила и контекст включены')):(O.tr('Memory disabled','Память отключена')),2000);
+  }},O.icon('memory'),B.memTxt);
+
+  const bottomBar=h('div',{id:'bottom-bar'},B.chat,B.memory);
+
+  app.append(top,T.banner,main,bottomBar);
+
+  O.filesInit(P.files);
+  O.chatInit(P.chat);
+  O.termInit(SP.term);
+  O.changesInit(SP.changes);
+
   addEventListener('resize',O.debounce(layout,100));
   ['open','session','sessions','msg','vcs','dir','meta','diff'].forEach(e=>bus.on(e,O.debounce(updateTop,120)));
-  bus.on('conn',updateBanner);bus.on('statuspanel',refreshStatus);
-  layout();updateTop()}
-function layout(){const app=O.$('#app');app.dataset.mode=wide()?'wide':'narrow';
+  bus.on('conn',updateBanner);
+  bus.on('statuspanel',refreshStatus);
+  layout();
+  updateTop();
+}
+
+function layout(){
+  const app=O.$('#app');
   const w=wide();
-  P.files.classList.toggle('show',!w&&tab==='files');P.chat.classList.toggle('show',!w&&tab==='chat');P.side.classList.toggle('show',!w&&(tab==='term'||tab==='changes'));
-  SP.term.classList.toggle('show',sideTab==='term');SP.changes.classList.toggle('show',sideTab==='changes');
-  SB.term.classList.toggle('on',sideTab==='term');SB.changes.classList.toggle('on',sideTab==='changes');
-  Object.keys(TB).forEach(k=>TB[k].classList.toggle('on',k===tab));
-  O.termShown&&O.termShown()}
-O.setTab=t=>{tab=t;if(t==='term'||t==='changes')sideTab=t;
-  if(wide()&&(t==='term'||t==='changes')){}
-  layout();if(t==='files')O.refreshFiles(false);if(t==='changes')O.refreshChanges()};
-function updateTop(){if(!built)return;const s=S.sessions.find(x=>x.id===S.sid)||O.child(S.sid);
-  T.t.textContent=s?O.sessionTitle(s):'Сессия';const u=S.sid&&O.contextUsage(S.sid);
-  T.s.textContent=[O.basename(S.dir)||'/',S.branch||'Нет Git',u?O.fmtK(u.tot)+' ток'+(u.pct!=null?' ('+u.pct+'%)':''):''].filter(Boolean).join('  /  ');
-  O.updateBadges()}
-O.updateBadges=()=>{if(!built)return;const set=(k,n)=>{let b=TB[k].querySelector('.badge');if(!n){if(b)b.remove();return}if(!b){b=h('span',{class:'badge'});TB[k].append(b)}b.textContent=n};
-  set('chat',S.perms.length+S.questions.length);set('changes',O.changesCount())};
-function updateBanner(){if(!built)return;const t=S.offline?'Офлайн — показаны кэшированные чаты':(!S.up?'Подключение к локальному серверу...':'');
-  T.banner.textContent=t;T.banner.classList.toggle('hide',!t)}
-async function refreshStatus(){try{const m=await api('GET','/mcp');S.mcp=m;const v=Object.values(m);
-  T.dot.className='dot '+(v.some(x=>x.status==='failed'||x.status==='needs_auth')?'warn':v.some(x=>x.status==='connected')?'ok':'')}catch{}}
-O.enter=async opt=>{build();O.saveOpts();S.offline=!!(opt&&opt.offline);S.up=false;updateBanner();OC.sseStart();
+  app.dataset.mode=w?'wide':'narrow';
+  P.files.classList.toggle('show',!w&&tab==='files');
+  P.chat.classList.toggle('show',!w&&tab==='chat');
+  P.side.classList.toggle('show',!w&&(tab==='term'||tab==='changes'));
+  SP.term.classList.toggle('show',sideTab==='term');
+  SP.changes.classList.toggle('show',sideTab==='changes');
+  SB.term.classList.toggle('on',sideTab==='term');
+  SB.changes.classList.toggle('on',sideTab==='changes');
+  if(B.chat)B.chat.classList.toggle('active',tab==='chat');
+  if(O.termShown)O.termShown();
+}
+
+O.setTab=t=>{
+  tab=t;
+  if(t==='term'||t==='changes')sideTab=t;
+  layout();
+  if(t==='files')O.refreshFiles(false);
+  if(t==='changes')O.refreshChanges();
+};
+
+function updateTop(){
+  if(!built)return;
+  // Ghost icon status dot/indicator if MCP needs attention
+  const v=Object.values(S.mcp||{});
+  const hasErr=v.some(x=>x.status==='failed'||x.status==='needs_auth');
+  if(T.ghost)T.ghost.classList.toggle('active',hasErr);
+}
+
+function updateBanner(){
+  if(!built)return;
+  const t=S.offline?(O.tr('Offline — showing cached chats','Офлайн — показаны кэшированные чаты')):(!S.up?(O.tr('Connecting to local runtime...','Подключение к локальному серверу...')):'');
+  T.banner.textContent=t;
+  T.banner.classList.toggle('hide',!t);
+}
+
+async function refreshStatus(){
+  try{
+    const m=await api('GET','/mcp');
+    S.mcp=m;
+    updateTop();
+  }catch{}
+}
+
+// Ghost mascot sheet with Core & MCP status
+O.openGhost=()=>{
+  const v=Object.values(S.mcp||{});
+  const connected=v.filter(x=>x.status==='connected').length;
+  const s=O.sheet(O.tr('OpenCode Assistant','Ассистент OpenCode'),h('div',null,
+    h('div',{class:'settings-card'},
+      h('div',{class:'settings-row'},
+        h('div',{class:'settings-row-icon purple'},O.icon('ghost')),
+        h('div',{class:'settings-row-text'},
+          h('b',null,'OpenCode Mobile v2.0'),
+          h('span',null,S.up?(O.tr('Core Runtime Active · Linux ARM64','Ядро активно · Linux ARM64')):(O.tr('Connecting...','Подключение...'))))),
+      h('div',{class:'settings-row',onclick:()=>{s.close();O.openStatus()}},
+        h('div',{class:'settings-row-icon green'},O.icon('server')),
+        h('div',{class:'settings-row-text'},
+          h('b',null,O.tr('MCP & Tools Status','Статус MCP и инструментов')),
+          h('span',null,connected+' '+O.tr('servers active','серверов активно'))),
+        O.icon('chevR')),
+      h('div',{class:'settings-row',onclick:()=>{s.close();O.openSettings()}},
+        h('div',{class:'settings-row-icon blue'},O.icon('sliders')),
+        h('div',{class:'settings-row-text'},
+          h('b',null,O.tr('Settings','Настройки')),
+          h('span',null,O.tr('Models, Appearance, Rules & More','Модели, вид, правила и другое'))),
+        O.icon('chevR'))
+    )
+  ));
+};
+
+O.enter=async opt=>{
+  build();
+  O.saveOpts();
+  S.offline=!!(opt&&opt.offline);
+  S.up=false;
+  updateBanner();
+  OC.sseStart();
   if(O.checkAccount)O.checkAccount();
-  await O.setDir(O.store.get('dir','/root'));updateBanner();updateTop();refreshStatus();O.iconsReady.then(()=>{O.refreshFiles(false)})};
-O.reconnect=async()=>{if(!built)return;S.offline=false;S.up=true;updateBanner();try{OC.sseStart()}catch(e){}await O.setDir(S.dir||O.store.get('dir','/root'));updateBanner();refreshStatus()};
-O.on('server',d=>{if(!built)return;S.up=!!d.ready;updateBanner();if(d.ready){try{OC.sseStart()}catch(e){}refreshStatus()}});
-const baseBack=O.back;O.back=()=>{if(baseBack())return true;if(built&&!wide()&&tab!=='chat'){O.setTab('chat');return true}return false};
+  await O.setDir(O.store.get('dir','/root'));
+  updateBanner();
+  updateTop();
+  refreshStatus();
+  O.iconsReady.then(()=>{O.refreshFiles(false)});
+};
+
+O.reconnect=async()=>{
+  if(!built)return;
+  S.offline=false;
+  S.up=true;
+  updateBanner();
+  try{OC.sseStart()}catch(e){}
+  await O.setDir(S.dir||O.store.get('dir','/root'));
+  updateBanner();
+  refreshStatus();
+};
+
+O.on('server',d=>{
+  if(!built)return;
+  S.up=!!d.ready;
+  updateBanner();
+  if(d.ready){
+    try{OC.sseStart()}catch(e){}
+    refreshStatus();
+  }
+});
+
+const baseBack=O.back;
+O.back=()=>{
+  if(baseBack())return true;
+  if(built&&!wide()&&tab!=='chat'){
+    O.setTab('chat');
+    return true;
+  }
+  return false;
+};
+
 addEventListener('unhandledrejection',e=>console.error(e.reason));
-document.addEventListener('DOMContentLoaded',()=>{O.saveOpts();O.bootRun()});
+document.addEventListener('DOMContentLoaded',()=>{
+  O.saveOpts();
+  O.bootRun();
+});
 })();

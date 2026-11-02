@@ -11,27 +11,23 @@ const busy=()=>{const s=S.status[S.sid];return !!s&&s.type!=='idle'};
 O.chatInit=root=>{
   chatRoot=root;
   msgsEl=h('div',{id:'msgs',class:'sel',onscroll:()=>{stick=nearBottom();jumpEl.classList.toggle('hide',stick)}});
-  jumpEl=h('button',{id:'jump',class:'btn sm hide',onclick:()=>scrollEnd(true)},O.icon('chevD'));
+  jumpEl=h('button',{id:'jump',class:'hide',onclick:()=>scrollEnd(true)},O.icon('chevD'));
   revEl=h('div',{class:'hide',style:{padding:'0 10px 6px'}});
   todoEl=h('div',{class:'hide',style:{padding:'0 10px 6px'}});
   dockEl=h('div',{id:'dock'});statusEl=h('div',{class:'status-line hide'});
   popEl=h('div',{id:'pop',class:'hide'});attsEl=h('div',{class:'atts hide'});
-  nokeyEl=h('div',{class:'nokey hide'},h('span',{class:'grow'},'Модели не подключены — бесплатные недоступны.'),h('button',{class:'btn sm',onclick:()=>O.openConnect()},O.icon('key'),'Подключить'));
-  ta=h('textarea',{rows:1,placeholder:'Спросите о чём угодно (/ команды, @ файлы)...',oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
+  nokeyEl=h('div',{class:'nokey hide'},h('span',{class:'grow'},O.tr('No models connected.','Модели не подключены.')),h('button',{class:'btn sm',onclick:()=>O.openConnect()},O.icon('key'),O.tr('Connect','Подключить')));
+  ta=h('textarea',{rows:1,placeholder:O.tr('Chat with OpenCode...','Чат с OpenCode...'),oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
   fileIn=h('input',{type:'file',multiple:true,class:'hide',accept:'image/*,application/pdf,text/*',onchange:onFiles});
-  agentChip=h('button',{class:'chip agent',onclick:()=>O.openAgents()},O.icon('bot'),h('span'));
-  modelChip=h('button',{class:'chip model',onclick:()=>O.openModels()},O.icon('cube'),h('span'));
-  varChip=h('button',{class:'chip keep',onclick:cycleVariant},O.icon('bulb'),h('span'));
+  const plusBtn=h('button',{class:'attach-btn',onclick:()=>fileIn.click()},O.icon('plus'));
+  agentChip=h('button',{class:'hud-pill agent-pill',onclick:()=>O.openAgents()},h('span',null,'Build'),O.icon('chevD'));
+  modelChip=h('button',{class:'hud-pill model-pill',onclick:()=>O.openModels()},h('span',null,O.tr('Select model','Выбрать модель')),O.icon('chevD'));
+  const micBtn=h('button',{class:'hud-icon-btn mic-btn',onclick:onMic},O.icon('mic'));
   sendBtn=h('button',{id:'send',onclick:onSend},O.icon('send'));
-  const plusBtn=h('button',{class:'ibtn s attach-btn',onclick:()=>fileIn.click()},O.icon('plus'));
-  const cbar=h('div',{class:'cbar grow'},plusBtn,agentChip,modelChip,varChip);
-  projTxt=h('span',{class:'pill-text'},'Проект по умолчанию');
-  projChip=h('button',{class:'context-pill sub-chip',onclick:()=>O.openProjects()},O.icon('folder'),projTxt,O.icon('chevD'));
-  vcsTxt=h('span',{class:'pill-text'},'Нет Git');
-  vcsChip=h('button',{class:'context-pill sub-chip',onclick:()=>O.setTab('changes')},O.icon('branch'),vcsTxt);
-  const subBar=h('div',{class:'comp-sub-bar'},projChip,vcsChip);
-  footerPrompt=h('button',{class:'opencode-footer-link',onclick:()=>O.openConnect()},'Подключить провайдеров (Claude, GPT, Gemini и др.) ›');
-  comp=h('div',{id:'composer'},popEl,h('div',{class:'cbox'},subBar,nokeyEl,attsEl,ta,h('div',{class:'cbar-row',style:{display:'flex',alignItems:'center',gap:'6px',marginTop:'6px'}},cbar,sendBtn)),footerPrompt,fileIn);
+  const cbarLeft=h('div',{class:'cbar-left'},plusBtn,agentChip,modelChip);
+  const cbarRight=h('div',{class:'cbar-right'},micBtn,sendBtn);
+  const cbarRow=h('div',{class:'cbar-row'},cbarLeft,cbarRight);
+  comp=h('div',{id:'composer'},popEl,h('div',{class:'cbox'},nokeyEl,attsEl,ta,cbarRow),fileIn);
   const wrap=h('div',{class:'chat-msgs-wrap',style:{position:'relative',flex:1,minHeight:0,display:'flex',flexDirection:'column'}},msgsEl,jumpEl);
   root.append(wrap,revEl,todoEl,statusEl,dockEl,comp);
   bus.on('open',()=>{renderAll()});
@@ -60,7 +56,7 @@ function renderAll(){
   scrollEnd(true);renderDock();renderStatus();renderRevert();renderTodos();updateSend();updateChips()}
 function showEmpty(){
   if(chatRoot)chatRoot.classList.add('is-empty');
-  const wm=h('div',{class:'watermark-box'},O.wordmark('100%','auto'),h('div',{class:'watermark-sub'},'The open source AI coding agent'));
+  const wm=h('div',{class:'watermark-box'},O.wordmark('100%','auto'));
   msgsEl.append(h('div',{class:'empty'},wm))}
 function ensureMsg(m){
   const rv=revisionKey();if(rv&&m.info.id>=rv)return;
@@ -206,21 +202,56 @@ function questionCard(q){const qs=q.questions||[];const sel=qs.map(()=>new Set()
 const quotaHint=()=>S.account&&S.account.email
   ?'Квота этой модели исчерпана. Перезапустите сервер (Настройки → Совместимость), выберите другую модель или подключите свой ключ: Настройки → Модели → Подключить провайдера'
   :'Квота исчерпана. Войдите в аккаунт opencode (Google/GitHub): Настройки → Аккаунт opencode — или подключите свой ключ: Настройки → Модели → Подключить провайдера';
-function updateChips(){const m=S.model,mi=m&&O.modelInfo(m.providerID,m.modelID);
-  agentChip.lastChild.textContent=S.agent;modelChip.lastChild.textContent=mi?(mi.name||m.modelID):'Выберите модель';
-  const vs=mi&&mi.variants?Object.keys(mi.variants):[];
-  varChip.classList.remove('hide');
-  varChip.lastChild.textContent=vs.length?(S.variant||'по умолчанию'):(S.opts.thinking?'Мышление':'Без мышл.');
-  varChip.classList.toggle('on',!!S.opts.thinking);
-  if(projTxt)projTxt.textContent=O.basename(S.dir)||'Проект по умолчанию';
-  if(vcsTxt)vcsTxt.textContent=S.branch||'Нет Git';
-  const nokey=!m&&!S.offline&&S.up;nokeyEl.classList.toggle('hide',!nokey);
-  ta.disabled=!!S.offline&&!S.up;ta.placeholder=ta.disabled?'Офлайн — чтение кэшированных чатов':'Спросите о чём угодно (/ команды, @ файлы)...';updateSend()}
-function cycleVariant(){const mi=O.modelInfo(S.model.providerID,S.model.modelID),vs=[null,...Object.keys(mi&&mi.variants||{})];
-  if(vs.length>1){O.setVariant(vs[(vs.indexOf(S.variant)+1)%vs.length])}
-  else{S.opts.thinking=!S.opts.thinking;O.saveOpts();updateChips();renderAll();O.toast(S.opts.thinking?'Мышление включено':'Мышление отключено',1200)}}
-function updateSend(){const b=busy(),has=ta.value.trim()||atts.length;sendBtn.classList.toggle('stop',b&&!has);sendBtn.textContent='';sendBtn.append(O.icon(b&&!has?'stop':'send'));sendBtn.disabled=!b&&!has}
-function autosize(){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
+function onMic(){
+  const SpeechRec=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(SpeechRec){
+    try{
+      const rec=new SpeechRec();
+      rec.lang=O.store.get('lang','ru')==='en'?'en-US':'ru-RU';
+      rec.interimResults=false;
+      const b=O.$('.mic-btn');if(b)b.style.color='#ef4444';
+      O.toast(O.tr('Listening... Speak now','Слушаю... Говорите'),2500);
+      rec.onresult=e=>{
+        const t=e.results[0][0].transcript;
+        ta.value=(ta.value?ta.value+' ':'')+t;
+        onInput();ta.focus();
+      };
+      rec.onerror=e=>{const b=O.$('.mic-btn');if(b)b.style.color='';O.toast(O.tr('Voice input error: ','Ошибка ввода: ')+(e.error||'недоступно'),2000)};
+      rec.onend=()=>{const b=O.$('.mic-btn');if(b)b.style.color=''};
+      rec.start();
+      return;
+    }catch(e){}
+  }
+  O.toast(O.tr('Voice input active. Speak using keyboard mic or type.','Голосовой ввод: используйте микрофон на клавиатуре или введите текст.'),3000);
+}
+function updateChips(){
+  const m=S.model,mi=m&&O.modelInfo(m.providerID,m.modelID);
+  const ag=S.agents.find(a=>a.name===S.agent);
+  const agName=ag?ag.name:(S.agent||'Build');
+  const spanAg=agentChip.querySelector('span');
+  if(spanAg)spanAg.textContent=agName.charAt(0).toUpperCase()+agName.slice(1);
+  let mName=O.tr('Select model','Выбрать модель');
+  if(mi)mName=mi.name||m.modelID;
+  else if(m)mName=m.modelID;
+  const spanMo=modelChip.querySelector('span');
+  if(spanMo)spanMo.textContent=mName;
+  const nokey=!m&&!S.offline&&S.up;
+  nokeyEl.classList.toggle('hide',!nokey);
+  ta.disabled=!!S.offline&&!S.up;
+  ta.placeholder=ta.disabled?(O.tr('Offline — reading cached chats','Офлайн — чтение кэшированных чатов')):(O.tr('Chat with OpenCode...','Чат с OpenCode...'));
+  updateSend();
+}
+function updateSend(){
+  const b=busy(),has=!!ta.value.trim()||!!atts.length;
+  sendBtn.className=b&&!has?'stop':(has?'ready':'');
+  sendBtn.textContent='';
+  sendBtn.append(O.icon(b&&!has?'stop':'send'));
+  sendBtn.disabled=!b&&!has;
+}
+function autosize(){
+  ta.style.height='auto';
+  ta.style.height=Math.min(ta.scrollHeight,180)+'px';
+}
 const BUILTINS=[
  {n:'new',d:'Начать новую сессию',i:'plus',run:()=>O.newSession()},
  {n:'sessions',d:'Переключить сессию',i:'list',run:()=>O.openSessions()},

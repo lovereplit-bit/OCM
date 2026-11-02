@@ -1,7 +1,10 @@
 (function(){
 const O=window.OCM;
 const I={
-menu:'<path d="M3 6h18M3 12h18M3 18h18"/>',plus:'<path d="M12 5v14M5 12h14"/>',x:'<path d="M18 6L6 18M6 6l12 12"/>',
+menu:'<path d="M4 6.5h16M4 12h12M4 17.5h8"/>',plus:'<path d="M12 5v14M5 12h14"/>',x:'<path d="M18 6L6 18M6 6l12 12"/>',
+ghost:'<path d="M12 2.5a7 7 0 00-7 7v11.5l3.5-2 3.5 2 3.5-2 3.5 2V9.5a7 7 0 00-7-7z"/><circle cx="9.5" cy="9.5" r="1.2" fill="currentColor"/><circle cx="14.5" cy="9.5" r="1.2" fill="currentColor"/>',
+memory:'<rect x="4" y="5.5" width="16" height="5" rx="2.2"/><rect x="4" y="13.5" width="16" height="5" rx="2.2"/>',
+mic:'<path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v3M8 22h8"/>',
 chat:'<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>',
 folder:'<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
 file:'<path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8zM14 3v5h5"/>',

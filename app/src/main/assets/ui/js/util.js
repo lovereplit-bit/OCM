@@ -47,27 +47,49 @@ let tt;O.toast=(m,ms)=>{let e=O.$('#toast');if(!e){e=h('div',{id:'toast'});docum
 const stack=[];O.sheets=stack;
 O.sheet=(title,body,opts)=>{opts=opts||{};
   const api={};
-  api.close=()=>{if(!api.root.isConnected)return;api.root.remove();const i=stack.indexOf(api);if(i>=0)stack.splice(i,1);opts.onClose&&opts.onClose()};
+  api.close=()=>{if(!api.root.isConnected)return;api.root.classList.remove('on');setTimeout(()=>{if(api.root.isConnected)api.root.remove()},260);const i=stack.indexOf(api);if(i>=0)stack.splice(i,1);opts.onClose&&opts.onClose()};
+  
+  const handle=(!opts.drawer&&!opts.full)?h('div',{class:'sh-drag-handle'}):null;
+  const header=opts.hud
+    ?h('div',{class:'sh-header-row'},
+        h('button',{class:'sh-close-btn',onclick:api.close},O.icon('x')),
+        h('span',{class:'sh-title'},title),
+        opts.actions||h('span',{style:{width:'32px'}}))
+    :h('div',{class:'sh-h'},
+        h('button',{class:'ibtn',onclick:api.close},O.icon(opts.drawer?'x':'chevL')),
+        h('b',{class:'grow'},title),
+        opts.actions||null);
+
   const box=h('div',{class:'sheet'+(opts.full?' full':'')+(opts.drawer?' drawer':'')},
-    h('div',{class:'sh-h'},h('button',{class:'ibtn',onclick:api.close},O.icon(opts.drawer?'x':'chevL')),h('b',{class:'grow'},title),opts.actions||null),
-    h('div',{class:'sh-b'},body));
+    handle,header,h('div',{class:'sh-b'},body));
   api.root=h('div',{class:'sh-root'},h('div',{class:'sh-back',onclick:api.close}),box);
   api.box=box;api.body=box.querySelector('.sh-b');
   document.body.append(api.root);stack.push(api);requestAnimationFrame(()=>api.root.classList.add('on'));return api};
+
 O.confirm=(title,msg,ok,danger)=>new Promise(res=>{let done=false;
   const fin=v=>{if(done)return;done=true;s.close();res(v)};
   const s=O.sheet(title,h('div',null,h('p',{class:'mut'},msg||''),h('div',{style:{display:'flex',gap:'8px',marginTop:'12px'}},
-    h('button',{class:'btn grow',onclick:()=>fin(false)},'Отмена'),h('button',{class:'btn grow '+(danger?'dng':'pri'),onclick:()=>fin(true)},ok||'ОК'))),{onClose:()=>{if(!done){done=true;res(false)}}})});
+    h('button',{class:'btn grow',onclick:()=>fin(false)},O.tr('Cancel','Отмена')),h('button',{class:'btn grow '+(danger?'dng':'pri'),onclick:()=>fin(true)},ok||O.tr('OK','ОК')))),{hud:true,onClose:()=>{if(!done){done=true;res(false)}}})});
+
 O.ask=(title,label,val,multiline)=>new Promise(res=>{let done=false;
   const inp=multiline?h('textarea',{rows:6,class:'mono'}):h('input',{type:'text'});inp.value=val||'';
   const fin=v=>{if(done)return;done=true;s.close();res(v)};
   const s=O.sheet(title,h('div',null,h('div',{class:'field'},label?h('label',null,label):null,inp),h('div',{style:{display:'flex',gap:'8px'}},
-    h('button',{class:'btn grow',onclick:()=>fin(null)},'Отмена'),h('button',{class:'btn pri grow',onclick:()=>fin(inp.value)},'ОК'))),{onClose:()=>{if(!done){done=true;res(null)}}});
+    h('button',{class:'btn grow',onclick:()=>fin(null)},O.tr('Cancel','Отмена')),h('button',{class:'btn pri grow',onclick:()=>fin(inp.value)},O.tr('OK','ОК')))),{hud:true,onClose:()=>{if(!done){done=true;res(null)}}});
   setTimeout(()=>inp.focus(),200)});
-O.actions=(title,items)=>{const s=O.sheet(title,h('div',null,items.filter(Boolean).map(it=>h('button',{class:'li',onclick:()=>{s.close();it.fn()}},
-  O.icon(it.icon||'dots'),h('div',{class:'t'},h('b',{class:it.danger?'err':''},it.label),it.sub?h('span',null,it.sub):null)))));return s};
+
+O.actions=(title,items)=>{const s=O.sheet(title,h('div',null,items.filter(Boolean).map(it=>h('button',{class:'settings-row',onclick:()=>{s.close();it.fn()}},
+  O.icon(it.icon||'dots'),h('div',{class:'settings-row-text'},h('b',{class:it.danger?'err':''},it.label),it.sub?h('span',null,it.sub):null)))),{hud:true});return s};
+
 O.back=()=>{const s=stack[stack.length-1];if(s){s.close();return true}return false};
-O.toggleRow=(icon,title,sub,checked,onchange)=>{const i=h('input',{type:'checkbox',onchange:()=>onchange(i.checked)});i.checked=!!checked;
-  return h('label',{class:'li'},O.icon(icon),h('div',{class:'t'},h('b',null,title),sub?h('span',null,sub):null),h('span',{class:'sw'},i,h('s')))};
-O.listRow=(icon,title,sub,right,fn)=>h('button',{class:'li',onclick:fn},typeof icon==='string'?O.icon(icon):icon,h('div',{class:'t'},h('b',null,title),sub?h('span',null,sub):null),right||null);
+
+O.toggleRow=(icon,title,sub,checked,onchange)=>{
+  const i=h('input',{type:'checkbox',onchange:()=>onchange(i.checked)});i.checked=!!checked;
+  const icEl=typeof icon==='string'?h('div',{class:'settings-row-icon'},O.icon(icon)):icon;
+  return h('label',{class:'settings-row',style:{cursor:'pointer'}},icEl,h('div',{class:'settings-row-text'},h('b',null,title),sub?h('span',null,sub):null),h('span',{class:'sw'},i,h('s')))};
+
+O.listRow=(icon,title,sub,right,fn)=>{
+  const icEl=typeof icon==='string'?h('div',{class:'settings-row-icon'},O.icon(icon)):icon;
+  return h('button',{class:'settings-row',onclick:fn},icEl,h('div',{class:'settings-row-text'},h('b',null,title),sub?h('span',null,sub):null),right||null);
+};
 })();
