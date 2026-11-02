@@ -71,6 +71,16 @@ jobs:
             gradle-build.log
             app/build/reports/
 
+      - name: Push failure log to git
+        if: failure()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B build-log
+          git add -f gradle-build.log
+          git commit -m "build failure log" || true
+          git push origin build-log --force || true
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
