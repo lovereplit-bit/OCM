@@ -293,27 +293,28 @@ object Runtime {
             val rootUsrBin = File(root, "usr/bin").apply { mkdirs() }
 
             // Helper script: openapp (Android App Launch Skill)
+            val S = "$"
             val openappContent = """
                 #!/bin/sh
-                if [ -z "$1" ]; then
+                if [ -z "${S}1" ]; then
                     echo "Usage: openapp <app_name_or_package>"
                     exit 1
                 fi
-                APP="$*"
-                echo "$APP" > /tmp/.openapp 2>/dev/null || true
-                echo "$APP" > /root/.openapp 2>/dev/null || true
-                echo "$APP" > "$HOME/.openapp" 2>/dev/null || true
-                echo "Opening $APP on Android..."
+                APP="${S}*"
+                echo "${S}APP" > /tmp/.openapp 2>/dev/null || true
+                echo "${S}APP" > /root/.openapp 2>/dev/null || true
+                echo "${S}APP" > "${S}HOME/.openapp" 2>/dev/null || true
+                echo "Opening ${S}APP on Android..."
             """.trimIndent() + "\n"
 
             // Helper script: openpreview (In-App Web Preview Skill)
             val openpreviewContent = """
                 #!/bin/sh
-                TARGET="${'$'}{1:-index.html}"
-                echo "$TARGET" > /tmp/.openpreview 2>/dev/null || true
-                echo "$TARGET" > /root/.openpreview 2>/dev/null || true
-                echo "$TARGET" > "$HOME/.openpreview" 2>/dev/null || true
-                echo "Opening web preview for $TARGET..."
+                TARGET="${S}{1:-index.html}"
+                echo "${S}TARGET" > /tmp/.openpreview 2>/dev/null || true
+                echo "${S}TARGET" > /root/.openpreview 2>/dev/null || true
+                echo "${S}TARGET" > "${S}HOME/.openpreview" 2>/dev/null || true
+                echo "Opening web preview for ${S}TARGET..."
             """.trimIndent() + "\n"
 
             val appBins = listOf(
@@ -421,7 +422,7 @@ object Runtime {
                         description: App name or package (e.g. telegram, youtube, settings)
                         required: true
                     ---
-                    Execute: `openapp $app`
+                    Execute: `openapp ${S}app`
                 """.trimIndent() + "\n")
 
                 File(cmdDir, "preview.md").writeText("""
@@ -432,7 +433,7 @@ object Runtime {
                         description: Path to html file or project folder
                         required: false
                     ---
-                    Execute: `openpreview $path`
+                    Execute: `openpreview ${S}path`
                 """.trimIndent() + "\n")
             } catch (_: Exception) {}
 
