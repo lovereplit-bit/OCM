@@ -17,7 +17,7 @@ O.chatInit=root=>{
   dockEl=h('div',{id:'dock'});statusEl=h('div',{class:'status-line hide'});
   popEl=h('div',{id:'pop',class:'hide'});attsEl=h('div',{class:'atts hide'});
   nokeyEl=h('div',{class:'nokey hide'},h('span',{class:'grow'},'Модели не подключены — бесплатные недоступны.'),h('button',{class:'btn sm',onclick:()=>O.openConnect()},O.icon('key'),'Подключить'));
-  ta=h('textarea',{rows:1,placeholder:'Chat with OpenCode...',oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
+  ta=h('textarea',{rows:1,placeholder:'Чат с OpenCode... (или / для команд)',oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
   fileIn=h('input',{type:'file',multiple:true,class:'hide',accept:'image/*,application/pdf,text/*',onchange:onFiles});
   agentChip=h('button',{class:'chip agent',onclick:()=>O.openAgents()},O.icon('bot'),h('span'));
   modelChip=h('button',{class:'chip model',onclick:()=>O.openModels()},O.icon('cube'),h('span'));
@@ -107,7 +107,7 @@ function showEmpty(){
   const wm=h('div',{class:'watermark-box'},
     mascotWrap,
     O.wordmark('100%','auto'),
-    h('div',{class:'watermark-sub'},S.ghostMode?'cl0udly anonymous session':'The open source AI coding agent'),
+    h('div',{class:'watermark-sub'},S.ghostMode?'cl0udly: Анонимная сессия':'Открытый мобильный агент для кода'),
     chipsBox
   );
   msgsEl.append(h('div',{class:'empty'},wm));
@@ -194,8 +194,8 @@ function toolMeta(p){const st=p.state||{},i=st.input||{},r=O.rel;
   case'edit':return{ic:'edit',t:'Правка',s:r(i.filePath)};
   case'write':return{ic:'edit',t:'Запись',s:r(i.filePath)};
   case'patch':case'apply_patch':return{ic:'edit',t:'Патч',s:''};
-  case'glob':return{ic:'search',t:'Glob',s:i.pattern};
-  case'grep':return{ic:'search',t:'Grep',s:i.pattern};
+  case'glob':return{ic:'search',t:'Поиск файлов (Glob)',s:i.pattern};
+  case'grep':return{ic:'search',t:'Поиск текста (Grep)',s:i.pattern};
   case'list':return{ic:'folder',t:'Список',s:r(i.path||'.')};
   case'webfetch':return{ic:'globe',t:'Загрузка',s:i.url};
   case'websearch':case'codesearch':return{ic:'globe',t:'Поиск',s:i.query};
@@ -281,7 +281,7 @@ function updateChips(){const m=S.model,mi=m&&O.modelInfo(m.providerID,m.modelID)
   if(projTxt)projTxt.textContent=O.basename(S.dir)||'Проект по умолчанию';
   if(vcsTxt)vcsTxt.textContent=S.branch||'Нет Git';
   const nokey=!m&&!S.offline&&S.up;nokeyEl.classList.toggle('hide',!nokey);
-  ta.disabled=!!S.offline&&!S.up;ta.placeholder=ta.disabled?'Офлайн — чтение кэшированных чатов':'Chat with OpenCode...';updateSend()}
+  ta.disabled=!!S.offline&&!S.up;ta.placeholder=ta.disabled?'Офлайн — чтение кэшированных чатов':'Чат с OpenCode... (или / для команд)';updateSend()}
 
 function cycleVariant(){const mi=O.modelInfo(S.model.providerID,S.model.modelID),vs=[null,...Object.keys(mi&&mi.variants||{})];
   if(vs.length>1){O.setVariant(vs[(vs.indexOf(S.variant)+1)%vs.length])}

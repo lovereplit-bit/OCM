@@ -122,10 +122,10 @@ O.openModels=()=>{
 
   // Curated free/fast models list for quick selection (Image 3 style)
   const defaultFreeList=[
-    {name:'DeepSeek V4.1 Flash Free',pid:'opencode',mid:'deepseek-v4.1-flash',tags:'200k context · images · reasoning'},
-    {name:'Flint 40B Free',pid:'opencode',mid:'flint-40b',tags:'262k context · reasoning'},
-    {name:'Nemotron 3.5 Super VL Free',pid:'opencode',mid:'nemotron-3.5-super-vl',tags:'1048k context · images · reasoning'},
-    {name:'Beam Free',pid:'opencode',mid:'beam-free',tags:'1048k context · reasoning'}
+    {name:'DeepSeek V4.1 Flash Free',pid:'opencode',mid:'deepseek-v4.1-flash',tags:'200k контекст · изображения · рассуждения'},
+    {name:'Flint 40B Free',pid:'opencode',mid:'flint-40b',tags:'262k контекст · рассуждения'},
+    {name:'Nemotron 3.5 Super VL Free',pid:'opencode',mid:'nemotron-3.5-super-vl',tags:'1048k контекст · изображения · рассуждения'},
+    {name:'Beam Free',pid:'opencode',mid:'beam-free',tags:'1048k контекст · рассуждения'}
   ];
 
   const featuredList=[];
@@ -133,9 +133,9 @@ O.openModels=()=>{
   all.forEach(x=>{
     const c=x.m.cost,free=(c&&c.input===0&&c.output===0)||(x.pid==='opencode'),ctx=x.m.limit&&x.m.limit.context;
     const tagList=[];
-    if(ctx)tagList.push(O.fmtK(ctx)+' context');
-    if(x.m.attachment!==false)tagList.push('images');
-    if(x.m.variants&&Object.keys(x.m.variants).length)tagList.push('reasoning');
+    if(ctx)tagList.push(O.fmtK(ctx)+' контекст');
+    if(x.m.attachment!==false)tagList.push('изображения');
+    if(x.m.variants&&Object.keys(x.m.variants).length)tagList.push('рассуждения');
     if(free)tagList.push('бесплатно');
     featuredList.push({
       name:x.name,
@@ -176,10 +176,11 @@ O.openModels=()=>{
     'Бесплатные модели делят общий суточный лимит по сети. Подключите больше провайдеров в Настройки → Провайдеры.'
   );
 
-  const curEffort=S.variant?S.variant.charAt(0).toUpperCase()+S.variant.slice(1):'Default';
+  const effortLabels={'':'По умолчанию',low:'Низкое',medium:'Среднее',high:'Высокое'};
+  const curEffort=effortLabels[S.variant||'']||S.variant||'По умолчанию';
   const effortBtn=h('button',{class:'model-action-row',onclick:()=>{s.close();O.openEffort()}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
-      h('b',null,'Усилие (Effort)'),
+      h('b',null,'Усилие размышлений'),
       h('span',{class:'badge-recommended'},'Рекомендуется')
     ),
     h('div',{style:{display:'flex',alignItems:'center',gap:'6px',color:'var(--mut)'}},
@@ -193,7 +194,7 @@ O.openModels=()=>{
     O.icon('chevR')
   );
 
-  const s=O.sheet('Select model',h('div',null,
+  const s=O.sheet('Выбор модели',h('div',null,
     cardContainer,
     note,
     effortBtn,
@@ -227,12 +228,12 @@ function openFullModels(){
 // ---- effort picker sheet ----
 O.openEffort=()=>{
   const vs=[
-    {id:'',name:'Default',desc:'Стандартный баланс скорости и глубины анализа'},
-    {id:'low',name:'Low',desc:'Быстрые и краткие ответы без долгих рассуждений'},
-    {id:'medium',name:'Medium',desc:'Оптимальное размышление для сложных задач (рекомендуется)'},
-    {id:'high',name:'High',desc:'Максимальная глубина проверки кода и архитектуры'}
+    {id:'',name:'По умолчанию',desc:'Стандартный баланс скорости и глубины анализа'},
+    {id:'low',name:'Низкое',desc:'Быстрые и краткие ответы без долгих рассуждений'},
+    {id:'medium',name:'Среднее',desc:'Оптимальное размышление для сложных задач (рекомендуется)'},
+    {id:'high',name:'Высокое',desc:'Максимальная глубина проверки кода и архитектуры'}
   ];
-  const s=O.sheet('Усилие размышлений (Effort)',h('div',null,
+  const s=O.sheet('Усилие размышлений',h('div',null,
     vs.map(v=>O.listRow('bulb',v.name,v.desc,(S.variant===v.id||(!S.variant&&!v.id))?O.icon('check','ok'):null,()=>{
       O.setVariant(v.id||null);
       O.toast('Усилие: '+v.name,1200);
@@ -383,7 +384,7 @@ O.openCustomProvider=parentSheet=>{
     let url=urlInp.value.trim().replace(/\/+$/,'');if(!url)return O.toast('Введите Base URL');
     if(!url.startsWith('http://')&&!url.startsWith('https://'))url='https://'+url;
     const key=keyInp.value.trim();
-    const mo={};if(sel.size>0){sel.forEach(mid=>{mo[mid]={name:mid}})}else mo['default']={name:'Default Model'};
+    const mo={};if(sel.size>0){sel.forEach(mid=>{mo[mid]={name:mid}})}else mo['default']={name:'Модель по умолчанию'};
     const t=O.native.cfgRead();let obj={};try{if(t.trim())obj=O.parseJsonc(t)}catch{}
     obj.provider=obj.provider||{};
     obj.provider[pid]={name:pname,npm:'@ai-sdk/openai',options:{baseURL:url,apiKey:key||'dummy'},models:mo};
@@ -404,7 +405,7 @@ O.openCustomProvider=parentSheet=>{
 };
 
 // ---- themes / help ----
-O.openThemes=()=>{const th=[['opencode','OpenCode Dark (2.0)','#09090b','#3b82f6'],['light','Светлая','#fafaf8','#2563eb'],['tokyonight','Tokyo Night','#1a1b26','#7aa2f7'],['gruvbox','Gruvbox','#282828','#fabd2f']];
+O.openThemes=()=>{const th=[['opencode','OpenCode Тёмная (2.0)','#09090b','#3b82f6'],['light','Светлая','#fafaf8','#2563eb'],['tokyonight','Tokyo Night','#1a1b26','#7aa2f7'],['gruvbox','Gruvbox','#282828','#fabd2f']];
   const s=O.sheet('Оформление',h('div',null,th.map(t=>O.listRow(h('span',{style:{width:'22px',height:'22px',borderRadius:'6px',background:t[2],border:'3px solid '+t[3],flex:'none'}}),t[1],'',S.opts.theme===t[0]?O.icon('check','ok'):null,()=>{S.opts.theme=t[0];O.saveOpts();s.close()})),
     h('div',{class:'grp'},'Размер текста'),h('div',{class:'seg'},[13,14,15,16,18].map(n=>h('button',{class:S.opts.fs===n?'on':'',onclick:()=>{S.opts.fs=n;O.saveOpts();s.close()}},n)))))};
 O.openHelp=()=>O.sheet('Справка OpenCode 2.0',h('div',null,h('div',{class:'grp'},'Команды'),O.builtins.map(b=>O.listRow(b.i,'/'+b.n,b.d,null,()=>{O.back();b.run()})),

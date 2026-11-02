@@ -82,7 +82,7 @@ O.refreshChanges=async local=>{chList.textContent='';
 function showDiff(f){const b=h('div');
   if(typeof f.before==='string'||typeof f.after==='string')b.append(O.diffEl(O.diffOps(f.before||'',f.after||''),3));
   else if(typeof f.diff==='string'||typeof f.patch==='string')b.append(O.unifiedEl(f.diff||f.patch));
-  else b.append(h('div',{class:'mut'},'Diff недоступен'));
+  else b.append(h('div',{class:'mut'},'Сравнение изменений (diff) недоступно'));
   O.sheet(f.file,b,{full:true})}
 async function showGit(f){const b=h('div',null,h('div',{class:'mut'},'Загрузка...'));O.sheet(f.path,b,{full:true});
   try{const r=await api('GET','/file/content?path='+encodeURIComponent(f.path));b.textContent='';
