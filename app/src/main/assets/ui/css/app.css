@@ -2471,3 +2471,53 @@ a:hover {
   transform: scale(1.1);
 }
 
+/* ---- Inline Action Buttons & Preview Chips in Chat ---- */
+.inline-preview-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  vertical-align: middle;
+}
+.inline-preview-chip:active {
+  background: rgba(56, 189, 248, 0.25);
+  transform: scale(0.96);
+}
+.inline-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: #1c1c1f;
+  border: 1px solid #3f3f46;
+  color: #f4f4f5;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: all 0.12s;
+}
+.inline-action-btn:active {
+  background: #27272a;
+  transform: scale(0.97);
+}
+
+.sheet.full:has(.web-preview-container) .sh-b {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+

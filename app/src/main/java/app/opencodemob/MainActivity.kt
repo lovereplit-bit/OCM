@@ -152,14 +152,45 @@ class MainActivity : ComponentActivity() {
             settings.allowFileAccess = false
             settings.setSupportZoom(false)
             webViewClient = object : WebViewClient() {
-                override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? =
-                    loader.shouldInterceptRequest(r.url)
+                override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? {
+                    val url = r.url
+                    if (url.host == "appassets.androidplatform.net" && url.path?.startsWith("/_preview/") == true) {
+                        val relPath = url.path!!.removePrefix("/_preview/").ifEmpty { "index.html" }
+                        val previewDir = File(cacheDir, "preview")
+                        val file = File(previewDir, relPath)
+                        if (file.exists() && file.isFile) {
+                            val mime = when (file.extension.lowercase()) {
+                                "html", "htm" -> "text/html"
+                                "css" -> "text/css"
+                                "js", "mjs" -> "application/javascript"
+                                "json" -> "application/json"
+                                "png" -> "image/png"
+                                "jpg", "jpeg" -> "image/jpeg"
+                                "svg" -> "image/svg+xml"
+                                "webp" -> "image/webp"
+                                "gif" -> "image/gif"
+                                "ico" -> "image/x-icon"
+                                "woff2" -> "font/woff2"
+                                "woff" -> "font/woff"
+                                "ttf" -> "font/ttf"
+                                else -> "application/octet-stream"
+                            }
+                            val headers = mapOf(
+                                "Access-Control-Allow-Origin" to "*",
+                                "Cache-Control" to "no-cache, no-store, must-revalidate",
+                                "Pragma" to "no-cache"
+                            )
+                            return WebResourceResponse(mime, "UTF-8", 200, "OK", headers, file.inputStream())
+                        }
+                    }
+                    return loader.shouldInterceptRequest(r.url)
+                }
                 override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
+                    if (!r.isForMainFrame) return false
                     val u = r.url
-                    // our own asset domain must never "escape" to the system browser:
-                    // e.g. location.reload() after sign-out goes through here
-                    if (u.host == "appassets.androidplatform.net") { v.loadUrl(u.toString()); return true }
-                    openExternal(u); return true
+                    if (u.host == "appassets.androidplatform.net") return false
+                    openExternal(u)
+                    return true
                 }
             }
             webChromeClient = object : WebChromeClient() {
@@ -665,7 +696,7 @@ class MainActivity : ComponentActivity() {
             listFiles()?.forEach { it.deleteRecursively() }
         }
 
-        val baseDir = if (target.isDirectory) target else target.parentFile ?: target
+        var baseDir = if (target.isDirectory) target else target.parentFile ?: target
         var entryName = if (target.isFile) target.name else "index.html"
 
         if (baseDir.exists() && baseDir.isDirectory) {
@@ -673,9 +704,19 @@ class MainActivity : ComponentActivity() {
             if (target.isDirectory) {
                 val hasIndex = File(baseDir, "index.html").exists()
                 if (!hasIndex) {
-                    val anyHtml = baseDir.listFiles { f -> f.extension.equals("html", true) || f.extension.equals("htm", true) }?.firstOrNull()
-                    if (anyHtml != null) {
-                        entryName = anyHtml.name
+                    val subdirs = listOf("site", "public", "dist", "web", "app", "www", "build")
+                    val foundSub = subdirs.map { File(baseDir, "$it/index.html") }.firstOrNull { it.exists() }
+                    if (foundSub != null) {
+                        baseDir = foundSub.parentFile ?: baseDir
+                        entryName = foundSub.name
+                    } else {
+                        val anyHtml = baseDir.walkTopDown().maxDepth(3).firstOrNull { f ->
+                            f.isFile && (f.extension.equals("html", true) || f.extension.equals("htm", true))
+                        }
+                        if (anyHtml != null) {
+                            baseDir = anyHtml.parentFile ?: baseDir
+                            entryName = anyHtml.name
+                        }
                     }
                 }
             }

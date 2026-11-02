@@ -92,8 +92,12 @@ O.runTutorial=function(force){
   const textEl=h('div',{class:'cutscene-dialog-text'});
   const indicatorEl=h('div',{class:'cutscene-next-arrow'},'▼');
 
-  const skipBtn=h('button',{class:'cutscene-btn-skip',onclick:finishTutorial},'Пропустить ⏩');
-  const nextBtn=h('button',{class:'cutscene-btn-next',onclick:handleNext},'Далее ▶');
+  const SKIP_ICON='<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style="display:inline-block;vertical-align:middle;margin-left:4px;"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>';
+  const NEXT_ICON='<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style="display:inline-block;vertical-align:middle;margin-left:4px;"><path d="M5 3l14 9-14 9V3z"/></svg>';
+  const ROCKET_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display:inline-block;vertical-align:middle;margin-left:4px;"><path d="M12 2.5s3.5 3.5 4.5 7.5l2 1-3 3-1 2c-4-1-7.5-4.5-7.5-4.5s1-3.5 3-5.5l2-3.5zM4 20l4-1-3-3-1 4z"/></svg>';
+
+  const skipBtn=h('button',{class:'cutscene-btn-skip',onclick:finishTutorial},h('span',null,'Пропустить'),h('span',{html:SKIP_ICON}));
+  const nextBtn=h('button',{class:'cutscene-btn-next',onclick:handleNext},h('span',null,'Далее'),h('span',{html:NEXT_ICON}));
 
   const dialogHeader=h('div',{class:'cutscene-dialog-header'},
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},nameLabel,badgeLabel),
@@ -115,7 +119,7 @@ O.runTutorial=function(force){
     const s=SCENES[idx];
     nameLabel.textContent=s.title;
     badgeLabel.textContent=s.badge;
-    nextBtn.textContent=idx===SCENES.length-1?'Начать творить! 🚀':'Далее ▶';
+    nextBtn.innerHTML=idx===SCENES.length-1?('<span>Начать творить</span> '+ROCKET_ICON):('<span>Далее</span> '+NEXT_ICON);
     indicatorEl.style.opacity='0';
 
     // Update dots
