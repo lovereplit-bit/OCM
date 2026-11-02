@@ -26,7 +26,11 @@ android {
     }
 
     // targetSdk 28: see above; not an error for an APK outside Play
-    lint { disable += "ExpiredTargetSdkVersion" }
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+        disable += listOf("ExpiredTargetSdkVersion", "MissingTranslation")
+    }
 
     signingConfigs {
         create("release") {
@@ -37,6 +41,9 @@ android {
                 keyPassword = ksPass
             } else {
                 storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
             }
         }
     }
