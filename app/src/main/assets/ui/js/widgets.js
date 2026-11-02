@@ -296,4 +296,10 @@ O.initCustomWidgets=function(root){
   });
 };
 
+// Listen to native preview events (e.g. from openpreview CLI script or bridge)
+O.on('preview', d => {
+  if (d && d.path) O.openPreview(d.path);
+  else O.openPreview();
+});
+
 })();

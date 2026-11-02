@@ -1,7 +1,7 @@
 (function(){
 const O=window.OCM,h=O.h;
 // ---- markdown ----
-O.md=t=>{try{return DOMPurify.sanitize(marked.parse(t||'',{gfm:true}),{USE_PROFILES:{html:true},FORBID_TAGS:['style','form','textarea','select'],FORBID_ATTR:['onerror','onload'],ADD_TAGS:['button'],ADD_ATTR:['data-action','data-target','data-path']})}catch{return'<pre>'+O.esc(t)+'</pre>'}};
+O.md=t=>{try{return DOMPurify.sanitize(marked.parse(t||'',{gfm:true}),{USE_PROFILES:{html:true},FORBID_TAGS:['style','form','textarea','select'],FORBID_ATTR:['onerror','onload'],ADD_TAGS:['button','action','openapp'],ADD_ATTR:['data-action','data-target','data-path','type','target']})}catch{return'<pre>'+O.esc(t)+'</pre>'}};
 O.enhance=el=>{
   el.querySelectorAll('pre').forEach(pre=>{if(pre.dataset.e||pre.closest('.codeblock'))return;pre.dataset.e='1';
     const code=pre.querySelector('code');const lang=((code&&code.className.match(/language-([\w+#-]+)/))||[])[1]||'';
@@ -17,6 +17,19 @@ O.enhance=el=>{
       e.preventDefault();
       O.dispatchAction(btn.dataset.action, btn.dataset.path||btn.dataset.target);
     });
+  });
+
+  // Connect custom action tags created by agent: <openapp target="..."> or <openapp>...</openapp>
+  el.querySelectorAll('openapp, action[type="open_app"]').forEach(tag=>{
+    if(tag.dataset.e)return;tag.dataset.e='1';
+    const target=tag.getAttribute('target')||tag.textContent.trim();
+    if(target){
+      const btn=h('button',{
+        class:'btn-widget-action inline-action-btn',
+        onclick:e=>{e.preventDefault();O.dispatchAction('open_app',target)}
+      },O.icon('out'),'📱 Открыть '+target);
+      tag.replaceWith(btn);
+    }
   });
 
   // Auto-detect project HTML files mentioned in text (like site/index.html or /root/site/index.html)

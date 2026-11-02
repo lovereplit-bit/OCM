@@ -281,60 +281,211 @@ object Runtime {
     fun ensureDefaults(c: Context, uid: String) {
         try {
             val root = rootfs(c)
-            val binDir = File(root, "usr/local/bin").apply { mkdirs() }
-            val openappScript = File(binDir, "openapp")
-            openappScript.writeText("#!/bin/sh\nif [ -z \"$1\" ]; then echo \"Usage: openapp <app_name>\"; exit 1; fi\necho \"$*\" > /tmp/.openapp\necho \"Opening $* on Android...\"\n")
-            try { Os.chmod(openappScript.path, 0x1ED) } catch (_: Exception) {}
-
             val home = home(c, uid)
             val cfg = File(home, ".config/opencode").apply { mkdirs() }
+            val dotOpencode = File(home, ".opencode").apply { mkdirs() }
+
+            // Ensure tmp directories exist with proper access
+            File(root, "tmp").apply { mkdirs(); setReadable(true, false); setWritable(true, false); setExecutable(true, false) }
+            File(home, "tmp").apply { mkdirs() }
+            val homeBin = File(home, "bin").apply { mkdirs() }
+            val rootBin = File(root, "usr/local/bin").apply { mkdirs() }
+            val rootUsrBin = File(root, "usr/bin").apply { mkdirs() }
+
+            // Helper script: openapp (Android App Launch Skill)
+            val openappContent = """
+                #!/bin/sh
+                if [ -z "$1" ]; then
+                    echo "Usage: openapp <app_name_or_package>"
+                    exit 1
+                fi
+                APP="$*"
+                echo "$APP" > /tmp/.openapp 2>/dev/null || true
+                echo "$APP" > /root/.openapp 2>/dev/null || true
+                echo "$APP" > "$HOME/.openapp" 2>/dev/null || true
+                echo "Opening $APP on Android..."
+            """.trimIndent() + "\n"
+
+            // Helper script: openpreview (In-App Web Preview Skill)
+            val openpreviewContent = """
+                #!/bin/sh
+                TARGET="${'$'}{1:-index.html}"
+                echo "$TARGET" > /tmp/.openpreview 2>/dev/null || true
+                echo "$TARGET" > /root/.openpreview 2>/dev/null || true
+                echo "$TARGET" > "$HOME/.openpreview" 2>/dev/null || true
+                echo "Opening web preview for $TARGET..."
+            """.trimIndent() + "\n"
+
+            val appBins = listOf(
+                File(rootBin, "openapp"), File(rootBin, "open-app"),
+                File(rootUsrBin, "openapp"), File(homeBin, "openapp")
+            )
+            for (f in appBins) {
+                try {
+                    f.writeText(openappContent)
+                    Os.chmod(f.path, 0x1ED)
+                } catch (_: Exception) {}
+            }
+
+            val prevBins = listOf(
+                File(rootBin, "openpreview"), File(rootBin, "open-preview"),
+                File(rootUsrBin, "openpreview"), File(homeBin, "openpreview")
+            )
+            for (f in prevBins) {
+                try {
+                    f.writeText(openpreviewContent)
+                    Os.chmod(f.path, 0x1ED)
+                } catch (_: Exception) {}
+            }
+
+            // Skills & Commands definitions
+            val skillAppDir = File(cfg, "skills/open-android-app").apply { mkdirs() }
+            val skillAppHome = File(home, "skills/open-android-app").apply { mkdirs() }
+            val skillAppDot = File(dotOpencode, "skills/open-android-app").apply { mkdirs() }
+            val skillAppContent = """
+                ---
+                name: open-android-app
+                description: Open or switch to an installed Android application or settings screen on the user's device (Telegram, YouTube, Chrome, Settings, VK, WhatsApp, Camera, etc.).
+                ---
+
+                # Android App Launcher Skill
+
+                Use this skill whenever the user asks to open, launch, or switch to an Android application.
+
+                ## Execution
+                Run the shell command via bash:
+                ```bash
+                openapp <app_name_or_package>
+                ```
+
+                Common aliases:
+                - `telegram`, `tg`, `телеграм`, `телега`
+                - `youtube`, `ютуб`
+                - `chrome`, `browser`, `хром`, `браузер`
+                - `settings`, `настройки`
+                - `vk`, `вк`, `вконтакте`
+                - `whatsapp`, `ватсап`
+                - `camera`, `камера`
+                - `photos`, `gallery`, `галерея`, `фото`
+                - `calculator`, `калькулятор`
+                - `files`, `файлы`, `проводник`
+                - `music`, `музыка`
+                - Any package name, e.g. `org.telegram.messenger`
+
+                You can also output an interactive HUD button:
+                `<button data-action="open_app" data-target="telegram">📱 Открыть Telegram</button>`
+            """.trimIndent() + "\n"
+
+            try {
+                File(skillAppDir, "SKILL.md").writeText(skillAppContent)
+                File(skillAppHome, "SKILL.md").writeText(skillAppContent)
+                File(skillAppDot, "SKILL.md").writeText(skillAppContent)
+            } catch (_: Exception) {}
+
+            val skillPrevDir = File(cfg, "skills/web-preview").apply { mkdirs() }
+            val skillPrevHome = File(home, "skills/web-preview").apply { mkdirs() }
+            val skillPrevContent = """
+                ---
+                name: web-preview
+                description: Preview HTML, CSS, JavaScript, and web projects in OpenCode Mobile's built-in web previewer.
+                ---
+
+                # Web Preview Skill
+
+                Use this skill to view web projects and HTML files inside OpenCode Mobile.
+
+                ## Execution
+                Run the shell command:
+                ```bash
+                openpreview <path_to_html_or_dir>
+                ```
+                Examples: `openpreview index.html`, `openpreview site/index.html`
+
+                Or output an interactive button:
+                `<button data-action="preview" data-path="index.html">🌐 Предпросмотр</button>`
+            """.trimIndent() + "\n"
+
+            try {
+                File(skillPrevDir, "SKILL.md").writeText(skillPrevContent)
+                File(skillPrevHome, "SKILL.md").writeText(skillPrevContent)
+            } catch (_: Exception) {}
+
+            // Slash command definitions
+            val cmdDir = File(cfg, "commands").apply { mkdirs() }
+            try {
+                File(cmdDir, "open.md").writeText("""
+                    ---
+                    description: Open an installed Android application
+                    arguments:
+                      - name: app
+                        description: App name or package (e.g. telegram, youtube, settings)
+                        required: true
+                    ---
+                    Execute: `openapp $app`
+                """.trimIndent() + "\n")
+
+                File(cmdDir, "preview.md").writeText("""
+                    ---
+                    description: In-app web preview for HTML/CSS/JS project
+                    arguments:
+                      - name: path
+                        description: Path to html file or project folder
+                        required: false
+                    ---
+                    Execute: `openpreview $path`
+                """.trimIndent() + "\n")
+            } catch (_: Exception) {}
+
+            // Global System Prompt (AGENTS.md)
             val promptText = """
 # OpenCode Mobile Environment & Instructions (v2.0.1)
 
 You are running inside **OpenCode Mobile** directly on native Android (ARM64 / aarch64 architecture).
+You have full access to a complete Linux userspace environment, terminal tools, and native Android integrations.
 
-## 1. Environment & Packages
-- Platform: Android Linux Userspace (ARM64).
-- Package manager: Always use `pkg` (`pkg install <package>`, do not pass `-y`) or `pip` / `npm`.
+## 1. Environment & Architecture
+- Platform: Native Android Linux Userspace (ARM64 / aarch64).
+- Package manager: Always use `pkg` (`pkg install <package>`, do NOT pass `-y`) or `pip` / `npm`.
 - Compilations: Target ARM64/aarch64 architecture.
 - Storage: `/root` is internal storage (${'$'}HOME). `/sdcard` or `/storage/emulated/0` is shared Android storage with `noexec` restriction. Always run scripts with explicit interpreter: `python script.py`, `bash script.sh`.
 
-## 2. Diff Statistics Reporting (MANDATORY)
-At the very end of EVERY response, you MUST output a separate line with the line additions and deletions:
+## 2. Core Skill: Launching Android Applications
+You have the built-in skill to open and switch to any installed Android application or system setting on the device!
+Whenever the user asks you to open, launch, or switch to an app (using ANY phrasing or language, e.g. "открой телеграм", "открой тг", "можешь открыть телегу?", "запусти ютуб", "покажи на youtube", "открой хром", "запусти браузер", "открой настройки", "зайди в настройки", "открой вк", "открой камеру", "launch telegram", "open settings", etc.):
+1. Execute the bash command:
+   `openapp <app_name_or_package>`
+   (Examples: `openapp telegram`, `openapp youtube`, `openapp chrome`, `openapp settings`, `openapp vk`, `openapp whatsapp`, `openapp camera`, `openapp calculator`, etc.)
+2. Inform the user in your response that the application is opening, and include an action button for convenience:
+   `<button data-action="open_app" data-target="<app_name>">📱 Открыть <app_name></button>`
+
+## 3. Core Skill: In-App Web Project Preview
+You have the built-in skill to preview web projects (HTML, CSS, JavaScript, images) directly inside the OpenCode Mobile in-app previewer:
+- To launch the in-app preview from shell, execute: `openpreview <path>` (e.g. `openpreview index.html` or `openpreview site/index.html`)
+- Or include an interactive button in your response:
+  `<button data-action="preview" data-path="index.html">🌐 Предпросмотр</button>`
+
+## 4. Interactive HUD Widgets
+You can embed interactive HUD widgets and buttons in your markdown responses:
+- `<button data-action="new_chat">💬 Новый чат</button>`
+- `<button data-action="open_app" data-target="telegram">📱 Открыть Telegram</button>`
+- `<button data-action="preview" data-path="index.html">🌐 Предпросмотр</button>`
+- `<button data-action="files">📁 Открыть Файлы</button>`
+- `<button data-action="term">⌨️ Терминал</button>`
+
+## 5. Diff Statistics Reporting (MANDATORY)
+At the very end of EVERY response, you MUST output a separate line with line additions and deletions:
 +N -M
 For example:
 +120 -67
 (If no files were edited, output: +0 -0)
+            """.trimIndent()
 
-## 3. Opening Android Apps
-To open any Android app, execute in bash:
-`openapp <app_name_or_package>`
-Examples:
-- `openapp telegram`
-- `openapp youtube`
-- `openapp chrome`
-- `openapp settings`
-- `openapp vk`
-
-## 4. Interactive Widgets & Actions
-You can render interactive widgets using HTML:
-`<button data-action="new_chat">Новый чат</button>`
-`<button data-action="open_app" data-target="telegram">Открыть Telegram</button>`
-`<button data-action="preview" data-path="index.html">Предпросмотр</button>`
-
-## 5. Web Project Preview
-OpenCode Mobile provides built-in instant preview for HTML, CSS, JS and image projects.
-""".trimIndent()
-
-            val agentsMd1 = File(cfg, "AGENTS.md")
-            agentsMd1.writeText(promptText)
-            val agentsMd2 = File(home, "AGENTS.md")
-            if (!agentsMd2.exists() || agentsMd2.length() < 50) {
-                agentsMd2.writeText(promptText)
-            }
+            File(cfg, "AGENTS.md").writeText(promptText)
+            File(home, "AGENTS.md").writeText(promptText)
+            File(dotOpencode, "AGENTS.md").writeText(promptText)
 
             val readme = File(home, "README.md")
-            if (!readme.exists()) {
+            if (!readme.exists() || !readme.readText().contains("v2.0.1")) {
                 readme.writeText("""
 # 🚀 OpenCode Mobile v2.0.1
 
@@ -345,11 +496,11 @@ OpenCode Mobile provides built-in instant preview for HTML, CSS, JS and image pr
 - 🐧 **Настоящий Linux**: Терминал, компиляторы, Python, Node.js, Git.
 - ⚡ **120Hz HUD**: Сверхплавный интерфейс с поддержкой высокой частоты обновления.
 - 🌐 **Встроенный Веб-Предпросмотр**: Запуск сайтов и HTML/CSS/JS проектов прямо в приложении.
-- 📱 **Интеграция с Android**: Открытие приложений (`openapp telegram`).
+- 📱 **Интеграция с Android**: Открытие приложений агентом (`openapp telegram`).
 - 📊 **Подсчёт диффов**: Автоматический вывод `+N -M` в конце сообщений.
 
 Удачного кодинга! ✨
-""".trimIndent())
+                """.trimIndent())
             }
         } catch (_: Exception) {}
     }

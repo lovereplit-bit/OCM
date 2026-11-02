@@ -104,8 +104,9 @@ function openAgents(){const list=h('div');
     up('Глобальные правила (AGENTS.md)','Выберите файл — действует для всех проектов','rules'),
     O.listRow('edit','Написать глобальные правила','Редактировать AGENTS.md здесь',null,()=>editFile(CFG+'/AGENTS.md','Глобальный AGENTS.md')),
     up('Правила проекта (AGENTS.md)','Сохраняются в текущую папку','project',S.dir),
+    up('Файл навыка (.md)','Добавляет навык для агента','skill'),
     up('Файл агента (.md)','Добавляется в список ваших агентов','agent'),up('Файл команды (.md)','Добавляет /команду','command'),list));
-  const draw=()=>{list.textContent='';[['agents','Агенты'],['commands','Команды']].forEach(([d,t])=>{const r=O.native.ls(CFG+'/'+d);if(r.items&&r.items.length){list.append(h('div',{class:'grp'},t));
+  const draw=()=>{list.textContent='';[['skills','Навыки'],['agents','Агенты'],['commands','Команды']].forEach(([d,t])=>{const r=O.native.ls(CFG+'/'+d);if(r.items&&r.items.length){list.append(h('div',{class:'grp'},t));
     r.items.filter(x=>!x.dir).forEach(x=>list.append(O.listRow('doc',x.name,'',h('button',{class:'ibtn s',onclick:async e=>{e.stopPropagation();if(await O.confirm('Удалить '+x.name+'?','','Удалить',true)){O.native.fs('delete',CFG+'/'+d+'/'+x.name);draw();O.loadMeta()}}},O.icon('trash')),()=>editFile(CFG+'/'+d+'/'+x.name,x.name))))}})};
   draw();O.on('picked',()=>{if(s.root.isConnected)draw()})}
 function editFile(path,title){const r=O.native.readText(path);const ta=h('textarea',{class:'mono',rows:18});ta.value=r.ok?r.text:'';

@@ -553,32 +553,6 @@ async function onSend(){
   if(cm){const b=BUILTINS.find(x=>x.n===cm[1]);if(b){clear();b.run(cm[2]);return}
     const sc=(S.commands||[]).find(c=>c.name===cm[1]);
     if(sc){if(!S.model)return O.openConnect();clear();try{const sid=await sess();api('POST','/session/'+sid+'/command',{command:sc.name,arguments:cm[2]||'',agent:S.agent,model:modelStr()},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}}
-  
-  // 1. Natural language Web Preview trigger (e.g. "открой предпосмотр сайта", "открой предпросмотр", "покажи сайт", "предпосмотр")
-  if(/(?:предпросмотр|предпосмотр|превью|preview|покажи.*сайт|открой.*сайт|запусти.*сайт|как выглядит.*сайт)/i.test(text)&&!text.includes('\n')){
-    let targetPath='';
-    const m=/([a-zA-Z0-9_/.-]+\.html|[a-zA-Z0-9_/.-]+(?:\/|$))/i.exec(text.replace(/^(?:открой|покажи|запусти|как выглядит)\s+/i,''));
-    if(m&&!['сайт','предпросмотр','предпосмотр','превью','preview'].includes(m[1].toLowerCase())){
-      targetPath=m[1];
-    }
-    O.openPreview(targetPath);
-    O.toast('Открываю веб-предпросмотр...',2000);
-    clear();
-    return;
-  }
-
-  // 2. Natural language app opening trigger (e.g. "открой телеграм", "запусти youtube", "открой приложение вк")
-  const appMatch=/^(?:открой|запусти|open|launch)\s+(?:приложение\s+)?([a-zA-Zа-яА-Я0-9_.-]+)/i.exec(text);
-  if(appMatch){
-    const appTarget=appMatch[1].toLowerCase();
-    const reserved=['предпросмотр','предпосмотр','превью','сайт','файлы','терминал','чат'];
-    if(!reserved.includes(appTarget)){
-      O.dispatchAction('open_app',appMatch[1]);
-      O.toast('Запуск приложения: '+appMatch[1],2000);
-      clear();
-      return;
-    }
-  }
 
   if(!S.model){O.toast('Подключите провайдера, чтобы выбрать модель');O.openConnect();return}
   if(text.startsWith('!')){const cmd=text.slice(1).trim();

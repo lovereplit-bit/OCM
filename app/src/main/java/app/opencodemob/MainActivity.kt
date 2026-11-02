@@ -519,6 +519,7 @@ class MainActivity : ComponentActivity() {
                     "rules" -> File(cfg, "AGENTS.md")
                     "project" -> File(Runtime.hostPath(this, uid(), pendingDir.ifEmpty { "/root" }), "AGENTS.md")
                     "plugin" -> File(File(cfg, "plugins"), name)
+                    "skill" -> File(File(cfg, "skills"), name)
                     else -> {
                         if (!name.endsWith(".md")) name += ".md"
                         File(File(cfg, if (kind == "command") "commands" else "agents"), name)
@@ -537,14 +538,42 @@ class MainActivity : ComponentActivity() {
 
     private fun checkOpenAppTrigger() {
         try {
-            val f = File(Runtime.rootfs(this), "tmp/.openapp")
-            if (f.exists()) {
-                val app = f.readText().trim()
-                f.delete()
-                if (app.isNotEmpty()) launchApp(app)
+            val root = Runtime.rootfs(this)
+            val home = Runtime.home(this, uid())
+            val appFiles = listOf(
+                File(root, "tmp/.openapp"),
+                File(home, ".openapp"),
+                File(home, "tmp/.openapp")
+            )
+            for (f in appFiles) {
+                if (f.exists()) {
+                    val app = f.readText().trim()
+                    f.delete()
+                    if (app.isNotEmpty()) {
+                        ui.post { launchApp(app) }
+                        break
+                    }
+                }
+            }
+
+            val prevFiles = listOf(
+                File(root, "tmp/.openpreview"),
+                File(home, ".openpreview"),
+                File(home, "tmp/.openpreview")
+            )
+            for (f in prevFiles) {
+                if (f.exists()) {
+                    val path = f.readText().trim()
+                    f.delete()
+                    ui.post {
+                        val url = prepareWebPreview(path)
+                        emit("preview", JSONObject().put("path", path).put("url", url))
+                    }
+                    break
+                }
             }
         } catch (_: Exception) {}
-        ui.postDelayed({ checkOpenAppTrigger() }, 1000)
+        ui.postDelayed({ checkOpenAppTrigger() }, 250)
     }
 
     fun launchApp(target: String): Boolean {
