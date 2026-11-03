@@ -304,8 +304,63 @@ object Runtime {
         return pb.start()
     }
 
+    fun sanitizeConfig(c: Context, uid: String, forceReset: Boolean = false) {
+        try {
+            val home = home(c, uid)
+            val cfgDir = File(home, ".config/opencode").apply { mkdirs() }
+            val files = listOf(File(cfgDir, "opencode.json"), File(cfgDir, "opencode.jsonc"))
+            for (f in files) {
+                if (!f.exists()) continue
+                if (forceReset) {
+                    val bak = File(cfgDir, f.name + ".bak-" + System.currentTimeMillis())
+                    try { f.renameTo(bak) } catch (_: Exception) {}
+                    f.writeText("{\n}\n")
+                    continue
+                }
+                val txt = f.readText().trim()
+                if (txt.isEmpty()) continue
+                try {
+                    val obj = org.json.JSONObject(txt)
+                    var modified = false
+                    if (obj.has("provider")) {
+                        val prov = obj.optJSONObject("provider")
+                        if (prov != null) {
+                            if (prov.has("local")) {
+                                prov.remove("local")
+                                modified = true
+                            }
+                            if (prov.has("ollama")) {
+                                val ollama = prov.optJSONObject("ollama")
+                                if (ollama != null && (ollama.has("npm") || ollama.has("options") || ollama.has("models"))) {
+                                    val aiPort = stableAiPort(c, uid)
+                                    val cleanOllama = org.json.JSONObject().apply {
+                                        put("settings", org.json.JSONObject().apply {
+                                            put("baseURL", "http://127.0.0.1:$aiPort/v1")
+                                        })
+                                    }
+                                    prov.put("ollama", cleanOllama)
+                                    modified = true
+                                }
+                            }
+                        }
+                    }
+                    if (modified) {
+                        val bak = File(cfgDir, f.name + ".bak-" + System.currentTimeMillis())
+                        try { f.copyTo(bak, true) } catch (_: Exception) {}
+                        f.writeText(obj.toString(2))
+                    }
+                } catch (_: Exception) {
+                    val bak = File(cfgDir, f.name + ".corrupt-" + System.currentTimeMillis())
+                    try { f.renameTo(bak) } catch (_: Exception) {}
+                    f.writeText("{\n}\n")
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
     fun ensureDefaults(c: Context, uid: String) {
         try {
+            sanitizeConfig(c, uid)
             val root = rootfs(c)
             val home = home(c, uid)
             val cfg = File(home, ".config/opencode").apply { mkdirs() }
@@ -393,18 +448,8 @@ object Runtime {
                     echo "${S}PORT" > /tmp/.aiserver.port
                     echo "${S}MODEL" > /tmp/.aiserver.model
                     echo "${S}${S}" > "${S}PID_FILE"
-
-                    if command -v llama-server >/dev/null 2>&1 && [ -n "${S}MODEL" ] && [ -f "${S}MODEL" ]; then
-                      echo "Starting native llama-server on 127.0.0.1:${S}PORT with ${S}MODEL..."
-                      exec llama-server -m "${S}MODEL" --port "${S}PORT" --host 127.0.0.1 -c 4096 -t 4
-                    elif command -v ollama >/dev/null 2>&1; then
-                      echo "Starting ollama serve on 127.0.0.1:${S}PORT..."
-                      export OLLAMA_HOST="127.0.0.1:${S}PORT"
-                      exec ollama serve
-                    else
-                      echo "Starting built-in ai-engine.py on 127.0.0.1:${S}PORT with ${S}MODEL..."
-                      exec python3 /usr/local/bin/ai-engine.py --model "${S}MODEL" --port "${S}PORT"
-                    fi
+                    echo "Starting local AI engine on 127.0.0.1:${S}PORT (model: ${S}MODEL)..."
+                    exec python3 /usr/local/bin/ai-engine.py --model "${S}MODEL" --port "${S}PORT"
                     ;;
                   start)
                     resolve_model
@@ -449,7 +494,7 @@ object Runtime {
             // Built-in Python AI Engine (OpenAI & Ollama compatible)
             val aiEnginePyContent = """
                 #!/usr/bin/env python3
-                import sys, os, json, glob, time, argparse
+                import sys, os, json, glob, time, argparse, urllib.request, urllib.error
                 from http.server import HTTPServer, BaseHTTPRequestHandler
 
                 parser = argparse.ArgumentParser()
@@ -459,16 +504,34 @@ object Runtime {
                 args, _ = parser.parse_known_args()
 
                 MODELS_DIR = '/root/models'
+                llama_port = args.port + 100
+                llama_proc = None
+
+                # Launch native llama-server as worker if model and binary are present
+                if args.model and os.path.isfile(args.model) and os.path.isfile('/usr/local/bin/llama-server'):
+                    try:
+                        import subprocess
+                        llama_proc = subprocess.Popen([
+                            '/usr/local/bin/llama-server',
+                            '-m', args.model,
+                            '--port', str(llama_port),
+                            '--host', '127.0.0.1',
+                            '-c', '4096',
+                            '-t', '4'
+                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    except Exception:
+                        llama_proc = None
 
                 def get_models():
                     res = []
                     files = glob.glob(os.path.join(MODELS_DIR, '*.gguf'))
-                    if not files and args.model:
+                    if not files and args.model and os.path.isfile(args.model):
                         files = [args.model]
                     for f in files:
                         fn = os.path.basename(f)
                         mid = os.path.splitext(fn)[0].lower()
                         mtime = int(os.path.getmtime(f)) if os.path.exists(f) else int(time.time())
+                        fsize = os.path.getsize(f) if os.path.exists(f) else 1000000000
                         res.append({
                             'id': mid,
                             'name': mid,
@@ -476,9 +539,16 @@ object Runtime {
                             'object': 'model',
                             'created': mtime,
                             'modified_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(mtime)),
-                            'size': os.path.getsize(f) if os.path.exists(f) else 1000000000,
-                            'digest': 'local',
-                            'details': {'format': 'gguf', 'family': 'llama', 'quantization_level': 'Q4_K_M'},
+                            'size': fsize,
+                            'digest': 'sha256:' + mid,
+                            'details': {
+                                'parent_model': '',
+                                'format': 'gguf',
+                                'family': 'llama',
+                                'families': ['llama'],
+                                'parameter_size': '2B',
+                                'quantization_level': 'Q4_K_M'
+                            },
                             'owned_by': 'local'
                         })
                     if not res:
@@ -490,8 +560,15 @@ object Runtime {
                             'created': int(time.time()),
                             'modified_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                             'size': 1000000000,
-                            'digest': 'local',
-                            'details': {'format': 'gguf', 'family': 'llama', 'quantization_level': 'Q4_K_M'},
+                            'digest': 'sha256:local',
+                            'details': {
+                                'parent_model': '',
+                                'format': 'gguf',
+                                'family': 'llama',
+                                'families': ['llama'],
+                                'parameter_size': '2B',
+                                'quantization_level': 'Q4_K_M'
+                            },
                             'owned_by': 'local'
                         })
                     return res
@@ -539,7 +616,49 @@ object Runtime {
                         m_label = os.path.basename(args.model) if args.model else mid
                         reply = "Локальная модель " + m_label + " активна на порту " + str(args.port) + " и готова к работе офлайн."
 
+                        if p == '/api/show':
+                            self._send_json(200, {
+                                'details': {
+                                    'parent_model': '',
+                                    'format': 'gguf',
+                                    'family': 'llama',
+                                    'families': ['llama'],
+                                    'parameter_size': '2B',
+                                    'quantization_level': 'Q4_K_M'
+                                },
+                                'capabilities': ['completion'],
+                                'model_info': {'general.architecture': 'llama'}
+                            })
+                            return
+
                         if p in ('/v1/chat/completions', '/chat/completions'):
+                            proxied = False
+                            if llama_proc is not None and llama_proc.poll() is None:
+                                try:
+                                    proxy_req = urllib.request.Request(
+                                        'http://127.0.0.1:' + str(llama_port) + p,
+                                        data=raw.encode('utf-8'),
+                                        headers={'Content-Type': 'application/json'}
+                                    )
+                                    with urllib.request.urlopen(proxy_req, timeout=120) as presp:
+                                        self.send_response(presp.status)
+                                        for k, v in presp.headers.items():
+                                            if k.lower() not in ('transfer-encoding', 'content-length'):
+                                                self.send_header(k, v)
+                                        self.send_header('Access-Control-Allow-Origin', '*')
+                                        self.end_headers()
+                                        while True:
+                                            chunk = presp.read(1024)
+                                            if not chunk:
+                                                break
+                                            self.wfile.write(chunk)
+                                            self.wfile.flush()
+                                        proxied = True
+                                except Exception:
+                                    proxied = False
+                            if proxied:
+                                return
+
                             is_stream = req.get('stream', False)
                             if is_stream:
                                 self.send_response(200)
@@ -608,8 +727,6 @@ object Runtime {
                                 self.wfile.flush()
                             else:
                                 self._send_json(200, {'model': mid, 'message': {'role': 'assistant', 'content': reply}, 'response': reply, 'done': True})
-                        elif p == '/api/show':
-                            self._send_json(200, {'details': {'format': 'gguf', 'family': 'llama', 'quantization_level': 'Q4_K_M'}})
                         else:
                             self._send_json(404, {'error': 'Unknown endpoint'})
 
@@ -617,8 +734,16 @@ object Runtime {
                         pass
 
                 if __name__ == '__main__':
-                    httpd = HTTPServer((args.host, args.port), Handler)
-                    httpd.serve_forever()
+                    try:
+                        httpd = HTTPServer((args.host, args.port), Handler)
+                        httpd.serve_forever()
+                    finally:
+                        if llama_proc is not None:
+                            try:
+                                llama_proc.terminate()
+                                llama_proc.wait(timeout=2)
+                            except Exception:
+                                pass
             """.trimIndent() + "\n"
 
             val aiBins = listOf(
@@ -866,9 +991,12 @@ For example:
         return pb.start()
     }
 
-    fun waitReady(port: Int, password: String, timeoutMs: Long): Boolean {
+    fun waitReady(port: Int, password: String, timeoutMs: Long): Boolean = waitReady(null, port, password, timeoutMs)
+
+    fun waitReady(proc: Process?, port: Int, password: String, timeoutMs: Long): Boolean {
         val end = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < end) {
+            if (proc != null && !proc.isAlive) return false
             try {
                 val con = URL("http://127.0.0.1:$port/global/health").openConnection() as HttpURLConnection
                 con.connectTimeout = 800; con.readTimeout = 1500

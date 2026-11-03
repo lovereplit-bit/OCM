@@ -156,6 +156,7 @@ O.openModels=()=>{
           const cat=O.CATALOG_MODELS&&O.CATALOG_MODELS.find(c=>c.id===x.mid);
           const fn=cat?cat.file:(dl[0]?dl[0].fileName:'');
           if(fn)O.native.startLocalAiServer(fn);
+          if(O.syncLocalModelsConfig)O.syncLocalModelsConfig(x.mid);
         }
         O.setModel(x.pid,x.mid);
         s.close();

@@ -103,43 +103,27 @@ O.syncLocalModelsConfig = async (activateMid) => {
     obj.provider = obj.provider || {};
 
     const userPort = O.native.getLocalAiPort();
-    const baseUrl = O.store.get('localEngineUrl', 'http://127.0.0.1:' + userPort + '/v1');
 
-    const modelsMap = {};
-    list.forEach(f => {
-      const fn = f.fileName;
-      const cat = O.CATALOG_MODELS.find(m => m.file.toLowerCase() === fn.toLowerCase());
-      const mid = cat ? cat.id : fn.replace(/\.gguf$/i, '').toLowerCase();
-      const mname = cat ? cat.name : fn.replace(/\.gguf$/i, '');
-      const ctx = cat ? cat.context : 4096;
-      modelsMap[mid] = {
-        name: mname + ' (Офлайн :' + userPort + ')',
-        limit: { context: ctx },
-        free: true,
-        cost: { input: 0, output: 0 }
-      };
-    });
+    // Clean up any legacy or invalid provider entries that break OpenCode 1.x schema
+    if (obj.provider['local']) delete obj.provider['local'];
 
-    if (Object.keys(modelsMap).length > 0) {
-      const provDef = {
-        name: 'Локально (Офлайн :' + userPort + ')',
-        npm: '@ai-sdk/openai',
-        options: {
-          baseURL: baseUrl,
-          apiKey: 'local'
-        },
-        models: modelsMap
+    // In OpenCode 1.x, Ollama is a built-in provider that uses:
+    // { "provider": { "ollama": { "settings": { "baseURL": "..." } } } }
+    if (list.length > 0) {
+      obj.provider['ollama'] = {
+        settings: {
+          baseURL: 'http://127.0.0.1:' + userPort + '/v1'
+        }
       };
-      obj.provider['local'] = provDef;
-      obj.provider['ollama'] = provDef;
     }
 
     const w = O.native.cfgWrite(JSON.stringify(obj, null, 2));
     if (w && w.ok) {
       try { await api('POST', '/instance/dispose', null); } catch (_) {}
+      if (O.injectLocalProvider) O.injectLocalProvider();
       await O.loadMeta();
-      if (activateMid && modelsMap[activateMid]) {
-        O.setModel('local', activateMid);
+      if (activateMid) {
+        O.setModel('ollama', activateMid);
       }
       bus.emit('meta');
     }
@@ -160,7 +144,7 @@ O.activateLocalModel = async (mid, mname) => {
   }
   await O.syncLocalModelsConfig(mid);
   if (O.injectLocalProvider) O.injectLocalProvider();
-  O.setModel('local', mid);
+  O.setModel('ollama', mid);
   const userPort = O.native.getLocalAiPort();
   O.toast('Модель ' + (mname || mid) + ' запущена на порту ' + userPort + '!', 3000);
 };

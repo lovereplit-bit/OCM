@@ -198,7 +198,7 @@ O.allModels=()=>{
       const ctx=cat?cat.context:4096;
       const mObj={id:mid,name:name+' (Офлайн :'+uPort+')',limit:{context:ctx},free:true,cost:{input:0,output:0}};
       return {
-        pid:'local',
+        pid:'ollama',
         pname:'Локально (Офлайн :'+uPort+')',
         mid:mid,
         name:name,

@@ -56,7 +56,8 @@ class OpenCodeService : Service() {
             proc = p
             val log = File(filesDir, "server.log")
             thread(isDaemon = true) { try { p.inputStream.copyTo(FileOutputStream(log, false)) } catch (_: Exception) {} }
-            if (Runtime.waitReady(port, pw, 45_000)) {
+            val ok = Runtime.waitReady(p, port, pw, 35_000)
+            if (ok) {
                 ServerState.port = port; ServerState.password = pw
                 ServerState.error = null; ServerState.ready = true
                 Notifier.updateRuntime(this, "Работает")
@@ -65,12 +66,26 @@ class OpenCodeService : Service() {
                 p.waitFor()
                 ServerState.ready = false
             } else {
+                if (!p.isAlive) {
+                    val code = try { p.exitValue() } catch (_: Exception) { -1 }
+                    val logTail = try {
+                        val lf = File(filesDir, "server.log")
+                        if (lf.exists()) lf.readLines().takeLast(8).joinToString("\n") else ""
+                    } catch (_: Exception) { "" }
+                    ServerState.error = "OpenCode завершился с ошибкой ($code)" + (if (logTail.isNotEmpty()) ":\n$logTail" else "")
+                    // Auto-heal config if startup crashed
+                    Runtime.sanitizeConfig(this, uid, forceReset = (attempt >= 1))
+                }
                 p.destroy()
             }
             attempt = if (SystemClock.elapsedRealtime() - t0 > 60_000) 0 else attempt + 1
         }
         if (!stopping && ServerState.error == null) {
-            ServerState.error = "OpenCode server did not start. Log: ${File(filesDir, "server.log").path}"
+            val logTail = try {
+                val lf = File(filesDir, "server.log")
+                if (lf.exists()) lf.readLines().takeLast(8).joinToString("\n") else ""
+            } catch (_: Exception) { "" }
+            ServerState.error = "Не удалось запустить сервер OpenCode" + (if (logTail.isNotEmpty()) ":\n$logTail" else "")
         }
     }
 

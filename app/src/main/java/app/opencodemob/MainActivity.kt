@@ -216,7 +216,9 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         emit("perms", JSONObject())
         val u = uid()
-        if (u.isNotEmpty()) LocalAiServer.ensureRunningIfModelsExist(this, u)
+        if (u.isNotEmpty() && Runtime.isInstalled(this) && ServerState.ready) {
+            LocalAiServer.ensureRunningIfModelsExist(this, u)
+        }
     }
 
     override fun onDestroy() {
@@ -935,6 +937,16 @@ class MainActivity : ComponentActivity() {
                 stopService(Intent(this@MainActivity, OpenCodeService::class.java))
                 ServerState.ready = false
                 ui.postDelayed({ start() }, 700)
+            }
+        }
+
+        @JavascriptInterface fun resetConfig() {
+            runOnUiThread {
+                val u = uid()
+                if (u.isNotEmpty()) {
+                    Runtime.sanitizeConfig(this@MainActivity, u, forceReset = true)
+                }
+                restartServer()
             }
         }
 

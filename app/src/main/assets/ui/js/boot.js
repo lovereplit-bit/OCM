@@ -42,15 +42,44 @@ O.on('install',d=>{if(!inst||!el)return;
     if(!el.querySelector('.retry'))el.firstChild.append(h('button',{class:'btn retry',onclick:install},O.icon('refresh'),'Повторить'));
     if(!el.querySelector('.reset'))el.firstChild.append(h('button',{class:'btn reset',style:{marginTop:'8px'},onclick:()=>OC.resetInstall()},O.icon('trash'),'Сбросить и установить заново'))}
   else if(d.done){inst=null;start()}else inst.bar.style.width=d.pct+'%'});
-function start(){const msg=h('p',{class:'mut'},'Запуск OpenCode'),err=h('p',{class:'err'}),extra=h('div');
-  screen(logo(),h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},h('span',{class:'spin'}),msg),err,extra);
-  OC.start();clearTimeout(waitT);waitT=setTimeout(()=>{if(el&&!entered)extra.append(h('button',{class:'btn wide',onclick:()=>{O.bootHide();entered=true;O.enter({offline:true})}},O.icon('doc'),'Читать кэшированные чаты, пока идёт запуск'))},3000)}
+function start(){
+  const msg=h('p',{class:'mut'},'Запуск OpenCode'),err=h('p',{class:'err'}),extra=h('div');
+  const spin=h('span',{class:'spin'});
+  screen(logo(),h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},spin,msg),err,extra);
+  OC.start();clearTimeout(waitT);
+  waitT=setTimeout(()=>{
+    if(el&&!entered){
+      extra.append(
+        h('button',{class:'btn wide',onclick:()=>{O.bootHide();entered=true;O.enter({offline:true})}},O.icon('doc'),'Читать кэшированные чаты, пока идёт запуск'),
+        h('button',{class:'btn wide',style:{marginTop:'8px'},onclick:()=>{
+          if(spin)spin.remove();
+          msg.textContent='Сброс конфигурации...';
+          if(window.OC&&OC.resetConfig)OC.resetConfig();else if(window.OC&&OC.restartServer)OC.restartServer();
+        }},O.icon('refresh'),'Сбросить конфигурацию и перезапустить')
+      );
+    }
+  },4000);
+}
 function next(){const st=O.native.state(),p=st.perms||{};
   if(!O.store.get('permsSeen')&&!(p.notifications&&p.files&&p.battery&&p.install))return perms();
   if(!st.installed)return install();start()}
 O.on('signin',d=>{if(!el)return;d.ok?next():login(d.error||'Не удалось войти')});
 O.on('perms',()=>{if(permsRender)permsRender()});
-O.on('boot',d=>{if(d.error&&el){const e=el.querySelector('.err');if(e)e.textContent=d.error;if(!el.querySelector('.retry'))el.firstChild.append(h('button',{class:'btn retry',onclick:start},O.icon('refresh'),'Повторить'))}});
+O.on('boot',d=>{
+  if(!el)return;
+  const e=el.querySelector('.err');
+  if(e)e.textContent=d.error;
+  const sp=el.querySelector('.spin');
+  if(sp)sp.remove();
+  const m=el.querySelector('.mut');
+  if(m)m.textContent='Ошибка запуска сервера';
+  if(!el.querySelector('.retry')){
+    el.firstChild.append(
+      h('button',{class:'btn retry pri wide',style:{marginTop:'10px'},onclick:start},O.icon('refresh'),'Повторить запуск'),
+      h('button',{class:'btn wide',style:{marginTop:'8px'},onclick:()=>{if(window.OC&&OC.resetConfig)OC.resetConfig();start()}},O.icon('trash'),'Сбросить конфигурацию и запустить')
+    );
+  }
+});
 O.on('ready',()=>{clearTimeout(waitT);O.bootHide();if(!entered){entered=true;O.enter()}else O.reconnect()});
 O.bootRun=()=>{const st=O.native.state();
   if(st.ready&&st.user&&st.installed){entered=true;O.enter();return}
