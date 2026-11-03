@@ -61,6 +61,7 @@ class OpenCodeService : Service() {
                 ServerState.error = null; ServerState.ready = true
                 Notifier.updateRuntime(this, "Работает")
                 startWatcher(port, pw)
+                LocalAiServer.ensureRunningIfModelsExist(this, uid)
                 p.waitFor()
                 ServerState.ready = false
             } else {
@@ -112,6 +113,7 @@ class OpenCodeService : Service() {
         ServerState.ready = false
         watcher?.interrupt()
         proc?.destroy()
+        LocalAiServer.stop()
         try { wake?.release() } catch (_: Exception) {}
         super.onDestroy()
     }

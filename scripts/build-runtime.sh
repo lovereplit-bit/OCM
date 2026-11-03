@@ -82,6 +82,18 @@ docker run --platform linux/arm64 --name ocroot -v "$WORK/oc:/oc:ro" ubuntu:24.0
   install -m755 /oc/opencode /usr/local/bin/opencode
   cp /oc/version /etc/opencode-version
   /usr/local/bin/opencode --version || echo "WARN: smoke test failed under qemu (non-fatal)"
+
+  echo "Installing native llama-server for GGUF model execution..."
+  LLAMA_URL="https://github.com/ggerganov/llama.cpp/releases/download/b12064/llama-b12064-bin-ubuntu-arm64.tar.gz"
+  mkdir -p /tmp/llama && curl -fsSL "$LLAMA_URL" | tar -xz -C /tmp/llama --strip-components=1 || true
+  if [ -f /tmp/llama/llama-server ]; then
+    install -m755 /tmp/llama/llama-server /usr/local/bin/llama-server
+    cp -a /tmp/llama/lib*.so* /usr/local/lib/ 2>/dev/null || true
+    ldconfig || true
+    echo "llama-server successfully installed in rootfs"
+  fi
+  rm -rf /tmp/llama
+
   apt-get clean
   rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/* /var/cache/apt/*
 '

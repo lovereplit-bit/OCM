@@ -81,7 +81,7 @@ O.on('model_download', d => {
     const userPort = d.port || O.native.getLocalAiPort();
     O.native.startLocalAiServer(d.fileName || d.id);
     O.syncLocalModelsConfig(d.id).then(() => {
-      O.setModel('ollama', d.id);
+      O.setModel('local', d.id);
       O.toast('Модель ' + d.id + ' запущена на порту ' + userPort + ' и готова к работе!', 4000);
       if (redrawLocalModels) redrawLocalModels();
     });
@@ -104,7 +104,6 @@ O.syncLocalModelsConfig = async (activateMid) => {
 
     const userPort = O.native.getLocalAiPort();
     const baseUrl = O.store.get('localEngineUrl', 'http://127.0.0.1:' + userPort + '/v1');
-    const pid = 'ollama';
 
     const modelsMap = {};
     list.forEach(f => {
@@ -122,7 +121,7 @@ O.syncLocalModelsConfig = async (activateMid) => {
     });
 
     if (Object.keys(modelsMap).length > 0) {
-      obj.provider[pid] = {
+      const provDef = {
         name: 'Локально (Офлайн :' + userPort + ')',
         npm: '@ai-sdk/openai',
         options: {
@@ -131,6 +130,8 @@ O.syncLocalModelsConfig = async (activateMid) => {
         },
         models: modelsMap
       };
+      obj.provider['local'] = provDef;
+      obj.provider['ollama'] = provDef;
     }
 
     const w = O.native.cfgWrite(JSON.stringify(obj, null, 2));
@@ -138,7 +139,7 @@ O.syncLocalModelsConfig = async (activateMid) => {
       try { await api('POST', '/instance/dispose', null); } catch (_) {}
       await O.loadMeta();
       if (activateMid && modelsMap[activateMid]) {
-        O.setModel(pid, activateMid);
+        O.setModel('local', activateMid);
       }
       bus.emit('meta');
     }
@@ -158,7 +159,7 @@ O.activateLocalModel = async (mid, mname) => {
     O.native.startLocalAiServer(targetFile);
   }
   await O.syncLocalModelsConfig(mid);
-  O.setModel('ollama', mid);
+  O.setModel('local', mid);
   const userPort = O.native.getLocalAiPort();
   O.toast('Модель ' + (mname || mid) + ' запущена на порту ' + userPort + '!', 3000);
 };
@@ -175,36 +176,22 @@ O.openLocalModels = (parentSheet) => {
     downloaded.forEach(f => downMap.set(f.fileName.toLowerCase(), f));
 
     const userPort = O.native.getLocalAiPort();
-    const curUrl = O.store.get('localEngineUrl', 'http://127.0.0.1:' + userPort + '/v1');
 
     // 1. Engine & Dedicated User Port Status
     const statusDot = h('span', { class: 'dot' });
     const statusText = h('span', { class: 'mut s' }, 'Проверка сервера...');
 
-    const aiStatus = O.native.getLocalAiServerStatus() || {};
-
-    const pingEngine = async () => {
-      try {
-        const u = curUrl.replace(/\/+$/, '') + '/health';
-        const res = await fetch(u, { method: 'GET', headers: { Accept: 'application/json' } });
-        if (res.ok) {
-          statusDot.className = 'dot ok';
-          statusText.textContent = 'Сервер активен (порт ' + userPort + ')';
-        } else {
-          statusDot.className = 'dot warn';
-          statusText.textContent = 'Сервер отвечает HTTP ' + res.status;
-        }
-      } catch (_) {
-        if (aiStatus.running) {
-          statusDot.className = 'dot ok';
-          statusText.textContent = 'Процесс запущен на порту ' + userPort;
-        } else {
-          statusDot.className = 'dot';
-          statusText.textContent = 'Сервер спит (поднимается автоматически)';
-        }
+    const checkStatus = () => {
+      const aiStatus = O.native.getLocalAiServerStatus() || {};
+      if (aiStatus.running) {
+        statusDot.className = 'dot ok';
+        statusText.textContent = 'Сервер активен (порт ' + userPort + ')';
+      } else {
+        statusDot.className = 'dot';
+        statusText.textContent = 'Сервер спит (запускается автоматически)';
       }
     };
-    pingEngine();
+    checkStatus();
 
     const engineCard = h('div', { class: 'group-card', style: { padding: '14px 16px', marginBottom: '14px' } },
       h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } },
@@ -240,7 +227,7 @@ O.openLocalModels = (parentSheet) => {
       const downInfo = downMap.get(m.file.toLowerCase());
       const curDl = dlState[m.id];
       const isDl = curDl && curDl.status === 'downloading';
-      const isActive = S.model && S.model.providerID === 'ollama' && S.model.modelID === m.id;
+      const isActive = S.model && (S.model.providerID === 'local' || S.model.providerID === 'ollama') && S.model.modelID === m.id;
 
       const card = h('div', { class: 'model-card-item' });
 

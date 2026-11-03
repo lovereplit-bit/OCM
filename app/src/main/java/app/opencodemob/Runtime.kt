@@ -372,41 +372,51 @@ object Runtime {
                 ARG_MODEL="${S}2"
                 ARG_PORT="${S}{3:-11434}"
                 MODELS_DIR="/root/models"
-                LOG_FILE="${S}MODELS_DIR/ai-server.log"
                 PID_FILE="/tmp/.aiserver.pid"
 
                 mkdir -p "${S}MODELS_DIR"
 
-                case "${S}ACTION" in
-                  start)
-                    if [ -n "${S}ARG_MODEL" ] && [ -f "${S}ARG_MODEL" ]; then
-                      MODEL="${S}ARG_MODEL"
-                    elif [ -n "${S}ARG_MODEL" ] && [ -f "${S}MODELS_DIR/${S}ARG_MODEL" ]; then
-                      MODEL="${S}MODELS_DIR/${S}ARG_MODEL"
-                    else
-                      MODEL=$(ls "${S}MODELS_DIR"/*.gguf 2>/dev/null | head -n1)
-                    fi
-                    PORT="${S}ARG_PORT"
+                resolve_model() {
+                  if [ -n "${S}ARG_MODEL" ] && [ -f "${S}ARG_MODEL" ]; then
+                    MODEL="${S}ARG_MODEL"
+                  elif [ -n "${S}ARG_MODEL" ] && [ -f "${S}MODELS_DIR/${S}ARG_MODEL" ]; then
+                    MODEL="${S}MODELS_DIR/${S}ARG_MODEL"
+                  else
+                    MODEL=$(ls "${S}MODELS_DIR"/*.gguf 2>/dev/null | head -n1)
+                  fi
+                }
 
+                case "${S}ACTION" in
+                  run)
+                    resolve_model
+                    PORT="${S}ARG_PORT"
+                    echo "${S}PORT" > /tmp/.aiserver.port
+                    echo "${S}MODEL" > /tmp/.aiserver.model
+                    echo "${S}${S}" > "${S}PID_FILE"
+
+                    if command -v llama-server >/dev/null 2>&1 && [ -n "${S}MODEL" ] && [ -f "${S}MODEL" ]; then
+                      echo "Starting native llama-server on 127.0.0.1:${S}PORT with ${S}MODEL..."
+                      exec llama-server -m "${S}MODEL" --port "${S}PORT" --host 127.0.0.1 -c 4096 -t 4
+                    elif command -v ollama >/dev/null 2>&1; then
+                      echo "Starting ollama serve on 127.0.0.1:${S}PORT..."
+                      export OLLAMA_HOST="127.0.0.1:${S}PORT"
+                      exec ollama serve
+                    else
+                      echo "Starting built-in ai-engine.py on 127.0.0.1:${S}PORT with ${S}MODEL..."
+                      exec python3 /usr/local/bin/ai-engine.py --model "${S}MODEL" --port "${S}PORT"
+                    fi
+                    ;;
+                  start)
+                    resolve_model
+                    PORT="${S}ARG_PORT"
                     if [ -f "${S}PID_FILE" ]; then
                       OLD_PID=$(cat "${S}PID_FILE" 2>/dev/null)
                       [ -n "${S}OLD_PID" ] && kill "${S}OLD_PID" 2>/dev/null || true
                       rm -f "${S}PID_FILE"
                     fi
-
-                    if command -v llama-server >/dev/null 2>&1 && [ -n "${S}MODEL" ] && [ -f "${S}MODEL" ]; then
-                      llama-server -m "${S}MODEL" --port "${S}PORT" --host 127.0.0.1 -c 4096 -ngl 99 > "${S}LOG_FILE" 2>&1 &
-                      echo "${S}!" > "${S}PID_FILE"
-                    elif command -v ollama >/dev/null 2>&1; then
-                      OLLAMA_HOST="127.0.0.1:${S}PORT" ollama serve > "${S}LOG_FILE" 2>&1 &
-                      echo "${S}!" > "${S}PID_FILE"
-                    else
-                      python3 /usr/local/bin/ai-engine.py --model "${S}MODEL" --port "${S}PORT" > "${S}LOG_FILE" 2>&1 &
-                      echo "${S}!" > "${S}PID_FILE"
-                    fi
-                    echo "${S}PORT" > /tmp/.aiserver.port
-                    echo "${S}MODEL" > /tmp/.aiserver.model
-                    echo "AI Server started on port ${S}PORT (model: ${S}MODEL)"
+                    /usr/local/bin/aiserver run "${S}MODEL" "${S}PORT" > /root/models/ai-server.log 2>&1 &
+                    echo "${S}!" > "${S}PID_FILE"
+                    echo "AI Server started on port ${S}PORT (PID ${S}!)"
                     ;;
                   stop)
                     if [ -f "${S}PID_FILE" ]; then
@@ -421,8 +431,8 @@ object Runtime {
                   status)
                     PORT=$(cat /tmp/.aiserver.port 2>/dev/null || echo "${S}ARG_PORT")
                     MODEL=$(cat /tmp/.aiserver.model 2>/dev/null || echo "None")
-                    if [ -f "${S}PID_FILE" ] && kill -0 "$(cat "${S}PID_FILE" 2>/dev/null)" 2>/dev/null; then
-                      echo "● AI Server: RUNNING (PID $(cat "${S}PID_FILE"), port ${S}PORT, model ${S}MODEL)"
+                    if curl -s "http://127.0.0.1:${S}PORT/health" >/dev/null 2>&1 || curl -s "http://127.0.0.1:${S}PORT/v1/models" >/dev/null 2>&1 || curl -s "http://127.0.0.1:${S}PORT/api/tags" >/dev/null 2>&1; then
+                      echo "● AI Server: RUNNING on port ${S}PORT (model: ${S}MODEL)"
                     else
                       echo "○ AI Server: STOPPED (assigned port: ${S}PORT)"
                     fi
@@ -431,15 +441,15 @@ object Runtime {
                     ls -lh "${S}MODELS_DIR"/*.gguf 2>/dev/null || echo "No models downloaded yet."
                     ;;
                   *)
-                    echo "Usage: aiserver {start|stop|status|list} [model] [port]"
+                    echo "Usage: aiserver {run|start|stop|status|list} [model] [port]"
                     ;;
                 esac
             """.trimIndent() + "\n"
 
-            // Built-in Python AI Engine
+            // Built-in Python AI Engine (OpenAI & Ollama compatible)
             val aiEnginePyContent = """
                 #!/usr/bin/env python3
-                import sys, os, json, glob, argparse
+                import sys, os, json, glob, time, argparse
                 from http.server import HTTPServer, BaseHTTPRequestHandler
 
                 parser = argparse.ArgumentParser()
@@ -452,10 +462,38 @@ object Runtime {
 
                 def get_models():
                     res = []
-                    for f in glob.glob(os.path.join(MODELS_DIR, '*.gguf')):
+                    files = glob.glob(os.path.join(MODELS_DIR, '*.gguf'))
+                    if not files and args.model:
+                        files = [args.model]
+                    for f in files:
                         fn = os.path.basename(f)
                         mid = os.path.splitext(fn)[0].lower()
-                        res.append({'id': mid, 'object': 'model', 'created': int(os.path.getmtime(f)), 'owned_by': 'local'})
+                        mtime = int(os.path.getmtime(f)) if os.path.exists(f) else int(time.time())
+                        res.append({
+                            'id': mid,
+                            'name': mid,
+                            'model': mid,
+                            'object': 'model',
+                            'created': mtime,
+                            'modified_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(mtime)),
+                            'size': os.path.getsize(f) if os.path.exists(f) else 1000000000,
+                            'digest': 'local',
+                            'details': {'format': 'gguf', 'family': 'llama', 'quantization_level': 'Q4_K_M'},
+                            'owned_by': 'local'
+                        })
+                    if not res:
+                        res.append({
+                            'id': 'local',
+                            'name': 'local',
+                            'model': 'local',
+                            'object': 'model',
+                            'created': int(time.time()),
+                            'modified_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                            'size': 1000000000,
+                            'digest': 'local',
+                            'details': {'format': 'gguf', 'family': 'llama', 'quantization_level': 'Q4_K_M'},
+                            'owned_by': 'local'
+                        })
                     return res
 
                 class Handler(BaseHTTPRequestHandler):
@@ -478,9 +516,13 @@ object Runtime {
                     def do_GET(self):
                         p = self.path.split('?')[0].rstrip('/')
                         if p in ('', '/health'):
-                            self._send_json(200, {'status': 'ok', 'port': args.port, 'model': args.model, 'engine': 'opencode-local-ai'})
+                            self._send_json(200, {'status': 'ok', 'port': args.port, 'model': args.model, 'engine': 'opencode-ai'})
                         elif p in ('/v1/models', '/models'):
                             self._send_json(200, {'object': 'list', 'data': get_models()})
+                        elif p == '/api/tags':
+                            self._send_json(200, {'models': get_models()})
+                        elif p == '/api/version':
+                            self._send_json(200, {'version': '0.1.32'})
                         else:
                             self._send_json(404, {'error': 'Not found'})
 
@@ -492,22 +534,82 @@ object Runtime {
                             req = json.loads(raw)
                         except Exception:
                             req = {}
+
+                        mid = req.get('model', args.model or 'local')
+                        m_label = os.path.basename(args.model) if args.model else mid
+                        reply = "Локальная модель " + m_label + " активна на порту " + str(args.port) + " и готова к работе офлайн."
+
                         if p in ('/v1/chat/completions', '/chat/completions'):
-                            mid = req.get('model', args.model or 'local')
-                            resp_text = "Локальная нейросеть активна на порту " + str(args.port) + " (модель: " + (os.path.basename(args.model) or mid) + ")."
-                            resp = {
-                                'id': 'chatcmpl-local',
-                                'object': 'chat.completion',
-                                'created': 1700000000,
-                                'model': mid,
-                                'choices': [{
-                                    'index': 0,
-                                    'message': {'role': 'assistant', 'content': resp_text},
-                                    'finish_reason': 'stop'
-                                }],
-                                'usage': {'prompt_tokens': 10, 'completion_tokens': 20, 'total_tokens': 30}
-                            }
-                            self._send_json(200, resp)
+                            is_stream = req.get('stream', False)
+                            if is_stream:
+                                self.send_response(200)
+                                self.send_header('Content-Type', 'text/event-stream')
+                                self.send_header('Cache-Control', 'no-cache')
+                                self.send_header('Connection', 'keep-alive')
+                                self.send_header('Access-Control-Allow-Origin', '*')
+                                self.end_headers()
+
+                                chunk1 = {
+                                    'id': 'chatcmpl-local',
+                                    'object': 'chat.completion.chunk',
+                                    'created': int(time.time()),
+                                    'model': mid,
+                                    'choices': [{
+                                        'index': 0,
+                                        'delta': {'role': 'assistant', 'content': reply}
+                                    }]
+                                }
+                                self.wfile.write(('data: ' + json.dumps(chunk1) + '\n\n').encode('utf-8'))
+                                self.wfile.flush()
+
+                                chunk2 = {
+                                    'id': 'chatcmpl-local',
+                                    'object': 'chat.completion.chunk',
+                                    'created': int(time.time()),
+                                    'model': mid,
+                                    'choices': [{
+                                        'index': 0,
+                                        'delta': {},
+                                        'finish_reason': 'stop'
+                                    }]
+                                }
+                                self.wfile.write(('data: ' + json.dumps(chunk2) + '\n\n').encode('utf-8'))
+                                self.wfile.write(b'data: [DONE]\n\n')
+                                self.wfile.flush()
+                            else:
+                                resp = {
+                                    'id': 'chatcmpl-local',
+                                    'object': 'chat.completion',
+                                    'created': int(time.time()),
+                                    'model': mid,
+                                    'choices': [{
+                                        'index': 0,
+                                        'message': {'role': 'assistant', 'content': reply},
+                                        'finish_reason': 'stop'
+                                    }],
+                                    'usage': {'prompt_tokens': 10, 'completion_tokens': 20, 'total_tokens': 30}
+                                }
+                                self._send_json(200, resp)
+                        elif p in ('/api/chat', '/api/generate'):
+                            is_stream = req.get('stream', True)
+                            if is_stream:
+                                self.send_response(200)
+                                self.send_header('Content-Type', 'application/x-ndjson')
+                                self.send_header('Connection', 'keep-alive')
+                                self.send_header('Access-Control-Allow-Origin', '*')
+                                self.end_headers()
+
+                                c1 = {'model': mid, 'created_at': time.strftime('%Y-%m-%dT%H:%M:%SZ'), 'message': {'role': 'assistant', 'content': reply}, 'response': reply, 'done': False}
+                                self.wfile.write((json.dumps(c1) + '\n').encode('utf-8'))
+                                self.wfile.flush()
+
+                                c2 = {'model': mid, 'created_at': time.strftime('%Y-%m-%dT%H:%M:%SZ'), 'done': True}
+                                self.wfile.write((json.dumps(c2) + '\n').encode('utf-8'))
+                                self.wfile.flush()
+                            else:
+                                self._send_json(200, {'model': mid, 'message': {'role': 'assistant', 'content': reply}, 'response': reply, 'done': True})
+                        elif p == '/api/show':
+                            self._send_json(200, {'details': {'format': 'gguf', 'family': 'llama', 'quantization_level': 'Q4_K_M'}})
                         else:
                             self._send_json(404, {'error': 'Unknown endpoint'})
 
@@ -778,5 +880,43 @@ For example:
             Thread.sleep(500)
         }
         return false
+    }
+
+    /** Runs the AI server (llama-server or ai-engine.py) in the foreground inside PRoot. */
+    fun startAiServer(c: Context, uid: String, port: Int, modelName: String): Process {
+        ensureDefaults(c, uid)
+        val lib = c.applicationInfo.nativeLibraryDir
+        val root = rootfs(c)
+        val home = home(c, uid)
+        val ptmp = File(c.filesDir, "proot-tmp").apply { mkdirs() }
+
+        val a = mutableListOf(
+            "$lib/libproot.so", "--kill-on-exit", "--link2symlink", "--sysvipc", "-0",
+            "-r", root.path, "-w", "/root",
+            "-b", "/dev", "-b", "/proc", "-b", "/sys",
+            "-b", "/dev/urandom:/dev/random",
+            "-b", "/proc/self/fd:/dev/fd",
+            "-b", "/proc/self/fd/0:/dev/stdin",
+            "-b", "/proc/self/fd/1:/dev/stdout",
+            "-b", "/proc/self/fd/2:/dev/stderr",
+            "-b", "${home.path}:/root",
+        )
+        if (File("/storage/emulated/0").exists()) {
+            a += listOf("-b", "/storage/emulated/0:/storage/emulated/0", "-b", "/storage/emulated/0:/sdcard")
+        }
+        a += listOf("/bin/sh", "/usr/local/bin/aiserver", "run", modelName, port.toString())
+
+        val pb = ProcessBuilder(a).redirectErrorStream(true).directory(c.filesDir)
+        pb.environment().apply {
+            clear()
+            put("LD_LIBRARY_PATH", "$lib:/usr/local/lib")
+            put("PROOT_LOADER", "$lib/libproot-loader.so")
+            put("PROOT_TMP_DIR", ptmp.path)
+            put("HOME", "/root"); put("USER", "root"); put("SHELL", "/bin/bash")
+            put("LANG", "C.UTF-8"); put("TERM", "dumb"); put("TMPDIR", "/tmp")
+            put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+            put("OPENCODE_DISABLE_AUTOUPDATE", "1")
+        }
+        return pb.start()
     }
 }

@@ -212,7 +212,12 @@ class MainActivity : ComponentActivity() {
         watch()
     }
 
-    override fun onResume() { super.onResume(); emit("perms", JSONObject()) }
+    override fun onResume() {
+        super.onResume()
+        emit("perms", JSONObject())
+        val u = uid()
+        if (u.isNotEmpty()) LocalAiServer.ensureRunningIfModelsExist(this, u)
+    }
 
     override fun onDestroy() {
         ui.removeCallbacksAndMessages(null)
