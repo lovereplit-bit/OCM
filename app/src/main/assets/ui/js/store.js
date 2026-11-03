@@ -166,7 +166,7 @@ O.pickDefaults=()=>{
   }
   S.model=m||null;
   const v=O.store.get('variant.'+(m?m.providerID+'/'+m.modelID:''));S.variant=v&&m&&O.modelInfo(m.providerID,m.modelID)&&O.modelInfo(m.providerID,m.modelID).variants&&O.modelInfo(m.providerID,m.modelID).variants[v]?v:null};
-O.setModel=(pid,mid)=>{O.injectLocalProvider();S.model={providerID:pid,modelID:mid};O.store.set('model.'+S.agent,S.model);O.pickDefaults();bus.emit('meta')};
+O.setModel=(pid,mid)=>{S.model={providerID:pid,modelID:mid};O.store.set('model.'+S.agent,S.model);O.pickDefaults();bus.emit('meta')};
 O.setAgent=n=>{S.agent=n;O.pickDefaults();bus.emit('meta')};
 O.setVariant=v=>{S.variant=v;if(S.model)O.store.set('variant.'+S.model.providerID+'/'+S.model.modelID,v);bus.emit('meta')};
 

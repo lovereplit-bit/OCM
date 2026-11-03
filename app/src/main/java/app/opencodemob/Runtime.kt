@@ -303,6 +303,7 @@ object Runtime {
                     if (prov != null) {
                         prov.remove("local")
                         prov.remove("ollama")
+                        if (prov.length() == 0) obj.remove("provider")
                     }
                     f.writeText(obj.toString(2))
                 } catch (_: Exception) {
@@ -325,16 +326,22 @@ object Runtime {
             val cfg = File(home, ".config/opencode").apply { mkdirs() }
             val dotOpencode = File(home, ".opencode").apply { mkdirs() }
 
-            // Pre-seed offline models cache for OpenCode CLI
+            // Purge poisoned/empty models cache from previous builds
             val cacheDir = File(home, ".cache/opencode").apply { mkdirs() }
             val cacheModels = File(cacheDir, "models.json")
-            if (!cacheModels.exists()) {
-                val seed = org.json.JSONObject().apply {
-                    put("opencode", org.json.JSONObject().apply {
-                        put("id", "opencode"); put("name", "OpenCode"); put("env", org.json.JSONArray()); put("models", org.json.JSONObject())
-                    })
+            if (cacheModels.exists()) {
+                try {
+                    val txt = cacheModels.readText()
+                    if (txt.length < 50000 || txt.contains("\"models\": {}") || !txt.contains("\"anthropic\"")) {
+                        cacheModels.delete()
+                    }
+                } catch (_: Exception) {
+                    cacheModels.delete()
                 }
-                cacheModels.writeText(seed.toString(2))
+            }
+            val rootCacheModels = File(root, "root/.cache/opencode/models.json")
+            if (!cacheModels.exists() && rootCacheModels.exists()) {
+                try { rootCacheModels.copyTo(cacheModels, overwrite = true) } catch (_: Exception) {}
             }
 
             // Ensure tmp directories exist with proper access
@@ -598,12 +605,6 @@ For example:
             put("OPENCODE_DISABLE_PRUNE", "1")
             put("DISABLE_TELEMETRY", "1")
             put("DO_NOT_TRACK", "1")
-
-            val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
-            val isOnline = try { cm?.activeNetworkInfo?.isConnected == true } catch (_: Exception) { false }
-            if (!isOnline) {
-                put("OPENCODE_DISABLE_MODELS_FETCH", "1")
-            }
         }
         return pb.start()
     }

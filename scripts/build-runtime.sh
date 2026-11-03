@@ -83,6 +83,10 @@ docker run --platform linux/arm64 --name ocroot -v "$WORK/oc:/oc:ro" ubuntu:24.0
   cp /oc/version /etc/opencode-version
   /usr/local/bin/opencode --version || echo "WARN: smoke test failed under qemu (non-fatal)"
 
+  # Pre-seed official models registry in rootfs for instant offline boot
+  mkdir -p /root/.cache/opencode
+  curl -fsSL "https://models.opencode.ai/api.json" -o /root/.cache/opencode/models.json || true
+
   apt-get clean
   rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/* /var/cache/apt/*
 '
