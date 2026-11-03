@@ -490,7 +490,6 @@ const BUILTINS=[
  {n:'widgets',d:'Интерактивные виджеты HUD',i:'sliders',run:()=>O.openWidgetsModal()},
  {n:'preview',d:'Веб-предпросмотр проекта',i:'globe',run:arg=>O.openPreview(arg)},
  {n:'open',d:'Открыть приложение Android (например /open telegram)',i:'out',run:arg=>O.dispatchAction('open_app',arg)},
- {n:'tutorial',d:'Пройти обучение с Призраком',i:'ghost',run:()=>O.runTutorial(true)},
  {n:'connect',d:'Подключить провайдера (OpenCode Zen, OpenAI, ...)',i:'key',run:()=>O.openConnect()},
  {n:'init',d:'Создать или обновить AGENTS.md',i:'doc',run:()=>doInit()},
  {n:'undo',d:'Отменить последнее сообщение и его изменения файлов',i:'undo',run:()=>doUndo()},

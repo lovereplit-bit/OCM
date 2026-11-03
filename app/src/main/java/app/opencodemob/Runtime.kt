@@ -369,10 +369,8 @@ object Runtime {
             // Helper script: openpreview (In-App Web Preview Skill)
             val openpreviewContent = """
                 #!/bin/sh
-                TARGET="${S}{1:-index.html}"
-                echo "${S}TARGET" > /tmp/.openpreview 2>/dev/null || true
-                echo "${S}TARGET" > /root/.openpreview 2>/dev/null || true
-                echo "${S}TARGET" > "${S}HOME/.openpreview" 2>/dev/null || true
+                TARGET="${S}{1:-.}"
+                echo "${S}TARGET" > /tmp/.openpreview 2>/dev/null || echo "${S}TARGET" > "${S}HOME/.openpreview" 2>/dev/null || true
                 echo "Opening web preview for ${S}TARGET..."
             """.trimIndent() + "\n"
 
@@ -517,21 +515,21 @@ Whenever the user asks you to open, launch, or switch to an app (using ANY phras
    `openapp <app_name_or_package>`
    (Examples: `openapp telegram`, `openapp youtube`, `openapp chrome`, `openapp settings`, `openapp vk`, `openapp whatsapp`, `openapp camera`, `openapp calculator`, etc.)
 2. Inform the user in your response that the application is opening, and include an action button for convenience:
-   `<button data-action="open_app" data-target="<app_name>">📱 Открыть <app_name></button>`
+   `<button data-action="open_app" data-target="<app_name>">Открыть <app_name></button>`
 
 ## 3. Core Skill: In-App Web Project Preview
 You have the built-in skill to preview web projects (HTML, CSS, JavaScript, images) directly inside the OpenCode Mobile in-app previewer:
-- To launch the in-app preview from shell, execute: `openpreview <path>` (e.g. `openpreview index.html` or `openpreview site/index.html`)
-- Or include an interactive button in your response:
-  `<button data-action="preview" data-path="index.html">🌐 Предпросмотр</button>`
+- To launch the in-app preview from shell, execute: `openpreview <path>` (e.g. `openpreview .`, `openpreview index.html` or `openpreview site/index.html`)
+- Or include an interactive artifact button in your response:
+  `<button data-action="preview" data-path="index.html">Открыть сайт</button>` (or `Открыть игру` for games)
 
-## 4. Interactive HUD Widgets
-You can embed interactive HUD widgets and buttons in your markdown responses:
-- `<button data-action="new_chat">💬 Новый чат</button>`
-- `<button data-action="open_app" data-target="telegram">📱 Открыть Telegram</button>`
-- `<button data-action="preview" data-path="index.html">🌐 Предпросмотр</button>`
-- `<button data-action="files">📁 Открыть Файлы</button>`
-- `<button data-action="term">⌨️ Терминал</button>`
+## 4. Interactive Artifact Buttons
+You can embed interactive buttons in your markdown responses (the app renders clean artifact SVG icons for them):
+- `<button data-action="new_chat">Новый чат</button>`
+- `<button data-action="open_app" data-target="telegram">Открыть Telegram</button>`
+- `<button data-action="preview" data-path="index.html">Открыть сайт</button>`
+- `<button data-action="files">Открыть Файлы</button>`
+- `<button data-action="term">Терминал</button>`
 
 ## 5. Diff Statistics Reporting (MANDATORY)
 At the very end of EVERY response, you MUST output a separate line with line additions and deletions:

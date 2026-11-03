@@ -210,6 +210,21 @@ class MainActivity : ComponentActivity() {
             web.evaluateJavascript("(window.OCM&&OCM.back&&OCM.back())===true") { r -> if (r != "true") moveTaskToBack(true) }
         }
         watch()
+        handleWidgetIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleWidgetIntent(intent)
+    }
+
+    private fun handleWidgetIntent(intent: Intent?) {
+        val act = intent?.getStringExtra("widget_action") ?: return
+        val target = intent.getStringExtra("widget_target") ?: ""
+        ui.postDelayed({
+            emit("widget_action", JSONObject().put("action", act).put("target", target))
+        }, 500)
     }
 
     override fun onResume() {
@@ -567,7 +582,7 @@ class MainActivity : ComponentActivity() {
             for (f in prevFiles) {
                 if (f.exists()) {
                     val path = f.readText().trim()
-                    f.delete()
+                    prevFiles.forEach { runCatching { it.delete() } }
                     ui.post {
                         val url = prepareWebPreview(path)
                         emit("preview", JSONObject().put("path", path).put("url", url))
@@ -728,30 +743,31 @@ class MainActivity : ComponentActivity() {
             listFiles()?.forEach { it.deleteRecursively() }
         }
 
-        var baseDir = if (target.isDirectory) target else target.parentFile ?: target
-        var entryName = if (target.isFile) target.name else "index.html"
+        var actualTarget = target
+        val rootDir = Runtime.hostPath(this, u, "/root")
 
-        if (baseDir.exists() && baseDir.isDirectory) {
-            // Find existing html entry if target was a folder
-            if (target.isDirectory) {
-                val hasIndex = File(baseDir, "index.html").exists()
-                if (!hasIndex) {
-                    val subdirs = listOf("site", "public", "dist", "web", "app", "www", "build")
-                    val foundSub = subdirs.map { File(baseDir, "$it/index.html") }.firstOrNull { it.exists() }
-                    if (foundSub != null) {
-                        baseDir = foundSub.parentFile ?: baseDir
-                        entryName = foundSub.name
-                    } else {
-                        val anyHtml = baseDir.walkTopDown().maxDepth(3).firstOrNull { f ->
-                            f.isFile && (f.extension.equals("html", true) || f.extension.equals("htm", true))
-                        }
-                        if (anyHtml != null) {
-                            baseDir = anyHtml.parentFile ?: baseDir
-                            entryName = anyHtml.name
-                        }
+        // Auto-discover existing HTML if target does not exist or is a directory without index.html
+        val needsDiscovery = (!actualTarget.exists()) || (actualTarget.isDirectory && !File(actualTarget, "index.html").exists())
+        if (needsDiscovery) {
+            val searchDir = if (actualTarget.isDirectory && actualTarget.exists()) actualTarget
+                else actualTarget.parentFile?.takeIf { it.exists() && it.isDirectory } ?: rootDir
+            if (searchDir.exists() && searchDir.isDirectory) {
+                val candidateHtml = searchDir.walkTopDown().maxDepth(4)
+                    .filter { f ->
+                        f.isFile && (f.extension.equals("html", true) || f.extension.equals("htm", true))
+                            && !f.path.contains("/.")
                     }
+                    .maxByOrNull { it.lastModified() }
+                if (candidateHtml != null) {
+                    actualTarget = candidateHtml
                 }
             }
+        }
+
+        var baseDir = if (actualTarget.isDirectory) actualTarget else actualTarget.parentFile ?: actualTarget
+        var entryName = if (actualTarget.isFile) actualTarget.name else "index.html"
+
+        if (baseDir.exists() && baseDir.isDirectory) {
 
             // Copy web files
             baseDir.walkTopDown().maxDepth(4).forEach { f ->

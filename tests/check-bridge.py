@@ -46,6 +46,7 @@ for f in sorted(os.listdir(UI)):
 
 # 4. quick brace balance on Kotlin files (syntax accidents)
 for f in sorted(os.listdir(os.path.dirname(KT))):
+    if not f.endswith('.kt'): continue
     src = open(os.path.join(os.path.dirname(KT), f), encoding='utf-8').read()
     if src.count('{') != src.count('}'):
         fail.append(f'{f}: unbalanced braces {{ {src.count("{")} }} {src.count("}")}')

@@ -14,9 +14,8 @@ function build(){
   const BOLT_SVG='<svg viewBox="0 0 24 24" width="13" height="13" fill="#71717a" style="display:inline-block;vertical-align:middle;margin-right:3px;"><path d="M13 2L3 14h7v8l11-13h-8l1-7z"/></svg>';
   T.tokensVal=h('span',{class:'top-tokens-val'},'0 tok');
   T.tokens=h('button',{class:'top-tokens-btn',style:{display:'none'},title:O.tr('Session Tokens / Context','Токены сессии / Контекст'),onclick:()=>O.openTokensModal()},h('span',{class:'tok-bolt',html:BOLT_SVG}),T.tokensVal);
-  const topLeft=h('div',{class:'top-left-box'},T.menu,T.tokens);
-  T.ghost=h('button',{class:'top-ghost-btn',onclick:()=>{if(O.spawnBats)O.spawnBats();O.openGhost()}},O.icon('ghost'));
-  const top=h('div',{id:'top'},topLeft,T.ghost);
+  T.status=h('button',{class:'top-status-btn',title:O.tr('Server & MCP Status','Статус сервера и MCP'),onclick:()=>O.openStatus()},O.icon('sliders'));
+  const top=h('div',{id:'top'},topLeft,T.status);
 
   T.banner=h('div',{id:'banner',class:'hide'});
 
@@ -149,10 +148,10 @@ function updateTop(){
     const pct=tok.pct!=null?(' · '+tok.pct+'%'):'';
     T.tokensVal.textContent=txt+pct;
   }
-  // Ghost icon status dot/indicator if MCP needs attention
+  // Status icon dot/indicator if MCP needs attention
   const v=Object.values(S.mcp||{});
   const hasErr=v.some(x=>x.status==='failed'||x.status==='needs_auth');
-  if(T.ghost)T.ghost.classList.toggle('active',hasErr);
+  if(T.status)T.status.classList.toggle('active',hasErr);
 }
 
 function updateBanner(){
@@ -170,51 +169,6 @@ async function refreshStatus(){
   }catch{}
 }
 
-// Ghost mascot sheet with Core & MCP status
-O.openGhost=()=>{
-  const v=Object.values(S.mcp||{});
-  const connected=v.filter(x=>x.status==='connected').length;
-  const s=O.sheet(O.tr('OpenCode Assistant','Ассистент OpenCode'),h('div',null,
-    h('div',{class:'settings-card'},
-      h('div',{class:'settings-row'},
-        h('div',{class:'settings-row-icon purple'},O.icon('ghost')),
-        h('div',{class:'settings-row-text'},
-          h('b',null,'OpenCode Mobile v2.0.1'),
-          h('span',null,S.up?(O.tr('Core Active · Linux ARM64 · 120Hz ⚡','Ядро активно · Linux ARM64 · 120Hz ⚡')):(O.tr('Connecting...','Подключение...'))))),
-      h('div',{class:'settings-row',onclick:()=>{s.close();O.openWidgetsModal()}},
-        h('div',{class:'settings-row-icon amber'},O.icon('sliders')),
-        h('div',{class:'settings-row-text'},
-          h('b',null,O.tr('HUD Widgets & Soundboard','Интерактивные виджеты и звуки')),
-          h('span',null,O.tr('3 detailed widgets + custom actions','3 детализированных виджета + действия'))),
-        O.icon('chevR')),
-      h('div',{class:'settings-row',onclick:()=>{s.close();O.openPreview()}},
-        h('div',{class:'settings-row-icon blue'},O.icon('globe')),
-        h('div',{class:'settings-row-text'},
-          h('b',null,O.tr('In-App Web Preview','Веб-Предпросмотр сайтов')),
-          h('span',null,O.tr('Preview HTML, CSS, JS, images inside app','Просмотр сайтов и проектов в приложении'))),
-        O.icon('chevR')),
-      h('div',{class:'settings-row',onclick:()=>{s.close();if(O.runTutorial)O.runTutorial(true)}},
-        h('div',{class:'settings-row-icon green'},O.icon('bulb')),
-        h('div',{class:'settings-row-text'},
-          h('b',null,O.tr('Ghost RPG Cutscene Tutorial','Обучение от Призрака')),
-          h('span',null,O.tr('Play interactive story cutscene','Пройти обучение с анимациями заново'))),
-        O.icon('chevR')),
-      h('div',{class:'settings-row',onclick:()=>{s.close();O.openStatus()}},
-        h('div',{class:'settings-row-icon green'},O.icon('server')),
-        h('div',{class:'settings-row-text'},
-          h('b',null,O.tr('MCP & Tools Status','Статус MCP и инструментов')),
-          h('span',null,connected+' '+O.tr('servers active','серверов активно'))),
-        O.icon('chevR')),
-      h('div',{class:'settings-row',onclick:()=>{s.close();O.openSettings()}},
-        h('div',{class:'settings-row-icon blue'},O.icon('sliders')),
-        h('div',{class:'settings-row-text'},
-          h('b',null,O.tr('Settings','Настройки')),
-          h('span',null,O.tr('Models, Appearance, Rules & More','Модели, вид, правила и другое'))),
-        O.icon('chevR'))
-    )
-  ));
-};
-
 O.enter=async opt=>{
   build();
   O.saveOpts();
@@ -228,9 +182,6 @@ O.enter=async opt=>{
   updateTop();
   refreshStatus();
   O.iconsReady.then(()=>{O.refreshFiles(false)});
-  setTimeout(()=>{
-    if(O.runTutorial)O.runTutorial(false);
-  },800);
 };
 
 O.reconnect=async()=>{

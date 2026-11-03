@@ -48,10 +48,6 @@ O.dispatchAction=async function(act,target,data){
         O.toast(O.tr('Cache cleared successfully','Кэш успешно очищен'),1500);
       }catch(e){O.toast(e.message)}
       break;
-    case'bats':
-      if(O.spawnBats)O.spawnBats();
-      O.toast('🦇 🦇 🦇 Бу!',1200);
-      break;
     case'sound_done':
       if(window.OC&&OC.testSound)OC.testSound('done');
       break;
@@ -61,8 +57,12 @@ O.dispatchAction=async function(act,target,data){
     case'sound_quota':
       if(window.OC&&OC.testSound)OC.testSound('quota');
       break;
-    case'tutorial':
-      if(O.runTutorial)O.runTutorial(true);
+    case'focus_composer':
+      O.setTab('chat');
+      setTimeout(()=>{
+        const ta=document.querySelector('#composer textarea');
+        if(ta){ta.focus();if(t){ta.value=t;ta.dispatchEvent(new Event('input'))}}
+      },100);
       break;
     case'open_settings':
       O.openSettings();
@@ -187,7 +187,11 @@ O.openPreview=function(relPath){
 
   const frameWrap=h('div',{class:'web-preview-frame-wrap mobile-mode'},frame);
   const container=h('div',{class:'web-preview-container'},bar,frameWrap);
+  if(O._activePreviewSheet&&O._activePreviewSheet.root&&O._activePreviewSheet.root.isConnected){
+    try{O._activePreviewSheet.close()}catch(_){}
+  }
   const s=O.sheet(O.tr('Project Web Preview','Предпросмотр проекта'),container,{full:true});
+  O._activePreviewSheet=s;
 };
 
 // 3 Built-in Detailed Widgets
@@ -215,22 +219,20 @@ O.getBuiltinWidgets=function(){
       h('button',{class:'quick-tile',onclick:()=>O.dispatchAction('preview')},
         h('div',{class:'tile-icon amber'},O.icon('globe')),h('b',null,'Веб-Превью'),h('span',null,'Запуск сайта в приложении'))));
 
-  // Widget 3: Halloween Spooky Soundboard & Guide
+  // Widget 3: Audio chimes & notifications
   const magicBody=h('div',{class:'ocm-widget-body'},
     h('div',{class:'widget-sound-grid'},
-      h('button',{class:'btn-sound-card',onclick:()=>O.dispatchAction('bats')},
-        h('span',{style:{fontSize:'20px'}},'🦇'),h('b',null,'Стая мышей'),h('span',null,'Хэллоуин-эффект')),
       h('button',{class:'btn-sound-card',onclick:()=>O.dispatchAction('sound_done')},
         h('span',{style:{fontSize:'20px'}},'🔔'),h('b',null,'Чайм финиша'),h('span',null,'Звук E5→A5→E6')),
       h('button',{class:'btn-sound-card',onclick:()=>O.dispatchAction('sound_action')},
-        h('span',{style:{fontSize:'20px'}},'⚠️'),h('b',null,'Чайм вопроса'),h('span',null,'Звук G5→C6')),
-      h('button',{class:'btn-sound-card',onclick:()=>O.dispatchAction('tutorial')},
-        h('span',{style:{fontSize:'20px'}},'👻'),h('b',null,'Гид Призрак'),h('span',null,'Катсцена обучения'))));
+        h('span',{style:{fontSize:'20px'}},'⚡'),h('b',null,'Чайм вопроса'),h('span',null,'Звук G5→C6')),
+      h('button',{class:'btn-sound-card',onclick:()=>O.dispatchAction('sound_quota')},
+        h('span',{style:{fontSize:'20px'}},'ℹ️'),h('b',null,'Чайм квоты'),h('span',null,'Звук G4→Eb4'))));
 
   return [
     {id:'sys_hud',title:'Системный HUD',icon:'cpu',body:sysBody},
     {id:'quick_launch',title:'Быстрый запуск разработчика',icon:'sliders',body:launchBody},
-    {id:'halloween_magic',title:'Магия Хэллоуина & Звуки',icon:'ghost',body:magicBody}
+    {id:'audio_feedback',title:'Звуковые оповещения',icon:'bell',body:magicBody}
   ];
 };
 
@@ -284,8 +286,9 @@ O.initCustomWidgets=function(root){
   if(!root)return;
   const elements=root.querySelectorAll('[data-action]');
   elements.forEach(btn=>{
-    if(btn._bound)return;
+    if(btn._bound||btn.dataset.bound)return;
     btn._bound=true;
+    btn.dataset.bound='1';
     btn.addEventListener('click',e=>{
       e.preventDefault();
       e.stopPropagation();
@@ -300,6 +303,11 @@ O.initCustomWidgets=function(root){
 O.on('preview', d => {
   if (d && d.path) O.openPreview(d.path);
   else O.openPreview();
+});
+
+// Listen to native widget actions (e.g. from Android Home Screen widgets)
+O.on('widget_action', d => {
+  if (d && d.action) O.dispatchAction(d.action, d.target, d);
 });
 
 })();

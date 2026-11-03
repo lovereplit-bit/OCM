@@ -11,23 +11,59 @@ O.enhance=el=>{
 
   // Connect interactive buttons created in markdown
   el.querySelectorAll('button[data-action]').forEach(btn=>{
-    if(btn.dataset.e)return;btn.dataset.e='1';
+    if(btn._bound||btn.dataset.bound)return;
+    btn._bound=true;
+    btn.dataset.bound='1';
     btn.className='btn-widget-action inline-action-btn';
+
+    // Format button text with SVG artifact icon and clean label (remove any raw emojis)
+    const rawText=btn.textContent.trim();
+    const cleanText=rawText.replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\s]+/u,'').trim();
+    const act=btn.dataset.action;
+    const target=btn.dataset.path||btn.dataset.target||'';
+
+    let iconName='cube';
+    let defaultTitle='Открыть сайт';
+    if(act==='open_app'){
+      iconName='out';
+      defaultTitle='Открыть '+target;
+    }else if(act==='open_term'||act==='term'){
+      iconName='terminal';
+      defaultTitle='Терминал';
+    }else if(act==='open_files'||act==='files'){
+      iconName='folder';
+      defaultTitle='Файлы';
+    }else if(act==='preview'||act==='web_preview'){
+      if(target.toLowerCase().includes('game')||target.toLowerCase().includes('3d')||rawText.includes('игр')){
+        iconName='cube';
+        defaultTitle='Открыть игру';
+      }else{
+        iconName='cube';
+        defaultTitle='Открыть сайт';
+      }
+    }
+
+    btn.innerHTML='';
+    btn.append(O.icon(iconName), document.createTextNode(' '+(cleanText||defaultTitle)));
+
     btn.addEventListener('click',e=>{
       e.preventDefault();
-      O.dispatchAction(btn.dataset.action, btn.dataset.path||btn.dataset.target);
+      e.stopPropagation();
+      O.dispatchAction(act, target);
     });
   });
 
   // Connect custom action tags created by agent: <openapp target="..."> or <openapp>...</openapp>
   el.querySelectorAll('openapp, action[type="open_app"]').forEach(tag=>{
-    if(tag.dataset.e)return;tag.dataset.e='1';
+    if(tag.dataset.bound)return;tag.dataset.bound='1';
     const target=tag.getAttribute('target')||tag.textContent.trim();
     if(target){
       const btn=h('button',{
         class:'btn-widget-action inline-action-btn',
-        onclick:e=>{e.preventDefault();O.dispatchAction('open_app',target)}
-      },O.icon('out'),'📱 Открыть '+target);
+        onclick:e=>{e.preventDefault();e.stopPropagation();O.dispatchAction('open_app',target)}
+      },O.icon('out'),' Открыть '+target);
+      btn._bound=true;
+      btn.dataset.bound='1';
       tag.replaceWith(btn);
     }
   });
@@ -37,10 +73,10 @@ O.enhance=el=>{
     const txt=c.textContent.trim();
     if(/\b(?:site\/index\.html|\/root\/.*\.html|[a-zA-Z0-9_.-]+\.html)\b/i.test(txt)){
       if(c.nextElementSibling&&c.nextElementSibling.classList.contains('inline-preview-chip'))return;
-      const chip=h('button',{class:'inline-preview-chip',title:'Открыть предпросмотр в приложении',onclick:e=>{
+      const chip=h('button',{class:'inline-preview-chip',title:O.tr('Open in-app preview','Открыть в приложении'),onclick:e=>{
         e.preventDefault();e.stopPropagation();
         O.openPreview(txt);
-      }},'🌐 Предпросмотр');
+      }},O.icon('cube'),' Открыть сайт');
       c.after(chip);
     }
   });

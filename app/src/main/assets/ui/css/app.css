@@ -368,7 +368,7 @@ a:hover {
   background: var(--bg3);
 }
 
-.top-ghost-btn {
+.top-status-btn {
   width: 40px;
   height: 40px;
   display: inline-grid;
@@ -377,19 +377,37 @@ a:hover {
   border-radius: 12px;
   transition: color 0.15s;
 }
-.top-ghost-btn:active, .top-ghost-btn.active {
+.top-status-btn:active, .top-status-btn.active {
   color: var(--fg);
   background: var(--bg3);
   transform: scale(0.92);
 }
 
 #banner {
-  background: var(--card);
-  color: var(--warn);
-  font-size: 12.5px;
-  padding: 6px 14px;
+  background: #18181b;
+  color: #a1a1aa;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px 16px;
   text-align: center;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid #27272a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  letter-spacing: -0.01em;
+}
+#banner::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #71717a;
+  box-shadow: 0 0 6px rgba(113, 113, 122, 0.4);
+}
+#banner.hide {
+  display: none !important;
 }
 
 #main {
@@ -2312,133 +2330,7 @@ a:hover {
   transform: scale(0.95);
 }
 
-/* ---- Ghost RPG Cutscene Tutorial (Sleek Dark Gray HUD) ---- */
-.tutorial-cutscene-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  background: radial-gradient(circle at 50% 30%, #1c1c22 0%, #0d0d0f 65%, #050507 100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 24px 20px env(safe-area-inset-bottom, 24px);
-  box-sizing: border-box;
-  animation: cutsceneFadeIn 0.35s ease-out;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", sans-serif;
-}
-@keyframes cutsceneFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.cutscene-ghost-wrap {
-  position: relative;
-  margin-bottom: 24px;
-  animation: ghostFloat 3.2s infinite ease-in-out;
-}
-@keyframes ghostFloat {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-16px) rotate(2deg); }
-}
-.cutscene-dialog-box {
-  width: 100%;
-  max-width: 520px;
-  background: rgba(20, 20, 24, 0.96);
-  backdrop-filter: blur(20px);
-  border: 1px solid #2e2e33;
-  border-radius: 18px;
-  padding: 20px;
-  box-sizing: border-box;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(255, 255, 255, 0.03);
-  position: relative;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", sans-serif;
-}
-.cutscene-dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.cutscene-char-name {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 14px;
-  font-weight: 700;
-  color: #f4f4f5;
-  letter-spacing: 0.5px;
-}
-.cutscene-char-badge {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: #27272a;
-  color: #d4d4d8;
-  border: 1px solid #3f3f46;
-}
-.cutscene-dialog-text {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 14.5px;
-  line-height: 1.6;
-  color: #e4e4e7;
-  min-height: 64px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.cutscene-dialog-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid #27272a;
-}
-.cutscene-step-dots {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.step-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #3f3f46;
-  transition: all 0.2s;
-}
-.step-dot.active {
-  width: 18px;
-  border-radius: 999px;
-  background: #f4f4f5;
-}
-.cutscene-btn-skip {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 12px;
-  color: #71717a;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-}
-.cutscene-btn-skip:active {
-  color: #e4e4e7;
-}
-.cutscene-btn-next {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 13px;
-  font-weight: 600;
-  color: #09090b;
-  background: #f4f4f5;
-  border: 1px solid #ffffff;
-  border-radius: 8px;
-  padding: 8px 16px;
-  cursor: pointer;
-  transition: all 0.12s;
-}
-.cutscene-btn-next:active {
-  background: #d4d4d8;
-  transform: scale(0.97);
-}
+
 
 /* ---- Modern Files Tree & Search ---- */
 .files-search-wrap {
