@@ -221,6 +221,7 @@ object ModelDownloader {
         try {
             val sh = File(modelsDir, "import-to-ollama.sh")
             if (!sh.exists()) {
+                val S = "$"
                 val script = "#!/bin/bash\n" +
                     "echo \"=== Импорт локальных моделей в Ollama ===\"\n" +
                     "if ! command -v ollama >/dev/null 2>&1; then\n" +
@@ -230,10 +231,10 @@ object ModelDownloader {
                     "fi\n" +
                     "cd /root/models || exit 1\n" +
                     "for mf in Modelfile.*; do\n" +
-                    "  [ -f \"$mf\" ] || continue\n" +
-                    "  mname=\"${mf#Modelfile.}\"\n" +
-                    "  echo \"Создание модели $mname...\"\n" +
-                    "  ollama create \"$mname\" -f \"$mf\"\n" +
+                    "  [ -f \"${S}mf\" ] || continue\n" +
+                    "  mname=\"${S}{mf#Modelfile.}\"\n" +
+                    "  echo \"Создание модели ${S}mname...\"\n" +
+                    "  ollama create \"${S}mname\" -f \"${S}mf\"\n" +
                     "done\n" +
                     "echo \"Готово! Запустите: ollama serve\"\n"
                 sh.writeText(script)
