@@ -29,15 +29,6 @@ O.native={
   copy:t=>{try{OC.copy(t);O.toast('Скопировано',1200)}catch{}},share:t=>OC.share(t),open:u=>OC.openLink(u),
   openApp:t=>(window.OC&&OC.openApp?OC.openApp(t):false),
   preparePreview:p=>(window.OC&&OC.preparePreview?OC.preparePreview(p):''),
-  downloadModel:(id,url,fn)=>j(OC.downloadModel(id,url,fn))||{ok:false},
-  cancelModelDownload:id=>OC.cancelModelDownload(id),
-  deleteModel:fn=>OC.deleteModel(fn),
-  listLocalModels:()=>j(OC.listLocalModels())||[],
-  getLocalModelsDir:()=>OC.getLocalModelsDir(),
-  getLocalAiPort:()=>(window.OC&&OC.getLocalAiPort?OC.getLocalAiPort():11434),
-  startLocalAiServer:m=>j(OC.startLocalAiServer(m))||{ok:false},
-  stopLocalAiServer:()=>(window.OC&&OC.stopLocalAiServer?OC.stopLocalAiServer():false),
-  getLocalAiServerStatus:()=>j(OC.getLocalAiServerStatus())||{running:false,port:11434},
   state:()=>j(OC.state())||{}
 };
 O.openUrl=u=>{if(/^https?:\/\//i.test(u)&&!/appassets\.androidplatform\.net/i.test(u))OC.openLink(u)};

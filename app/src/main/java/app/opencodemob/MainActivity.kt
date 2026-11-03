@@ -215,10 +215,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         emit("perms", JSONObject())
-        val u = uid()
-        if (u.isNotEmpty() && Runtime.isInstalled(this) && ServerState.ready) {
-            LocalAiServer.ensureRunningIfModelsExist(this, u)
-        }
     }
 
     override fun onDestroy() {
@@ -1047,69 +1043,6 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun openApp(target: String): Boolean = this@MainActivity.launchApp(target)
 
         @JavascriptInterface fun preparePreview(path: String): String = this@MainActivity.prepareWebPreview(path)
-
-        // --- local models (GGUF / offline) ---
-        @JavascriptInterface fun downloadModel(id: String, url: String, fileName: String): String {
-            val ok = ModelDownloader.startDownload(
-                this@MainActivity,
-                uid(),
-                id,
-                url,
-                fileName,
-                onProgress = { pct, done, total, speed ->
-                    emit("model_download", JSONObject().apply {
-                        put("id", id)
-                        put("status", "downloading")
-                        put("pct", pct)
-                        put("doneBytes", done)
-                        put("totalBytes", total)
-                        put("speedBps", speed)
-                    })
-                },
-                onComplete = { file ->
-                    Notifier.event(this@MainActivity, Notifier.DONE, "Модель загружена", "${file.name} готова к работе офлайн")
-                    val aiPort = Runtime.stableAiPort(this@MainActivity, uid())
-                    LocalAiServer.start(this@MainActivity, uid(), file.name)
-                    Runtime.sanitizeConfig(this@MainActivity, uid(), forceReset = false)
-                    emit("model_download", JSONObject().apply {
-                        put("id", id)
-                        put("status", "completed")
-                        put("pct", 100)
-                        put("fileName", file.name)
-                        put("path", "/root/models/" + file.name)
-                        put("port", aiPort)
-                        put("autoStarted", true)
-                    })
-                },
-                onError = { msg ->
-                    emit("model_download", JSONObject().apply {
-                        put("id", id)
-                        put("status", "error")
-                        put("error", msg)
-                    })
-                }
-            )
-            return JSONObject().put("ok", ok).toString()
-        }
-
-        @JavascriptInterface fun cancelModelDownload(id: String): Boolean = ModelDownloader.cancel(id)
-
-        @JavascriptInterface fun deleteModel(fileName: String): Boolean = ModelDownloader.deleteModel(this@MainActivity, uid(), fileName)
-
-        @JavascriptInterface fun listLocalModels(): String = ModelDownloader.listModels(this@MainActivity, uid()).toString()
-
-        @JavascriptInterface fun getLocalModelsDir(): String = "/root/models"
-
-        @JavascriptInterface fun getLocalAiPort(): Int = Runtime.stableAiPort(this@MainActivity, uid())
-
-        @JavascriptInterface fun startLocalAiServer(modelPath: String): String =
-            LocalAiServer.start(this@MainActivity, uid(), modelPath).toString()
-
-        @JavascriptInterface fun stopLocalAiServer(): Boolean =
-            LocalAiServer.stop()
-
-        @JavascriptInterface fun getLocalAiServerStatus(): String =
-            LocalAiServer.status(this@MainActivity, uid()).toString()
 
         // --- OTA ---
         @JavascriptInterface fun checkUpdates() {

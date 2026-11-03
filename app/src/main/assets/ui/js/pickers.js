@@ -77,25 +77,16 @@ O.openModels=()=>{
       h('span',{class:'recommended-badge'},O.tr('Recommended','Рекомендуется'))),
     h('div',{class:'detached-card-right'},effortTxt));
 
-  const localModelsCard=h('button',{class:'detached-card',onclick:()=>{s.close();O.openLocalModels()}},
-    h('div',{class:'detached-card-left'},
-      O.icon('down'),
-      h('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-start',marginLeft:'6px'}},
-        h('span',null,O.tr('Offline Models (GGUF)','Офлайн модели (GGUF)')),
-        h('span',{class:'mut s'},O.tr('Download and run local models without internet','Загрузка и запуск моделей без интернета')))),
-    h('div',{class:'detached-card-right'},'›'));
-
   const connectCard=h('button',{class:'detached-card',onclick:()=>{s.close();O.openConnect()}},
     h('div',{class:'detached-card-left'},
       O.icon('key'),
       h('span',{style:{marginLeft:'6px'}},O.tr('Connect more providers','Подключить провайдеров (API ключи)'))),
     h('div',{class:'detached-card-right'},'›'));
 
-  const container=h('div',null,q,listEl,h('div',{style:{height:'10px'}}),swRow,effortCard,localModelsCard,connectCard);
+  const container=h('div',null,q,listEl,h('div',{style:{height:'10px'}}),swRow,effortCard,connectCard);
   const s=O.sheet(O.tr('Select model','Выбор модели'),container,{hud:true,full:true});
 
   function draw(){
-    if(O.injectLocalProvider)O.injectLocalProvider();
     listEl.textContent='';
     const all=O.allModels();
     if(!all.length){
@@ -135,9 +126,8 @@ O.openModels=()=>{
     items.forEach(x=>{
       const isSel=activeKey===(x.pid+'/'+x.mid);
       const isFree=O.isModelFree(x);
-      const isOffline=x.pid==='ollama'||x.pid==='local'||/\b(offline|офлайн|локальн|gguf)\b/i.test((x.name||'')+' '+(x.mid||''));
-      const badge=h('span',{class:'badge-model '+(isOffline?'badge-offline':(isFree?'badge-free':'badge-paid'))},
-        isOffline?O.tr('Offline','Офлайн'):(isFree?O.tr('Free','Бесплатно'):O.tr('Paid','Платная'))
+      const badge=h('span',{class:'badge-model '+(isFree?'badge-free':'badge-paid')},
+        isFree?O.tr('Free','Бесплатно'):O.tr('Paid','Платная')
       );
 
       const ctx=x.m&&x.m.limit&&x.m.limit.context,parts=[];
@@ -151,13 +141,6 @@ O.openModels=()=>{
       const sub=parts.join(' · ');
 
       const row=h('button',{class:'model-row'+(isSel?' on':''),onclick:()=>{
-        if(isOffline&&O.native&&O.native.startLocalAiServer){
-          const dl=O.native.listLocalModels()||[];
-          const cat=O.CATALOG_MODELS&&O.CATALOG_MODELS.find(c=>c.id===x.mid);
-          const fn=cat?cat.file:(dl[0]?dl[0].fileName:'');
-          if(fn)O.native.startLocalAiServer(fn);
-          if(O.syncLocalModelsConfig)O.syncLocalModelsConfig(x.mid);
-        }
         O.setModel(x.pid,x.mid);
         s.close();
         O.toast(O.tr('Selected: ','Выбрана: ')+(x.name||x.mid),1500);

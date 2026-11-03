@@ -111,59 +111,10 @@ O.checkAccount=async()=>{try{const r=await api('GET','/experimental/console/orgs
   S.account={email:em||null,checked:true};bus.emit('meta')}catch{S.account.checked=true}};
 
 // ---- loaders (network first, IndexedDB fallback) ----
-O.injectLocalProvider=()=>{
-  try{
-    if(!O.native||!O.native.listLocalModels)return;
-    const dl=O.native.listLocalModels()||[];
-    const uPort=O.native.getLocalAiPort?O.native.getLocalAiPort():11434;
-    const models={};
-    const addM=(id,name,ctx)=>{
-      if(!id)return;
-      models[id]={id,name:name+' (Офлайн :'+uPort+')',limit:{context:ctx||4096,output:ctx||4096},free:true,cost:{input:0,output:0}};
-    };
-    (O.CATALOG_MODELS||[]).forEach(cat=>{
-      const name=cat.name,ctx=cat.context||4096;
-      addM(cat.id,name,ctx);
-      addM(cat.id.replace(':','-'),name,ctx);
-      addM(cat.id.replace(':','.'),name,ctx);
-      addM(cat.file,name,ctx);
-      addM(cat.file.replace(/\.gguf$/i,''),name,ctx);
-      addM(cat.file.replace(/\.gguf$/i,'').toLowerCase(),name,ctx);
-    });
-    dl.forEach(f=>{
-      const fn=f.fileName;
-      const cat=O.CATALOG_MODELS&&O.CATALOG_MODELS.find(c=>c.file.toLowerCase()===fn.toLowerCase());
-      const name=cat?cat.name:fn.replace(/\.gguf$/i,'');
-      const ctx=cat?cat.context:4096;
-      addM(fn,name,ctx);
-      addM(fn.replace(/\.gguf$/i,''),name,ctx);
-      addM(fn.replace(/\.gguf$/i,'').toLowerCase(),name,ctx);
-      if(cat){
-        addM(cat.id,cat.name,ctx);
-        addM(cat.id.replace(':','-'),cat.name,ctx);
-        addM(cat.id.replace(':','.'),cat.name,ctx);
-      }
-    });
-    addM('local','Локальная модель (GGUF)',4096);
-    addM('default','Локальная модель (GGUF)',4096);
-
-    if(Object.keys(models).length>0){
-      const provLocal={id:'local',name:'Локально (Офлайн :'+uPort+')',models};
-      const idx=S.providers.findIndex(x=>x.id==='local');
-      if(idx>=0)S.providers[idx]=provLocal;else S.providers.unshift(provLocal);
-
-      const provOllama={id:'ollama',name:'Ollama (Офлайн :'+uPort+')',models};
-      const oIdx=S.providers.findIndex(x=>x.id==='ollama');
-      if(oIdx>=0)S.providers[oIdx]=provOllama;else S.providers.unshift(provOllama);
-    }
-  }catch(_){}
-};
-
 O.loadMeta=async()=>{
   const [cp,ag,cm,cf,pr,br]=await Promise.allSettled([api('GET','/config/providers'),api('GET','/agent'),api('GET','/command'),api('GET','/config'),api('GET','/project',null,{dir:false}),api('GET','/vcs')]);
   if(cp.status==='fulfilled'){S.providers=cp.value.providers||[];S.defaults=cp.value.default||{};O.kv.set('providers',cp.value)}
   else{const c=await O.kv.get('providers');if(c){S.providers=c.providers||[];S.defaults=c.default||{}}}
-  O.injectLocalProvider();
   if(ag.status==='fulfilled'){S.agents=ag.value;O.kv.set('agents',ag.value)}else S.agents=(await O.kv.get('agents'))||[];
   if(cm.status==='fulfilled'){S.commands=cm.value;O.kv.set('commands',cm.value)}else S.commands=(await O.kv.get('commands'))||[];
   if(cf.status==='fulfilled'){S.cfg=cf.value;O.kv.set('cfg',cf.value)}else S.cfg=(await O.kv.get('cfg'))||{};
@@ -184,60 +135,16 @@ O.isModelFree=x=>{
   const str=((x.name||'')+' '+(x.mid||'')+' '+(x.pid||'')).toLowerCase();
   if(/\bfree\b|бесплатн/i.test(str))return true;
   if(x.pid==='opencode'&&(!c||(!c.input&&!c.output)))return true;
-  if(x.pid==='ollama'||x.pid==='local'||/\b(offline|офлайн|локальн|gguf)\b/i.test(str))return true;
   return false;
 };
 O.primaryAgents=()=>S.agents.filter(a=>a.mode!=='subagent'&&!a.hidden);
 O.modelInfo=(pid,mid)=>{
-  O.injectLocalProvider();
   const p=S.providers.find(x=>x.id===pid);
-  if(p&&p.models){
-    if(p.models[mid])return p.models[mid];
-    const alt=mid.includes(':')?mid.replace(':','-'):mid.replace('-',':');
-    if(p.models[alt])return p.models[alt];
-  }
-  if(pid==='local'||pid==='ollama'){
-    const dl=O.native&&O.native.listLocalModels?O.native.listLocalModels():[];
-    const cat=O.CATALOG_MODELS&&O.CATALOG_MODELS.find(c=>c.id===mid||c.id.replace(':','-')===mid||c.file.toLowerCase()===mid.toLowerCase());
-    const found=dl.find(f=>f.fileName.toLowerCase()===mid.toLowerCase()||(cat&&cat.file.toLowerCase()===f.fileName.toLowerCase()));
-    if(found||cat){
-      const name=cat?cat.name:mid;
-      const ctx=cat?cat.context:4096;
-      return {id:mid,name,limit:{context:ctx,output:ctx},free:true,cost:{input:0,output:0}};
-    }
-  }
+  if(p&&p.models&&p.models[mid])return p.models[mid];
   return null;
 };
 O.allModels=()=>{
-  O.injectLocalProvider();
-  const remote=S.providers.flatMap(p=>Object.values(p.models||{}).map(m=>({pid:p.id,pname:p.name,mid:m.id,name:m.name||m.id,m})));
-  let local=[];
-  try{
-    const dl=O.native&&O.native.listLocalModels?O.native.listLocalModels():[];
-    const uPort=O.native&&O.native.getLocalAiPort?O.native.getLocalAiPort():11434;
-    local=dl.map(f=>{
-      const fn=f.fileName;
-      const cat=O.CATALOG_MODELS&&O.CATALOG_MODELS.find(c=>c.file.toLowerCase()===fn.toLowerCase());
-      const mid=cat?cat.id:fn.replace(/\.gguf$/i,'').toLowerCase();
-      const name=cat?cat.name:fn.replace(/\.gguf$/i,'');
-      const ctx=cat?cat.context:4096;
-      const mObj={id:mid,name:name+' (Офлайн :'+uPort+')',limit:{context:ctx},free:true,cost:{input:0,output:0}};
-      return {
-        pid:'ollama',
-        pname:'Локально (Офлайн :'+uPort+')',
-        mid:mid,
-        name:name,
-        m:mObj
-      };
-    });
-  }catch(_){}
-  const seen=new Set();
-  const out=[];
-  [...local,...remote].forEach(x=>{
-    const k=x.pid+'/'+x.mid;
-    if(!seen.has(k)){seen.add(k);out.push(x)}
-  });
-  return out;
+  return S.providers.flatMap(p=>Object.values(p.models||{}).map(m=>({pid:p.id,pname:p.name,mid:m.id,name:m.name||m.id,m})));
 };
 O.pickDefaults=()=>{
   const prim=O.primaryAgents();if(!prim.some(a=>a.name===S.agent))S.agent=(prim[0]&&prim[0].name)||'build';

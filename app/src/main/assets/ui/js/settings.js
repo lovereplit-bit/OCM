@@ -38,9 +38,8 @@ O.openSettings=()=>{
   const modelsCard=h('div',{class:'settings-card'});
   modelsCard.append(
     O.listRow('cpu',O.tr('Active Model','Текущая модель'),S.model?S.model.providerID+'/'+S.model.modelID:O.tr('Not selected','Не выбрана'),O.icon('chevR'),()=>O.openModels()),
-    O.listRow('down',O.tr('Local Models (Offline / GGUF)','Локальные модели (Офлайн / GGUF)'),O.tr('Download GGUF models for offline agent use','Загрузка GGUF-моделей для работы без интернета'),O.icon('chevR'),()=>O.openLocalModels(s)),
     O.listRow('key',O.tr('Connect Providers','Подключить провайдеров'),'OpenCode Zen, OpenAI, Anthropic, Gemini, DeepSeek...',O.icon('chevR'),()=>O.openConnect()),
-    O.listRow('search',O.tr('Custom API / Local Models','Свой API / Локальные модели'),'Ollama, LM Studio, vLLM, OpenAI-compatible',O.icon('chevR'),()=>O.openCustomProvider(s))
+    O.listRow('search',O.tr('Custom API Provider','Свой API провайдер'),'OpenAI-compatible, Groq, OpenRouter...',O.icon('chevR'),()=>O.openCustomProvider(s))
   );
   body.append(modelsCard);
 
