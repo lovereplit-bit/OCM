@@ -14,6 +14,7 @@ function build(){
   const BOLT_SVG='<svg viewBox="0 0 24 24" width="13" height="13" fill="#71717a" style="display:inline-block;vertical-align:middle;margin-right:3px;"><path d="M13 2L3 14h7v8l11-13h-8l1-7z"/></svg>';
   T.tokensVal=h('span',{class:'top-tokens-val'},'0 tok');
   T.tokens=h('button',{class:'top-tokens-btn',style:{display:'none'},title:O.tr('Session Tokens / Context','Токены сессии / Контекст'),onclick:()=>O.openTokensModal()},h('span',{class:'tok-bolt',html:BOLT_SVG}),T.tokensVal);
+  const topLeft=h('div',{class:'top-left-box'},T.menu,T.tokens);
   T.status=h('button',{class:'top-status-btn',title:O.tr('Server & MCP Status','Статус сервера и MCP'),onclick:()=>O.openStatus()},O.icon('sliders'));
   const top=h('div',{id:'top'},topLeft,T.status);
 
