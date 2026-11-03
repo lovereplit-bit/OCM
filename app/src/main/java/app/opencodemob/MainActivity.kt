@@ -1031,6 +1031,53 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface fun preparePreview(path: String): String = this@MainActivity.prepareWebPreview(path)
 
+        // --- local models (GGUF / offline) ---
+        @JavascriptInterface fun downloadModel(id: String, url: String, fileName: String): String {
+            val ok = ModelDownloader.startDownload(
+                this@MainActivity,
+                uid(),
+                id,
+                url,
+                fileName,
+                onProgress = { pct, done, total, speed ->
+                    emit("model_download", JSONObject().apply {
+                        put("id", id)
+                        put("status", "downloading")
+                        put("pct", pct)
+                        put("doneBytes", done)
+                        put("totalBytes", total)
+                        put("speedBps", speed)
+                    })
+                },
+                onComplete = { file ->
+                    Notifier.event(this@MainActivity, Notifier.DONE, "Модель загружена", "${file.name} готова к работе офлайн")
+                    emit("model_download", JSONObject().apply {
+                        put("id", id)
+                        put("status", "completed")
+                        put("pct", 100)
+                        put("fileName", file.name)
+                        put("path", "/root/models/" + file.name)
+                    })
+                },
+                onError = { msg ->
+                    emit("model_download", JSONObject().apply {
+                        put("id", id)
+                        put("status", "error")
+                        put("error", msg)
+                    })
+                }
+            )
+            return JSONObject().put("ok", ok).toString()
+        }
+
+        @JavascriptInterface fun cancelModelDownload(id: String): Boolean = ModelDownloader.cancel(id)
+
+        @JavascriptInterface fun deleteModel(fileName: String): Boolean = ModelDownloader.deleteModel(this@MainActivity, uid(), fileName)
+
+        @JavascriptInterface fun listLocalModels(): String = ModelDownloader.listModels(this@MainActivity, uid()).toString()
+
+        @JavascriptInterface fun getLocalModelsDir(): String = "/root/models"
+
         // --- OTA ---
         @JavascriptInterface fun checkUpdates() {
             thread {

@@ -46,7 +46,11 @@ window.OC={
  drop(){},sseStart(){sse=true;setTimeout(()=>OCEvent('sse',{t:'open'}),5)},sseStop(){},wsOpen(id){setTimeout(()=>{OCEvent('ws',{id,t:'open'});OCEvent('ws',{id,t:'msg',d:'root@phone:~# '})},5)},wsSend(id,t){(window.__wsSent=window.__wsSent||[]).push(t)},wsClose(){},
  ls:p=>JSON.stringify({ok:true,path:p,items:[{name:'app',dir:true},{name:'notes.txt',dir:false}]}),fs:()=>JSON.stringify({ok:true}),readText:()=>JSON.stringify({ok:true,text:'abc'}),writeText:()=>JSON.stringify({ok:true}),
  cfgRead:()=>window.__cfg||'{\n // comment\n "plugin":["a"],\n "mcp":{"ctx7":{"type":"remote","url":"https://m.example/mcp","enabled":true}}\n}',cfgWrite(t){window.__cfg=t;return JSON.stringify({ok:true})},readLog:()=>'log line',
- pickFile(k,d){window.__picked=[k,d]},copy(t){window.__copied=t},pasteText:()=>'pasted',share(t){window.__shared=t},openLink(u){window.__opened=u},checkUpdates(){setTimeout(()=>OCEvent('update',{core:'v1.18.6'}),5)},applyAppUpdate(){},applyCoreUpdate(){}
+ pickFile(k,d){window.__picked=[k,d]},copy(t){window.__copied=t},pasteText:()=>'pasted',share(t){window.__shared=t},openLink(u){window.__opened=u},
+ openApp(t){return true},preparePreview(p){return ''},startVoiceInput(l){},
+ downloadModel(id,url,fn){setTimeout(()=>OCEvent('model_download',{id,pct:100,status:'completed'}),10);return JSON.stringify({ok:true})},
+ cancelModelDownload(id){return true},deleteModel(fn){return true},listLocalModels(){return JSON.stringify([])},getLocalModelsDir(){return '/root/models'},
+ checkUpdates(){setTimeout(()=>OCEvent('update',{core:'v1.18.6'}),5)},applyAppUpdate(){},applyCoreUpdate(){}
 };
 window.__onPrompt=b=>{const sid='ses_1';const P=(part)=>__push({type:'message.part.updated',properties:{part:Object.assign({sessionID:sid},part)}});
  __push({type:'session.updated',properties:{info:srv.sessions[0]}});

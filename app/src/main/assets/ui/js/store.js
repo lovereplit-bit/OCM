@@ -135,6 +135,7 @@ O.isModelFree=x=>{
   const str=((x.name||'')+' '+(x.mid||'')+' '+(x.pid||'')).toLowerCase();
   if(/\bfree\b|бесплатн/i.test(str))return true;
   if(x.pid==='opencode'&&(!c||(!c.input&&!c.output)))return true;
+  if(x.pid==='ollama'||x.pid==='local'||/\b(offline|офлайн|локальн|gguf)\b/i.test(str))return true;
   return false;
 };
 O.primaryAgents=()=>S.agents.filter(a=>a.mode!=='subagent'&&!a.hidden);
