@@ -95,6 +95,7 @@ O.openModels=()=>{
   const s=O.sheet(O.tr('Select model','Выбор модели'),container,{hud:true,full:true});
 
   function draw(){
+    if(O.injectLocalProvider)O.injectLocalProvider();
     listEl.textContent='';
     const all=O.allModels();
     if(!all.length){
@@ -150,6 +151,12 @@ O.openModels=()=>{
       const sub=parts.join(' · ');
 
       const row=h('button',{class:'model-row'+(isSel?' on':''),onclick:()=>{
+        if(isOffline&&O.native&&O.native.startLocalAiServer){
+          const dl=O.native.listLocalModels()||[];
+          const cat=O.CATALOG_MODELS&&O.CATALOG_MODELS.find(c=>c.id===x.mid);
+          const fn=cat?cat.file:(dl[0]?dl[0].fileName:'');
+          if(fn)O.native.startLocalAiServer(fn);
+        }
         O.setModel(x.pid,x.mid);
         s.close();
         O.toast(O.tr('Selected: ','Выбрана: ')+(x.name||x.mid),1500);

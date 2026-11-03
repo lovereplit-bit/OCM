@@ -159,6 +159,7 @@ O.activateLocalModel = async (mid, mname) => {
     O.native.startLocalAiServer(targetFile);
   }
   await O.syncLocalModelsConfig(mid);
+  if (O.injectLocalProvider) O.injectLocalProvider();
   O.setModel('local', mid);
   const userPort = O.native.getLocalAiPort();
   O.toast('Модель ' + (mname || mid) + ' запущена на порту ' + userPort + '!', 3000);
@@ -166,6 +167,7 @@ O.activateLocalModel = async (mid, mname) => {
 
 // UI: Local Models Management Sheet
 O.openLocalModels = (parentSheet) => {
+  if (O.injectLocalProvider) O.injectLocalProvider();
   const body = h('div');
   const s = O.sheet(O.tr('Offline AI Models (GGUF)', 'Локальные ИИ-модели (Офлайн)'), body, { full: true, hud: true });
 

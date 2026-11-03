@@ -31,8 +31,8 @@ function login(msg){
     st.googleConfigured?h('button',{class:'btn wide',style:{marginTop:'10px'},onclick:()=>OC.signIn()},O.icon('user'),'Войти через Google'):null,
     h('span',{class:'mut s',style:{marginTop:'10px'}},'Бесплатные модели работают сразу. Личную квоту Zen можно подключить позже: Настройки → Аккаунт opencode.'),
     h('span',{class:'mut s'},'v'+st.version))}
-function perms(){const render=()=>{const rows=O.permRows();const box=el&&el.querySelector('#pl');if(box){box.textContent='';box.append(rows)}};permsRender=render;
-  screen(h('div',{style:{textAlign:'left',width:'100%'}},h('b',{style:{fontSize:'20px'}},'Разрешения'),h('p',{class:'mut'},'OpenCode нужны эти разрешения, чтобы работать как терминальным агентом на компьютере.'),h('div',{id:'pl'},O.permRows()),
+function perms(){const render=()=>{const rows=O.permRows();const box=el&&el.querySelector('#pl');if(box){box.textContent='';box.append(...rows)}};permsRender=render;
+  screen(h('div',{style:{textAlign:'left',width:'100%'}},h('b',{style:{fontSize:'20px'}},'Разрешения'),h('p',{class:'mut'},'OpenCode нужны эти разрешения, чтобы работать как терминальным агентом на компьютере.'),h('div',{id:'pl'},...O.permRows()),
     h('button',{class:'btn pri wide',style:{marginTop:'14px'},onclick:()=>{O.store.set('permsSeen',true);permsRender=null;next()}},'Продолжить')))}
 let inst=null;
 function install(){const bar=h('i'),msg=h('p',{class:'mut'},'Распаковываем Linux-окружение. Это происходит один раз.'),err=h('p',{class:'err'});
