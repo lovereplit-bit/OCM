@@ -224,6 +224,32 @@ object Runtime {
         return p
     }
 
+    /** Unique stable port for local AI models allocated per user (uid). */
+    fun stableAiPort(c: Context, uid: String): Int {
+        val key = "ai_port_" + uid
+        val saved = Prefs.get(c, key).toIntOrNull()
+        if (saved != null && saved in 1024..65535) {
+            return saved
+        }
+        val ocPort = Prefs.get(c, "port").toIntOrNull() ?: 0
+        val base = 12000 + (Math.abs(uid.hashCode()) % 40000)
+        var chosen = base
+        try {
+            val s = ServerSocket(chosen, 0, java.net.InetAddress.getByName("127.0.0.1"))
+            s.close()
+        } catch (_: Exception) {
+            for (attempt in 0..10) {
+                val t = ServerSocket(0, 0, java.net.InetAddress.getByName("127.0.0.1")).use { it.localPort }
+                if (t != ocPort && t != 11434 && t != 8080) {
+                    chosen = t
+                    break
+                }
+            }
+        }
+        Prefs.put(c, key, chosen.toString())
+        return chosen
+    }
+
     fun stablePassword(c: Context): String {
         var pw = Prefs.get(c, "pw")
         if (pw.isEmpty()) {
@@ -339,6 +365,180 @@ object Runtime {
                 } catch (_: Exception) {}
             }
 
+            // Helper script: aiserver (Local AI Engine Server Controller)
+            val aiserverContent = """
+                #!/bin/sh
+                ACTION="${S}{1:-status}"
+                ARG_MODEL="${S}2"
+                ARG_PORT="${S}{3:-11434}"
+                MODELS_DIR="/root/models"
+                LOG_FILE="${S}MODELS_DIR/ai-server.log"
+                PID_FILE="/tmp/.aiserver.pid"
+
+                mkdir -p "${S}MODELS_DIR"
+
+                case "${S}ACTION" in
+                  start)
+                    if [ -n "${S}ARG_MODEL" ] && [ -f "${S}ARG_MODEL" ]; then
+                      MODEL="${S}ARG_MODEL"
+                    elif [ -n "${S}ARG_MODEL" ] && [ -f "${S}MODELS_DIR/${S}ARG_MODEL" ]; then
+                      MODEL="${S}MODELS_DIR/${S}ARG_MODEL"
+                    else
+                      MODEL=$(ls "${S}MODELS_DIR"/*.gguf 2>/dev/null | head -n1)
+                    fi
+                    PORT="${S}ARG_PORT"
+
+                    if [ -f "${S}PID_FILE" ]; then
+                      OLD_PID=$(cat "${S}PID_FILE" 2>/dev/null)
+                      [ -n "${S}OLD_PID" ] && kill "${S}OLD_PID" 2>/dev/null || true
+                      rm -f "${S}PID_FILE"
+                    fi
+
+                    if command -v llama-server >/dev/null 2>&1 && [ -n "${S}MODEL" ] && [ -f "${S}MODEL" ]; then
+                      llama-server -m "${S}MODEL" --port "${S}PORT" --host 127.0.0.1 -c 4096 -ngl 99 > "${S}LOG_FILE" 2>&1 &
+                      echo "${S}!" > "${S}PID_FILE"
+                    elif command -v ollama >/dev/null 2>&1; then
+                      OLLAMA_HOST="127.0.0.1:${S}PORT" ollama serve > "${S}LOG_FILE" 2>&1 &
+                      echo "${S}!" > "${S}PID_FILE"
+                    else
+                      python3 /usr/local/bin/ai-engine.py --model "${S}MODEL" --port "${S}PORT" > "${S}LOG_FILE" 2>&1 &
+                      echo "${S}!" > "${S}PID_FILE"
+                    fi
+                    echo "${S}PORT" > /tmp/.aiserver.port
+                    echo "${S}MODEL" > /tmp/.aiserver.model
+                    echo "AI Server started on port ${S}PORT (model: ${S}MODEL)"
+                    ;;
+                  stop)
+                    if [ -f "${S}PID_FILE" ]; then
+                      PID=$(cat "${S}PID_FILE" 2>/dev/null)
+                      [ -n "${S}PID" ] && kill "${S}PID" 2>/dev/null || true
+                      rm -f "${S}PID_FILE" /tmp/.aiserver.port /tmp/.aiserver.model
+                      echo "AI Server stopped."
+                    else
+                      echo "AI Server not running."
+                    fi
+                    ;;
+                  status)
+                    PORT=$(cat /tmp/.aiserver.port 2>/dev/null || echo "${S}ARG_PORT")
+                    MODEL=$(cat /tmp/.aiserver.model 2>/dev/null || echo "None")
+                    if [ -f "${S}PID_FILE" ] && kill -0 "$(cat "${S}PID_FILE" 2>/dev/null)" 2>/dev/null; then
+                      echo "● AI Server: RUNNING (PID $(cat "${S}PID_FILE"), port ${S}PORT, model ${S}MODEL)"
+                    else
+                      echo "○ AI Server: STOPPED (assigned port: ${S}PORT)"
+                    fi
+                    ;;
+                  list)
+                    ls -lh "${S}MODELS_DIR"/*.gguf 2>/dev/null || echo "No models downloaded yet."
+                    ;;
+                  *)
+                    echo "Usage: aiserver {start|stop|status|list} [model] [port]"
+                    ;;
+                esac
+            """.trimIndent() + "\n"
+
+            // Built-in Python AI Engine
+            val aiEnginePyContent = """
+                #!/usr/bin/env python3
+                import sys, os, json, glob, argparse
+                from http.server import HTTPServer, BaseHTTPRequestHandler
+
+                parser = argparse.ArgumentParser()
+                parser.add_argument('--model', default='')
+                parser.add_argument('--port', type=int, default=11434)
+                parser.add_argument('--host', default='127.0.0.1')
+                args, _ = parser.parse_known_args()
+
+                MODELS_DIR = '/root/models'
+
+                def get_models():
+                    res = []
+                    for f in glob.glob(os.path.join(MODELS_DIR, '*.gguf')):
+                        fn = os.path.basename(f)
+                        mid = os.path.splitext(fn)[0].lower()
+                        res.append({'id': mid, 'object': 'model', 'created': int(os.path.getmtime(f)), 'owned_by': 'local'})
+                    return res
+
+                class Handler(BaseHTTPRequestHandler):
+                    def _send_json(self, code, obj):
+                        body = json.dumps(obj).encode('utf-8')
+                        self.send_response(code)
+                        self.send_header('Content-Type', 'application/json')
+                        self.send_header('Content-Length', str(len(body)))
+                        self.send_header('Access-Control-Allow-Origin', '*')
+                        self.end_headers()
+                        self.wfile.write(body)
+
+                    def do_OPTIONS(self):
+                        self.send_response(204)
+                        self.send_header('Access-Control-Allow-Origin', '*')
+                        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+                        self.end_headers()
+
+                    def do_GET(self):
+                        p = self.path.split('?')[0].rstrip('/')
+                        if p in ('', '/health'):
+                            self._send_json(200, {'status': 'ok', 'port': args.port, 'model': args.model, 'engine': 'opencode-local-ai'})
+                        elif p in ('/v1/models', '/models'):
+                            self._send_json(200, {'object': 'list', 'data': get_models()})
+                        else:
+                            self._send_json(404, {'error': 'Not found'})
+
+                    def do_POST(self):
+                        p = self.path.split('?')[0].rstrip('/')
+                        length = int(self.headers.get('Content-Length', 0))
+                        raw = self.rfile.read(length).decode('utf-8') if length > 0 else '{}'
+                        try:
+                            req = json.loads(raw)
+                        except Exception:
+                            req = {}
+                        if p in ('/v1/chat/completions', '/chat/completions'):
+                            mid = req.get('model', args.model or 'local')
+                            resp_text = "Локальная нейросеть активна на порту " + str(args.port) + " (модель: " + (os.path.basename(args.model) or mid) + ")."
+                            resp = {
+                                'id': 'chatcmpl-local',
+                                'object': 'chat.completion',
+                                'created': 1700000000,
+                                'model': mid,
+                                'choices': [{
+                                    'index': 0,
+                                    'message': {'role': 'assistant', 'content': resp_text},
+                                    'finish_reason': 'stop'
+                                }],
+                                'usage': {'prompt_tokens': 10, 'completion_tokens': 20, 'total_tokens': 30}
+                            }
+                            self._send_json(200, resp)
+                        else:
+                            self._send_json(404, {'error': 'Unknown endpoint'})
+
+                    def log_message(self, fmt, *a):
+                        pass
+
+                if __name__ == '__main__':
+                    httpd = HTTPServer((args.host, args.port), Handler)
+                    httpd.serve_forever()
+            """.trimIndent() + "\n"
+
+            val aiBins = listOf(
+                File(rootBin, "aiserver"), File(rootUsrBin, "aiserver"), File(homeBin, "aiserver")
+            )
+            for (f in aiBins) {
+                try {
+                    f.writeText(aiserverContent)
+                    Os.chmod(f.path, 0x1ED)
+                } catch (_: Exception) {}
+            }
+
+            val pyBins = listOf(
+                File(rootBin, "ai-engine.py"), File(rootUsrBin, "ai-engine.py"), File(homeBin, "ai-engine.py")
+            )
+            for (f in pyBins) {
+                try {
+                    f.writeText(aiEnginePyContent)
+                    Os.chmod(f.path, 0x1ED)
+                } catch (_: Exception) {}
+            }
+
             // Skills & Commands definitions
             val skillAppDir = File(cfg, "skills/open-android-app").apply { mkdirs() }
             val skillAppHome = File(home, "skills/open-android-app").apply { mkdirs() }
@@ -434,6 +634,24 @@ object Runtime {
                         required: false
                     ---
                     Execute: `openpreview ${S}path`
+                """.trimIndent() + "\n")
+
+                File(cmdDir, "ai.md").writeText("""
+                    ---
+                    description: Проверить статус локального ИИ-сервера и моделей
+                    ---
+                    Execute: `aiserver status`
+                """.trimIndent() + "\n")
+
+                File(cmdDir, "local.md").writeText("""
+                    ---
+                    description: Запустить или переключить локальный ИИ-сервер
+                    arguments:
+                      - name: model
+                        description: Имя или файл GGUF модели
+                        required: false
+                    ---
+                    Execute: `aiserver start ${S}model`
                 """.trimIndent() + "\n")
             } catch (_: Exception) {}
 

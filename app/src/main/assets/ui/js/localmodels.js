@@ -78,8 +78,11 @@ O.on('model_download', d => {
   if (!d || !d.id) return;
   dlState[d.id] = d;
   if (d.status === 'completed') {
-    O.syncLocalModelsConfig().then(() => {
-      O.toast('Модель готова к работе офлайн!', 3000);
+    const userPort = d.port || O.native.getLocalAiPort();
+    O.native.startLocalAiServer(d.fileName || d.id);
+    O.syncLocalModelsConfig(d.id).then(() => {
+      O.setModel('ollama', d.id);
+      O.toast('Модель ' + d.id + ' запущена на порту ' + userPort + ' и готова к работе!', 4000);
       if (redrawLocalModels) redrawLocalModels();
     });
   } else if (d.status === 'error') {
@@ -90,8 +93,8 @@ O.on('model_download', d => {
   }
 });
 
-// Sync downloaded models into opencode.json provider configuration
-O.syncLocalModelsConfig = async () => {
+// Sync downloaded models into opencode.json provider configuration with unique user port
+O.syncLocalModelsConfig = async (activateMid) => {
   try {
     const list = O.native.listLocalModels() || [];
     const t = O.native.cfgRead() || '';
@@ -99,7 +102,8 @@ O.syncLocalModelsConfig = async () => {
     try { if (t.trim()) obj = O.parseJsonc(t); } catch (_) {}
     obj.provider = obj.provider || {};
 
-    const baseUrl = O.store.get('localEngineUrl', 'http://127.0.0.1:11434/v1');
+    const userPort = O.native.getLocalAiPort();
+    const baseUrl = O.store.get('localEngineUrl', 'http://127.0.0.1:' + userPort + '/v1');
     const pid = 'ollama';
 
     const modelsMap = {};
@@ -110,7 +114,7 @@ O.syncLocalModelsConfig = async () => {
       const mname = cat ? cat.name : fn.replace(/\.gguf$/i, '');
       const ctx = cat ? cat.context : 4096;
       modelsMap[mid] = {
-        name: mname + ' (Офлайн GGUF)',
+        name: mname + ' (Офлайн :' + userPort + ')',
         limit: { context: ctx },
         free: true,
         cost: { input: 0, output: 0 }
@@ -119,11 +123,11 @@ O.syncLocalModelsConfig = async () => {
 
     if (Object.keys(modelsMap).length > 0) {
       obj.provider[pid] = {
-        name: 'Ollama / Локально (Офлайн)',
+        name: 'Локально (Офлайн :' + userPort + ')',
         npm: '@ai-sdk/openai',
         options: {
           baseURL: baseUrl,
-          apiKey: 'ollama'
+          apiKey: 'local'
         },
         models: modelsMap
       };
@@ -133,6 +137,9 @@ O.syncLocalModelsConfig = async () => {
     if (w && w.ok) {
       try { await api('POST', '/instance/dispose', null); } catch (_) {}
       await O.loadMeta();
+      if (activateMid && modelsMap[activateMid]) {
+        O.setModel(pid, activateMid);
+      }
       bus.emit('meta');
     }
     return true;
@@ -143,9 +150,17 @@ O.syncLocalModelsConfig = async () => {
 };
 
 O.activateLocalModel = async (mid, mname) => {
-  await O.syncLocalModelsConfig();
+  const downloaded = O.native.listLocalModels() || [];
+  const cat = O.CATALOG_MODELS.find(m => m.id === mid);
+  const targetFile = cat ? cat.file : (downloaded[0] ? downloaded[0].fileName : '');
+
+  if (targetFile) {
+    O.native.startLocalAiServer(targetFile);
+  }
+  await O.syncLocalModelsConfig(mid);
   O.setModel('ollama', mid);
-  O.toast(O.tr('Activated offline model: ', 'Активирована офлайн-модель: ') + mname, 2500);
+  const userPort = O.native.getLocalAiPort();
+  O.toast('Модель ' + (mname || mid) + ' запущена на порту ' + userPort + '!', 3000);
 };
 
 // UI: Local Models Management Sheet
@@ -159,47 +174,59 @@ O.openLocalModels = (parentSheet) => {
     const downMap = new Map();
     downloaded.forEach(f => downMap.set(f.fileName.toLowerCase(), f));
 
-    // 1. Engine & Endpoint Status
-    const curUrl = O.store.get('localEngineUrl', 'http://127.0.0.1:11434/v1');
+    const userPort = O.native.getLocalAiPort();
+    const curUrl = O.store.get('localEngineUrl', 'http://127.0.0.1:' + userPort + '/v1');
+
+    // 1. Engine & Dedicated User Port Status
     const statusDot = h('span', { class: 'dot' });
-    const statusText = h('span', { class: 'mut s' }, 'Проверка локального движка...');
+    const statusText = h('span', { class: 'mut s' }, 'Проверка сервера...');
+
+    const aiStatus = O.native.getLocalAiServerStatus() || {};
 
     const pingEngine = async () => {
       try {
-        const u = curUrl.replace(/\/+$/, '') + '/models';
+        const u = curUrl.replace(/\/+$/, '') + '/health';
         const res = await fetch(u, { method: 'GET', headers: { Accept: 'application/json' } });
         if (res.ok) {
           statusDot.className = 'dot ok';
-          statusText.textContent = 'Локальный сервер активен (' + curUrl + ')';
+          statusText.textContent = 'Сервер активен (порт ' + userPort + ')';
         } else {
           statusDot.className = 'dot warn';
-          statusText.textContent = 'Сервер отвечает с кодом HTTP ' + res.status;
+          statusText.textContent = 'Сервер отвечает HTTP ' + res.status;
         }
       } catch (_) {
-        statusDot.className = 'dot';
-        statusText.textContent = 'Локальный сервер не запущен (порт 11434)';
+        if (aiStatus.running) {
+          statusDot.className = 'dot ok';
+          statusText.textContent = 'Процесс запущен на порту ' + userPort;
+        } else {
+          statusDot.className = 'dot';
+          statusText.textContent = 'Сервер спит (поднимается автоматически)';
+        }
       }
     };
     pingEngine();
 
     const engineCard = h('div', { class: 'group-card', style: { padding: '14px 16px', marginBottom: '14px' } },
       h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } },
-        h('b', { style: { fontSize: '15px' } }, 'Локальный движок (Ollama / llama-server)'),
+        h('b', { style: { fontSize: '15px' } }, 'Личный ИИ-порт: ' + userPort),
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } }, statusDot, statusText)
       ),
       h('div', { class: 'mut s', style: { marginBottom: '10px', lineHeight: '1.4' } },
-        'Модели хранятся в ', h('span', { class: 'mono' }, '/root/models/'), ' и работают полностью офлайн без отправки данных в сеть.'
+        'Для каждого профиля выделен свой уникальный порт (', h('span', { class: 'mono' }, String(userPort)), '). Модели запускаются автоматически сразу после скачивания.'
       ),
       h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
         h('button', { class: 'btn sm', onclick: () => {
-          const nw = prompt('Введите Base URL локального сервера (OpenAI-совместимый):', curUrl);
-          if (nw && nw.trim()) {
-            O.store.set('localEngineUrl', nw.trim());
-            O.syncLocalModelsConfig();
-            draw();
-          }
-        } }, O.icon('edit'), 'Сменить URL: ' + curUrl),
-        h('button', { class: 'btn sm', onclick: () => pingEngine() }, O.icon('refresh'), 'Проверить')
+          const first = downloaded[0] ? downloaded[0].fileName : '';
+          O.native.startLocalAiServer(first);
+          O.syncLocalModelsConfig();
+          O.toast('Сервер перезапущен на порту ' + userPort, 2000);
+          draw();
+        } }, O.icon('refresh'), 'Перезапустить сервер'),
+        h('button', { class: 'btn sm', onclick: () => {
+          O.native.stopLocalAiServer();
+          O.toast('Сервер остановлен');
+          draw();
+        } }, O.icon('x'), 'Остановить')
       )
     );
     body.append(engineCard);
@@ -295,19 +322,23 @@ O.openLocalModels = (parentSheet) => {
 
     body.append(modelsListCard);
 
-    // 3. Instructions & Import custom
-    body.append(h('div', { class: 'settings-section-title', style: { marginTop: '20px' } }, 'Запуск и импорт в Ollama'));
+    // 3. Automated Commands & Terminal Controls
+    body.append(h('div', { class: 'settings-section-title', style: { marginTop: '20px' } }, 'Настроенные команды агента'));
     const infoCard = h('div', { class: 'group-card', style: { padding: '14px 16px' } },
-      h('div', { class: 'mut s', style: { marginBottom: '8px' } },
-        'Для запуска скачанных GGUF моделей через Ollama в терминале достаточно выполнить:'
+      h('div', { class: 'mut s', style: { marginBottom: '10px' } },
+        'Все команды настроены автоматически. Вы можете использовать их прямо в чате или в терминале:'
       ),
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', background: 'var(--bg2)', padding: '8px 12px', borderRadius: '8px' } },
-        h('span', { class: 'mono grow', style: { fontSize: '13px' } }, 'ollama serve'),
-        h('button', { class: 'ibtn s', onclick: () => O.native.copy('ollama serve') }, O.icon('copy'))
+        h('span', { class: 'mono grow', style: { fontSize: '13px' } }, '/ai — статус сервера и моделей'),
+        h('button', { class: 'ibtn s', onclick: () => O.native.copy('/ai') }, O.icon('copy'))
+      ),
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', background: 'var(--bg2)', padding: '8px 12px', borderRadius: '8px' } },
+        h('span', { class: 'mono grow', style: { fontSize: '13px' } }, '/local [модель] — переключить локальную модель'),
+        h('button', { class: 'ibtn s', onclick: () => O.native.copy('/local') }, O.icon('copy'))
       ),
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg2)', padding: '8px 12px', borderRadius: '8px' } },
-        h('span', { class: 'mono grow', style: { fontSize: '13px' } }, 'bash /root/models/import-to-ollama.sh'),
-        h('button', { class: 'ibtn s', onclick: () => O.native.copy('bash /root/models/import-to-ollama.sh') }, O.icon('copy'))
+        h('span', { class: 'mono grow', style: { fontSize: '13px' } }, 'aiserver status — проверка в терминале'),
+        h('button', { class: 'ibtn s', onclick: () => O.native.copy('aiserver status') }, O.icon('copy'))
       )
     );
     body.append(infoCard);

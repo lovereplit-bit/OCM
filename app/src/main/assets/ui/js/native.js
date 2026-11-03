@@ -34,6 +34,10 @@ O.native={
   deleteModel:fn=>OC.deleteModel(fn),
   listLocalModels:()=>j(OC.listLocalModels())||[],
   getLocalModelsDir:()=>OC.getLocalModelsDir(),
+  getLocalAiPort:()=>(window.OC&&OC.getLocalAiPort?OC.getLocalAiPort():11434),
+  startLocalAiServer:m=>j(OC.startLocalAiServer(m))||{ok:false},
+  stopLocalAiServer:()=>(window.OC&&OC.stopLocalAiServer?OC.stopLocalAiServer():false),
+  getLocalAiServerStatus:()=>j(OC.getLocalAiServerStatus())||{running:false,port:11434},
   state:()=>j(OC.state())||{}
 };
 O.openUrl=u=>{if(/^https?:\/\//i.test(u)&&!/appassets\.androidplatform\.net/i.test(u))OC.openLink(u)};

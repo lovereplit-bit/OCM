@@ -1051,12 +1051,16 @@ class MainActivity : ComponentActivity() {
                 },
                 onComplete = { file ->
                     Notifier.event(this@MainActivity, Notifier.DONE, "Модель загружена", "${file.name} готова к работе офлайн")
+                    val aiPort = Runtime.stableAiPort(this@MainActivity, uid())
+                    LocalAiServer.start(this@MainActivity, uid(), file.name)
                     emit("model_download", JSONObject().apply {
                         put("id", id)
                         put("status", "completed")
                         put("pct", 100)
                         put("fileName", file.name)
                         put("path", "/root/models/" + file.name)
+                        put("port", aiPort)
+                        put("autoStarted", true)
                     })
                 },
                 onError = { msg ->
@@ -1077,6 +1081,17 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun listLocalModels(): String = ModelDownloader.listModels(this@MainActivity, uid()).toString()
 
         @JavascriptInterface fun getLocalModelsDir(): String = "/root/models"
+
+        @JavascriptInterface fun getLocalAiPort(): Int = Runtime.stableAiPort(this@MainActivity, uid())
+
+        @JavascriptInterface fun startLocalAiServer(modelPath: String): String =
+            LocalAiServer.start(this@MainActivity, uid(), modelPath).toString()
+
+        @JavascriptInterface fun stopLocalAiServer(): Boolean =
+            LocalAiServer.stop()
+
+        @JavascriptInterface fun getLocalAiServerStatus(): String =
+            LocalAiServer.status(this@MainActivity, uid()).toString()
 
         // --- OTA ---
         @JavascriptInterface fun checkUpdates() {
