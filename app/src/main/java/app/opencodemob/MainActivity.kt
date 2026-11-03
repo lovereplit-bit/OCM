@@ -1070,6 +1070,7 @@ class MainActivity : ComponentActivity() {
                     Notifier.event(this@MainActivity, Notifier.DONE, "Модель загружена", "${file.name} готова к работе офлайн")
                     val aiPort = Runtime.stableAiPort(this@MainActivity, uid())
                     LocalAiServer.start(this@MainActivity, uid(), file.name)
+                    Runtime.sanitizeConfig(this@MainActivity, uid(), forceReset = false)
                     emit("model_download", JSONObject().apply {
                         put("id", id)
                         put("status", "completed")

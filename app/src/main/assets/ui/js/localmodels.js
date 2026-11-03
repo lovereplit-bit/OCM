@@ -104,18 +104,68 @@ O.syncLocalModelsConfig = async (activateMid) => {
 
     const userPort = O.native.getLocalAiPort();
 
-    // Clean up any legacy or invalid provider entries that break OpenCode 1.x schema
-    if (obj.provider['local']) delete obj.provider['local'];
-
-    // In OpenCode 1.x, Ollama is a built-in provider that uses:
-    // { "provider": { "ollama": { "settings": { "baseURL": "..." } } } }
-    if (list.length > 0) {
-      obj.provider['ollama'] = {
-        settings: {
-          baseURL: 'http://127.0.0.1:' + userPort + '/v1'
+    const modelsDict = {};
+    const addM = (id, name, ctx) => {
+      if (!id) return;
+      modelsDict[id] = {
+        name: name,
+        limit: {
+          context: ctx || 4096,
+          output: ctx || 4096
         }
       };
-    }
+    };
+
+    // Standard catalog models and naming variations
+    (O.CATALOG_MODELS || []).forEach(cat => {
+      const name = cat.name;
+      const ctx = cat.context || 4096;
+      addM(cat.id, name, ctx);
+      addM(cat.id.replace(':', '-'), name, ctx);
+      addM(cat.id.replace(':', '.'), name, ctx);
+      addM(cat.file, name, ctx);
+      addM(cat.file.replace(/\.gguf$/i, ''), name, ctx);
+      addM(cat.file.replace(/\.gguf$/i, '').toLowerCase(), name, ctx);
+    });
+
+    // Downloaded GGUF files
+    (list || []).forEach(f => {
+      const fn = f.fileName;
+      const cat = (O.CATALOG_MODELS || []).find(c => c.file.toLowerCase() === fn.toLowerCase());
+      const name = cat ? cat.name : fn.replace(/\.gguf$/i, '');
+      const ctx = cat ? cat.context : 4096;
+      addM(fn, name, ctx);
+      addM(fn.replace(/\.gguf$/i, ''), name, ctx);
+      addM(fn.replace(/\.gguf$/i, '').toLowerCase(), name, ctx);
+      if (cat) {
+        addM(cat.id, cat.name, ctx);
+        addM(cat.id.replace(':', '-'), cat.name, ctx);
+        addM(cat.id.replace(':', '.'), cat.name, ctx);
+      }
+    });
+
+    addM('local', 'Локальная модель (GGUF)', 4096);
+    addM('default', 'Локальная модель (GGUF)', 4096);
+
+    obj.provider['local'] = {
+      name: 'Локально (Офлайн :' + userPort + ')',
+      npm: '@ai-sdk/openai-compatible',
+      options: {
+        baseURL: 'http://127.0.0.1:' + userPort + '/v1',
+        apiKey: 'local'
+      },
+      models: modelsDict
+    };
+
+    obj.provider['ollama'] = {
+      name: 'Ollama (Офлайн :' + userPort + ')',
+      npm: '@ai-sdk/openai-compatible',
+      options: {
+        baseURL: 'http://127.0.0.1:' + userPort + '/v1',
+        apiKey: 'ollama'
+      },
+      models: modelsDict
+    };
 
     const w = O.native.cfgWrite(JSON.stringify(obj, null, 2));
     if (w && w.ok) {

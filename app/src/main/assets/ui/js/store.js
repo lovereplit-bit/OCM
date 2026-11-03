@@ -115,17 +115,38 @@ O.injectLocalProvider=()=>{
   try{
     if(!O.native||!O.native.listLocalModels)return;
     const dl=O.native.listLocalModels()||[];
-    if(!dl.length)return;
     const uPort=O.native.getLocalAiPort?O.native.getLocalAiPort():11434;
     const models={};
+    const addM=(id,name,ctx)=>{
+      if(!id)return;
+      models[id]={id,name:name+' (Офлайн :'+uPort+')',limit:{context:ctx||4096,output:ctx||4096},free:true,cost:{input:0,output:0}};
+    };
+    (O.CATALOG_MODELS||[]).forEach(cat=>{
+      const name=cat.name,ctx=cat.context||4096;
+      addM(cat.id,name,ctx);
+      addM(cat.id.replace(':','-'),name,ctx);
+      addM(cat.id.replace(':','.'),name,ctx);
+      addM(cat.file,name,ctx);
+      addM(cat.file.replace(/\.gguf$/i,''),name,ctx);
+      addM(cat.file.replace(/\.gguf$/i,'').toLowerCase(),name,ctx);
+    });
     dl.forEach(f=>{
       const fn=f.fileName;
       const cat=O.CATALOG_MODELS&&O.CATALOG_MODELS.find(c=>c.file.toLowerCase()===fn.toLowerCase());
-      const mid=cat?cat.id:fn.replace(/\.gguf$/i,'').toLowerCase();
       const name=cat?cat.name:fn.replace(/\.gguf$/i,'');
       const ctx=cat?cat.context:4096;
-      models[mid]={id:mid,name:name+' (Офлайн :'+uPort+')',limit:{context:ctx},free:true,cost:{input:0,output:0}};
+      addM(fn,name,ctx);
+      addM(fn.replace(/\.gguf$/i,''),name,ctx);
+      addM(fn.replace(/\.gguf$/i,'').toLowerCase(),name,ctx);
+      if(cat){
+        addM(cat.id,cat.name,ctx);
+        addM(cat.id.replace(':','-'),cat.name,ctx);
+        addM(cat.id.replace(':','.'),cat.name,ctx);
+      }
     });
+    addM('local','Локальная модель (GGUF)',4096);
+    addM('default','Локальная модель (GGUF)',4096);
+
     if(Object.keys(models).length>0){
       const provLocal={id:'local',name:'Локально (Офлайн :'+uPort+')',models};
       const idx=S.providers.findIndex(x=>x.id==='local');
@@ -170,15 +191,19 @@ O.primaryAgents=()=>S.agents.filter(a=>a.mode!=='subagent'&&!a.hidden);
 O.modelInfo=(pid,mid)=>{
   O.injectLocalProvider();
   const p=S.providers.find(x=>x.id===pid);
-  if(p&&p.models&&p.models[mid])return p.models[mid];
+  if(p&&p.models){
+    if(p.models[mid])return p.models[mid];
+    const alt=mid.includes(':')?mid.replace(':','-'):mid.replace('-',':');
+    if(p.models[alt])return p.models[alt];
+  }
   if(pid==='local'||pid==='ollama'){
     const dl=O.native&&O.native.listLocalModels?O.native.listLocalModels():[];
-    const cat=O.CATALOG_MODELS&&O.CATALOG_MODELS.find(c=>c.id===mid||c.file.toLowerCase()===mid.toLowerCase());
+    const cat=O.CATALOG_MODELS&&O.CATALOG_MODELS.find(c=>c.id===mid||c.id.replace(':','-')===mid||c.file.toLowerCase()===mid.toLowerCase());
     const found=dl.find(f=>f.fileName.toLowerCase()===mid.toLowerCase()||(cat&&cat.file.toLowerCase()===f.fileName.toLowerCase()));
     if(found||cat){
       const name=cat?cat.name:mid;
       const ctx=cat?cat.context:4096;
-      return {id:mid,name,limit:{context:ctx},free:true,cost:{input:0,output:0}};
+      return {id:mid,name,limit:{context:ctx,output:ctx},free:true,cost:{input:0,output:0}};
     }
   }
   return null;

@@ -304,56 +304,139 @@ object Runtime {
         return pb.start()
     }
 
+    fun buildLocalProviderConfig(c: Context, uid: String, providerId: String): org.json.JSONObject {
+        val aiPort = stableAiPort(c, uid)
+        val home = home(c, uid)
+        val modelsObj = org.json.JSONObject()
+
+        fun addM(id: String, name: String, ctx: Int = 4096) {
+            if (id.isEmpty()) return
+            val m = org.json.JSONObject().apply {
+                put("name", name)
+                put("limit", org.json.JSONObject().apply {
+                    put("context", ctx)
+                    put("output", ctx)
+                })
+            }
+            modelsObj.put(id, m)
+        }
+
+        // Standard catalog models and all naming variations
+        val catalog = listOf(
+            Triple("deepseek-r1:1.5b", "DeepSeek-R1 Distill 1.5B", 4096),
+            Triple("deepseek-r1-1.5b", "DeepSeek-R1 Distill 1.5B", 4096),
+            Triple("deepseek-r1.1.5b", "DeepSeek-R1 Distill 1.5B", 4096),
+            Triple("DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf", "DeepSeek-R1 Distill 1.5B", 4096),
+            Triple("DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M", "DeepSeek-R1 Distill 1.5B", 4096),
+            Triple("deepseek-r1-distill-qwen-1.5b-q4_k_m", "DeepSeek-R1 Distill 1.5B", 4096),
+            Triple("qwen2.5:1.5b", "Qwen 2.5 1.5B Instruct", 4096),
+            Triple("qwen2.5-1.5b", "Qwen 2.5 1.5B Instruct", 4096),
+            Triple("qwen2.5-1.5b-instruct-q4_k_m.gguf", "Qwen 2.5 1.5B Instruct", 4096),
+            Triple("qwen2.5-1.5b-instruct-q4_k_m", "Qwen 2.5 1.5B Instruct", 4096),
+            Triple("smollm2:1.7b", "SmolLM2 1.7B Instruct", 4096),
+            Triple("smollm2-1.7b", "SmolLM2 1.7B Instruct", 4096),
+            Triple("SmolLM2-1.7B-Instruct-Q4_K_M.gguf", "SmolLM2 1.7B Instruct", 4096),
+            Triple("SmolLM2-1.7B-Instruct-Q4_K_M", "SmolLM2 1.7B Instruct", 4096),
+            Triple("llama3.2:3b", "Llama 3.2 3B Instruct", 8192),
+            Triple("llama3.2-3b", "Llama 3.2 3B Instruct", 8192),
+            Triple("Llama-3.2-3B-Instruct-Q4_K_M.gguf", "Llama 3.2 3B Instruct", 8192),
+            Triple("Llama-3.2-3B-Instruct-Q4_K_M", "Llama 3.2 3B Instruct", 8192),
+            Triple("gemma2:2b", "Gemma 2 2B Instruct", 4096),
+            Triple("gemma2-2b", "Gemma 2 2B Instruct", 4096),
+            Triple("gemma-2-2b-it-Q4_K_M.gguf", "Gemma 2 2B Instruct", 4096),
+            Triple("gemma-2-2b-it-Q4_K_M", "Gemma 2 2B Instruct", 4096),
+            Triple("phi3.5:3.8b", "Phi-3.5 Mini Instruct", 8192),
+            Triple("phi3.5-3.8b", "Phi-3.5 Mini Instruct", 8192),
+            Triple("Phi-3.5-mini-instruct-Q4_K_M.gguf", "Phi-3.5 Mini Instruct", 8192),
+            Triple("Phi-3.5-mini-instruct-Q4_K_M", "Phi-3.5 Mini Instruct", 8192),
+            Triple("local", "Локальная модель (GGUF)", 4096),
+            Triple("default", "Локальная модель (GGUF)", 4096)
+        )
+        for ((id, name, ctx) in catalog) {
+            addM(id, name, ctx)
+        }
+
+        // Add any downloaded GGUF files in /root/models
+        val mDir = File(home, "models")
+        if (mDir.exists()) {
+            mDir.listFiles()?.filter { it.isFile && it.name.endsWith(".gguf", true) }?.forEach { f ->
+                val fn = f.name
+                val base = f.nameWithoutExtension
+                addM(fn, base, 4096)
+                addM(base, base, 4096)
+                addM(base.lowercase(), base, 4096)
+            }
+        }
+
+        val displayName = if (providerId == "ollama") "Ollama (Офлайн :$aiPort)" else "Локально (Офлайн :$aiPort)"
+        return org.json.JSONObject().apply {
+            put("name", displayName)
+            put("npm", "@ai-sdk/openai-compatible")
+            put("options", org.json.JSONObject().apply {
+                put("baseURL", "http://127.0.0.1:$aiPort/v1")
+                put("apiKey", providerId)
+            })
+            put("models", modelsObj)
+        }
+    }
+
     fun sanitizeConfig(c: Context, uid: String, forceReset: Boolean = false) {
         try {
             val home = home(c, uid)
             val cfgDir = File(home, ".config/opencode").apply { mkdirs() }
-            val files = listOf(File(cfgDir, "opencode.json"), File(cfgDir, "opencode.jsonc"))
+            val configFile = File(cfgDir, "opencode.json")
+            val files = listOf(configFile, File(cfgDir, "opencode.jsonc"))
             for (f in files) {
                 if (!f.exists()) continue
                 if (forceReset) {
                     val bak = File(cfgDir, f.name + ".bak-" + System.currentTimeMillis())
                     try { f.renameTo(bak) } catch (_: Exception) {}
-                    f.writeText("{\n}\n")
+                    val fresh = org.json.JSONObject().apply {
+                        put("provider", org.json.JSONObject().apply {
+                            put("local", buildLocalProviderConfig(c, uid, "local"))
+                            put("ollama", buildLocalProviderConfig(c, uid, "ollama"))
+                        })
+                    }
+                    f.writeText(fresh.toString(2))
                     continue
                 }
                 val txt = f.readText().trim()
-                if (txt.isEmpty()) continue
+                if (txt.isEmpty()) {
+                    val fresh = org.json.JSONObject().apply {
+                        put("provider", org.json.JSONObject().apply {
+                            put("local", buildLocalProviderConfig(c, uid, "local"))
+                            put("ollama", buildLocalProviderConfig(c, uid, "ollama"))
+                        })
+                    }
+                    f.writeText(fresh.toString(2))
+                    continue
+                }
                 try {
                     val obj = org.json.JSONObject(txt)
-                    var modified = false
-                    if (obj.has("provider")) {
-                        val prov = obj.optJSONObject("provider")
-                        if (prov != null) {
-                            if (prov.has("local")) {
-                                prov.remove("local")
-                                modified = true
-                            }
-                            if (prov.has("ollama")) {
-                                val ollama = prov.optJSONObject("ollama")
-                                if (ollama != null && (ollama.has("npm") || ollama.has("options") || ollama.has("models"))) {
-                                    val aiPort = stableAiPort(c, uid)
-                                    val cleanOllama = org.json.JSONObject().apply {
-                                        put("settings", org.json.JSONObject().apply {
-                                            put("baseURL", "http://127.0.0.1:$aiPort/v1")
-                                        })
-                                    }
-                                    prov.put("ollama", cleanOllama)
-                                    modified = true
-                                }
-                            }
-                        }
-                    }
-                    if (modified) {
-                        val bak = File(cfgDir, f.name + ".bak-" + System.currentTimeMillis())
-                        try { f.copyTo(bak, true) } catch (_: Exception) {}
-                        f.writeText(obj.toString(2))
-                    }
+                    val prov = obj.optJSONObject("provider") ?: org.json.JSONObject().also { obj.put("provider", it) }
+                    prov.put("local", buildLocalProviderConfig(c, uid, "local"))
+                    prov.put("ollama", buildLocalProviderConfig(c, uid, "ollama"))
+                    f.writeText(obj.toString(2))
                 } catch (_: Exception) {
                     val bak = File(cfgDir, f.name + ".corrupt-" + System.currentTimeMillis())
                     try { f.renameTo(bak) } catch (_: Exception) {}
-                    f.writeText("{\n}\n")
+                    val fresh = org.json.JSONObject().apply {
+                        put("provider", org.json.JSONObject().apply {
+                            put("local", buildLocalProviderConfig(c, uid, "local"))
+                            put("ollama", buildLocalProviderConfig(c, uid, "ollama"))
+                        })
+                    }
+                    f.writeText(fresh.toString(2))
                 }
+            }
+            if (!configFile.exists()) {
+                val fresh = org.json.JSONObject().apply {
+                    put("provider", org.json.JSONObject().apply {
+                        put("local", buildLocalProviderConfig(c, uid, "local"))
+                        put("ollama", buildLocalProviderConfig(c, uid, "ollama"))
+                    })
+                }
+                configFile.writeText(fresh.toString(2))
             }
         } catch (_: Exception) {}
     }
@@ -365,6 +448,24 @@ object Runtime {
             val home = home(c, uid)
             val cfg = File(home, ".config/opencode").apply { mkdirs() }
             val dotOpencode = File(home, ".opencode").apply { mkdirs() }
+
+            // Pre-seed offline models cache for OpenCode CLI
+            val cacheDir = File(home, ".cache/opencode").apply { mkdirs() }
+            val cacheModels = File(cacheDir, "models.json")
+            if (!cacheModels.exists()) {
+                val seed = org.json.JSONObject().apply {
+                    put("opencode", org.json.JSONObject().apply {
+                        put("id", "opencode"); put("name", "OpenCode"); put("env", org.json.JSONArray()); put("models", org.json.JSONObject())
+                    })
+                    put("local", org.json.JSONObject().apply {
+                        put("id", "local"); put("name", "Local"); put("env", org.json.JSONArray()); put("models", org.json.JSONObject())
+                    })
+                    put("ollama", org.json.JSONObject().apply {
+                        put("id", "ollama"); put("name", "Ollama"); put("env", org.json.JSONArray()); put("models", org.json.JSONObject())
+                    })
+                }
+                cacheModels.writeText(seed.toString(2))
+            }
 
             // Ensure tmp directories exist with proper access
             File(root, "tmp").apply { mkdirs(); setReadable(true, false); setWritable(true, false); setExecutable(true, false) }
@@ -436,6 +537,16 @@ object Runtime {
                     MODEL="${S}ARG_MODEL"
                   elif [ -n "${S}ARG_MODEL" ] && [ -f "${S}MODELS_DIR/${S}ARG_MODEL" ]; then
                     MODEL="${S}MODELS_DIR/${S}ARG_MODEL"
+                  elif [ -n "${S}ARG_MODEL" ] && [ -f "${S}MODELS_DIR/${S}ARG_MODEL.gguf" ]; then
+                    MODEL="${S}MODELS_DIR/${S}ARG_MODEL.gguf"
+                  elif [ -n "${S}ARG_MODEL" ]; then
+                    CLEAN_NAME=$(echo "${S}ARG_MODEL" | sed 's/[:\/]/ /g' | awk '{print ${S}1}')
+                    MATCH=$(ls "${S}MODELS_DIR"/*"${S}CLEAN_NAME"*.gguf 2>/dev/null | head -n1)
+                    if [ -n "${S}MATCH" ] && [ -f "${S}MATCH" ]; then
+                      MODEL="${S}MATCH"
+                    else
+                      MODEL=$(ls "${S}MODELS_DIR"/*.gguf 2>/dev/null | head -n1)
+                    fi
                   else
                     MODEL=$(ls "${S}MODELS_DIR"/*.gguf 2>/dev/null | head -n1)
                   fi
@@ -507,18 +618,32 @@ object Runtime {
                 llama_port = args.port + 100
                 llama_proc = None
 
+                # Resolve actual model path
+                m_path = args.model
+                if m_path and not os.path.isabs(m_path):
+                    c1 = os.path.join(MODELS_DIR, m_path)
+                    if os.path.isfile(c1):
+                        m_path = c1
+                    elif os.path.isfile(c1 + '.gguf'):
+                        m_path = c1 + '.gguf'
+                if not m_path or not os.path.isfile(m_path):
+                    ggufs = sorted(glob.glob(os.path.join(MODELS_DIR, '*.gguf')))
+                    if ggufs:
+                        m_path = ggufs[0]
+
                 # Launch native llama-server as worker if model and binary are present
-                if args.model and os.path.isfile(args.model) and os.path.isfile('/usr/local/bin/llama-server'):
+                if m_path and os.path.isfile(m_path) and os.path.isfile('/usr/local/bin/llama-server'):
                     try:
                         import subprocess
+                        log_f = open('/root/models/llama-server.log', 'a')
                         llama_proc = subprocess.Popen([
                             '/usr/local/bin/llama-server',
-                            '-m', args.model,
+                            '-m', m_path,
                             '--port', str(llama_port),
                             '--host', '127.0.0.1',
                             '-c', '4096',
                             '-t', '4'
-                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        ], stdout=log_f, stderr=subprocess.STDOUT)
                     except Exception:
                         llama_proc = None
 
@@ -635,12 +760,13 @@ object Runtime {
                             proxied = False
                             if llama_proc is not None and llama_proc.poll() is None:
                                 try:
+                                    target_p = p if p.startswith('/v1') else ('/v1' + p)
                                     proxy_req = urllib.request.Request(
-                                        'http://127.0.0.1:' + str(llama_port) + p,
+                                        'http://127.0.0.1:' + str(llama_port) + target_p,
                                         data=raw.encode('utf-8'),
-                                        headers={'Content-Type': 'application/json'}
+                                        headers={'Content-Type': 'application/json', 'Accept': 'text/event-stream, application/json'}
                                     )
-                                    with urllib.request.urlopen(proxy_req, timeout=120) as presp:
+                                    with urllib.request.urlopen(proxy_req, timeout=180) as presp:
                                         self.send_response(presp.status)
                                         for k, v in presp.headers.items():
                                             if k.lower() not in ('transfer-encoding', 'content-length'):
@@ -987,6 +1113,15 @@ For example:
             put("OPENCODE_SERVER_USERNAME", "opencode")
             put("OPENCODE_SERVER_PASSWORD", password)
             put("OPENCODE_DISABLE_AUTOUPDATE", "1") // stay on 1.x: no `upgrade --major` behind our back
+            put("OPENCODE_DISABLE_PRUNE", "1")
+            put("DISABLE_TELEMETRY", "1")
+            put("DO_NOT_TRACK", "1")
+
+            val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            val isOnline = try { cm?.activeNetworkInfo?.isConnected == true } catch (_: Exception) { false }
+            if (!isOnline) {
+                put("OPENCODE_DISABLE_MODELS_FETCH", "1")
+            }
         }
         return pb.start()
     }
