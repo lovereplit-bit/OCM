@@ -126,11 +126,6 @@ class MainActivity : ComponentActivity() {
             setBackgroundColor(0xFF0D0D0F.toInt())
             // Never use LAYER_TYPE_HARDWARE on WebView as it disables Chromium direct GPU swapchain and caps FPS to 60
             setLayerType(View.LAYER_TYPE_NONE, null)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                try {
-                    setFrameRate(120f, android.view.Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
-                } catch (_: Throwable) {}
-            }
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
@@ -246,9 +241,11 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val lp = window.attributes
                 lp.preferredRefreshRate = 120f
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    lp.preferredMinDisplayRefreshRate = 90f
-                    lp.preferredMaxDisplayRefreshRate = 144f
+                if (Build.VERSION.SDK_INT >= 34) {
+                    try {
+                        lp.javaClass.getField("preferredMinDisplayRefreshRate").setFloat(lp, 90f)
+                        lp.javaClass.getField("preferredMaxDisplayRefreshRate").setFloat(lp, 144f)
+                    } catch (_: Throwable) {}
                 }
                 val disp = display ?: (getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager)?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
                 val modes = disp?.supportedModes
