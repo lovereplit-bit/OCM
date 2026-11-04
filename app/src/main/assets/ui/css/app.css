@@ -643,173 +643,7 @@ a:hover {
   border: 1px solid var(--line);
 }
 
-/* ==========================================================================
-   HALLOWEEN THEME: Glowing Pumpkin, Corner Webs, Animated Spiders & Bats
-   ========================================================================== */
-.halloween-pumpkin-wrap {
-  position: absolute;
-  top: -34px;
-  right: 22px;
-  z-index: 15;
-  cursor: pointer;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6));
-}
-.halloween-pumpkin-wrap:hover {
-  transform: scale(1.1) rotate(-3deg);
-}
-.halloween-pumpkin-wrap:active,
-.halloween-pumpkin-wrap.bounce {
-  animation: pumpkinBounce 0.65s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
 
-@keyframes pumpkinBounce {
-  0% { transform: scale(1) translateY(0); }
-  30% { transform: scale(1.28) translateY(-10px) rotate(-8deg); }
-  60% { transform: scale(0.92) translateY(2px) rotate(4deg); }
-  85% { transform: scale(1.08) translateY(-2px); }
-  100% { transform: scale(1) translateY(0); }
-}
-
-.pumpkin-svg {
-  display: block;
-}
-.pumpkin-face .pk-eye,
-.pumpkin-face .pk-mouth {
-  animation: pumpkinFlicker 2.8s infinite ease-in-out;
-}
-
-@keyframes pumpkinFlicker {
-  0%, 100% {
-    fill: #fef08a;
-    filter: drop-shadow(0 0 3px #f59e0b) drop-shadow(0 0 8px #ea580c);
-    opacity: 1;
-  }
-  25% {
-    fill: #fde047;
-    filter: drop-shadow(0 0 1px #f59e0b) drop-shadow(0 0 4px #ea580c);
-    opacity: 0.88;
-  }
-  50% {
-    fill: #ffffff;
-    filter: drop-shadow(0 0 5px #fde047) drop-shadow(0 0 12px #f97316);
-    opacity: 1;
-  }
-  75% {
-    fill: #fef08a;
-    filter: drop-shadow(0 0 2px #d97706) drop-shadow(0 0 6px #c2410c);
-    opacity: 0.92;
-  }
-}
-
-.halloween-web {
-  position: fixed;
-  top: 0;
-  width: 70px;
-  height: 70px;
-  pointer-events: none;
-  z-index: 40;
-  user-select: none;
-}
-.halloween-web.web-tl {
-  left: 0;
-}
-.halloween-web.web-tr {
-  right: 0;
-}
-
-.spider-hang {
-  position: absolute;
-  top: 26px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  pointer-events: none;
-}
-.spider-hang.spider-left {
-  left: 28px;
-  animation: spiderDangleLeft 7s infinite ease-in-out;
-}
-.spider-hang.spider-right {
-  right: 28px;
-  animation: spiderDangleRight 8.5s infinite ease-in-out 1.2s;
-}
-
-.spider-thread {
-  width: 1px;
-  height: 20px;
-  background: rgba(255, 255, 255, 0.28);
-}
-.spider-svg {
-  display: block;
-  margin-top: -2px;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
-}
-
-@keyframes spiderDangleLeft {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  40% {
-    transform: translateY(18px) rotate(6deg);
-  }
-  50% {
-    transform: translateY(22px) rotate(-4deg);
-  }
-  70% {
-    transform: translateY(8px) rotate(2deg);
-  }
-}
-
-@keyframes spiderDangleRight {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  35% {
-    transform: translateY(24px) rotate(-8deg);
-  }
-  48% {
-    transform: translateY(26px) rotate(5deg);
-  }
-  75% {
-    transform: translateY(10px) rotate(-2deg);
-  }
-}
-
-/* Flying bats easter egg */
-.flying-bat {
-  position: fixed;
-  z-index: 9999;
-  pointer-events: none;
-  animation: batFly 3s linear forwards;
-}
-.flying-bat .bat-body {
-  animation: wingFlap 0.22s infinite alternate ease-in-out;
-}
-
-@keyframes batFly {
-  0% {
-    transform: translate(0, 0) scale(0.7);
-    opacity: 0;
-  }
-  15% {
-    opacity: 1;
-  }
-  85% {
-    opacity: 1;
-  }
-  100% {
-    transform: translate(110vw, -15vh) scale(1.1);
-    opacity: 0;
-  }
-}
-
-@keyframes wingFlap {
-  0% { transform: scaleY(1); }
-  100% { transform: scaleY(0.45); }
-}
 
 .hud-icon-btn {
   width: 38px;
@@ -1081,6 +915,16 @@ a:hover {
   width: 100%;
   text-align: left;
   transition: background 0.12s;
+  color: var(--fg);
+}
+.settings-row svg {
+  color: var(--mut);
+  stroke: currentColor;
+  flex: none;
+}
+.settings-row:hover svg,
+.settings-row:active svg {
+  color: var(--fg);
 }
 .settings-row:last-child {
   border-bottom: none;
@@ -1439,6 +1283,24 @@ a:hover {
 }
 .card.warn {
   border-color: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
+}
+.card.warn span {
+  color: var(--fg);
+}
+.revert-banner {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--card);
+  color: #ffffff;
+  border-radius: 14px;
+}
+.revert-banner span {
+  color: #ffffff;
+}
+.revert-banner .revert-icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--mut);
 }
 .card .row {
   display: flex;

@@ -48,11 +48,7 @@ function build(){
 
   const bottomBar=h('div',{id:'bottom-bar'},B.chat,B.memory);
 
-  // Halloween corner cobwebs with animated crawling spiders
-  const webTL=h('div',{class:'halloween-web web-tl',html:`<svg viewBox="0 0 70 70" width="70" height="70" fill="none"><path d="M0,0 L70,0 M0,0 L65,25 M0,0 L48,48 M0,0 L25,65 M0,0 L0,70" stroke="rgba(255,255,255,0.22)" stroke-width="1.2"/><path d="M22,0 Q18,10 0,22" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none"/><path d="M42,0 Q32,22 0,42" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none"/><path d="M64,0 Q50,38 0,64" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none"/></svg><div class="spider-hang spider-left"><div class="spider-thread"></div><svg class="spider-svg" viewBox="0 0 20 20" width="18" height="18" fill="none"><path d="M10,10 L3,5 M10,10 L2,10 M10,10 L3,15 M10,10 L5,18 M10,10 L17,5 M10,10 L18,10 M10,10 L17,15 M10,10 L15,18" stroke="#1c1917" stroke-width="1.4" stroke-linecap="round"/><ellipse cx="10" cy="11" rx="4" ry="4.5" fill="#18181b"/><ellipse cx="10" cy="7" rx="3" ry="2.5" fill="#09090b"/><circle cx="8.8" cy="6.5" r="0.8" fill="#ef4444"/><circle cx="11.2" cy="6.5" r="0.8" fill="#ef4444"/></svg></div>`});
-  const webTR=h('div',{class:'halloween-web web-tr',html:`<svg viewBox="0 0 70 70" width="70" height="70" fill="none"><path d="M70,0 L0,0 M70,0 L5,25 M70,0 L22,48 M70,0 L45,65 M70,0 L70,70" stroke="rgba(255,255,255,0.22)" stroke-width="1.2"/><path d="M48,0 Q52,10 70,22" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none"/><path d="M28,0 Q38,22 70,42" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none"/><path d="M6,0 Q20,38 70,64" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none"/></svg><div class="spider-hang spider-right"><div class="spider-thread"></div><svg class="spider-svg" viewBox="0 0 20 20" width="18" height="18" fill="none"><path d="M10,10 L3,5 M10,10 L2,10 M10,10 L3,15 M10,10 L5,18 M10,10 L17,5 M10,10 L18,10 M10,10 L17,15 M10,10 L15,18" stroke="#1c1917" stroke-width="1.4" stroke-linecap="round"/><ellipse cx="10" cy="11" rx="4" ry="4.5" fill="#18181b"/><ellipse cx="10" cy="7" rx="3" ry="2.5" fill="#09090b"/><circle cx="8.8" cy="6.5" r="0.8" fill="#ef4444"/><circle cx="11.2" cy="6.5" r="0.8" fill="#ef4444"/></svg></div>`});
-
-  app.append(webTL,webTR,top,T.banner,main,bottomBar);
+  app.append(top,T.banner,main,bottomBar);
 
   O.filesInit(P.files);
   O.chatInit(P.chat);
@@ -216,18 +212,6 @@ O.back=()=>{
   return false;
 };
 
-O.spawnBats=()=>{
-  for(let i=0;i<5;i++){
-    const bat=h('div',{class:'flying-bat',style:{
-      top:(15+Math.random()*45)+'vh',
-      left:(i%2===0?'-60px':'calc(100vw + 30px)'),
-      animationDelay:(i*200)+'ms',
-      animationDirection:(i%2===0?'normal':'reverse')
-    }},h('div',{class:'bat-body',html:`<svg viewBox="0 0 32 18" width="32" height="18" fill="#18181b"><path d="M16 10 C14 5, 8 2, 2 5 C3 10, 8 13, 11 11 C12 14, 15 15, 16 13 C17 15, 20 14, 21 11 C24 13, 29 10, 30 5 C24 2, 18 5, 16 10 Z"/><circle cx="14.5" cy="9" r="0.9" fill="#ef4444"/><circle cx="17.5" cy="9" r="0.9" fill="#ef4444"/></svg>`}));
-    document.body.append(bat);
-    setTimeout(()=>bat.remove(),3500);
-  }
-};
 
 O.playChime=kind=>{
   try{if(window.OC&&window.OC.testSound){window.OC.testSound(kind);return}}catch(e){}

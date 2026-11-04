@@ -27,55 +27,7 @@ O.chatInit=root=>{
   const cbarLeft=h('div',{class:'cbar-left'},plusBtn,agentChip,modelChip);
   const cbarRight=h('div',{class:'cbar-right'},micBtn,sendBtn);
   const cbarRow=h('div',{class:'cbar-row'},cbarLeft,cbarRight);
-  const pumpkinSvg = `<svg class="pumpkin-svg" viewBox="0 0 48 46" width="46" height="44" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <radialGradient id="pkGrad" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#ff9d26"/>
-      <stop offset="65%" stop-color="#f97316"/>
-      <stop offset="100%" stop-color="#c2410c"/>
-    </radialGradient>
-    <filter id="pkGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="1.2" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-  </defs>
-  <g class="pumpkin-body">
-    <ellipse cx="14" cy="27" rx="9" ry="12" fill="url(#pkGrad)"/>
-    <ellipse cx="34" cy="27" rx="9" ry="12" fill="url(#pkGrad)"/>
-    <ellipse cx="18" cy="28" rx="9" ry="13" fill="url(#pkGrad)"/>
-    <ellipse cx="30" cy="28" rx="9" ry="13" fill="url(#pkGrad)"/>
-    <ellipse cx="24" cy="28.5" rx="9.5" ry="13.5" fill="url(#pkGrad)"/>
-    <path d="M22 17 C22 13, 27 12, 28 9 C26 12, 24 13, 23 17 Z" fill="#15803d"/>
-  </g>
-  <g class="pumpkin-face" filter="url(#pkGlow)">
-    <polygon points="17,25 21,28 17.5,29" fill="#fef08a" class="pk-eye"/>
-    <polygon points="31,25 27,28 30.5,29" fill="#fef08a" class="pk-eye"/>
-    <polygon points="24,28 22.5,31 25.5,31" fill="#fef08a" class="pk-eye"/>
-    <path d="M16 33.5 Q24 40 32 33.5 Q30 35.5 28 34.5 L27 36 L25.5 34.5 L24 36 L22.5 34.5 L21 36 L19.5 34.5 Q18 35.5 16 33.5 Z" fill="#fef08a" class="pk-mouth"/>
-  </g>
-  <g class="witch-hat">
-    <path d="M7 21 C14 17, 34 17, 41 21 C36 23, 12 23, 7 21 Z" fill="#1e1829"/>
-    <path d="M16 20 C18 13, 26 7, 31 3 C30 6, 29 9, 29 11 C31 10, 34 8, 33 6 C28 9, 28 14, 29 20 Z" fill="#2d223c"/>
-    <path d="M17 20 C19 14, 25 8, 31 3 C27 9, 25 15, 25 20 Z" fill="#44355a"/>
-    <path d="M16.5 19.5 C20 18, 25 18, 28.5 19.5 L28.8 20.8 C25 19.2, 20 19.2, 16.2 20.8 Z" fill="#ea580c"/>
-    <rect x="21" y="17.8" width="5.5" height="4" rx="1" fill="#eab308"/>
-    <rect x="22.2" y="18.6" width="3.1" height="2.4" rx="0.5" fill="#1e1829"/>
-  </g>
-</svg>`;
-
-  const pumpkinEl=h('div',{
-    class:'halloween-pumpkin-wrap',
-    title:'Happy Halloween! Нажми меня!',
-    onclick:()=>{
-      pumpkinEl.classList.add('bounce');
-      setTimeout(()=>pumpkinEl.classList.remove('bounce'),700);
-      O.toast('🎃 Бу! Счастливого Хэллоуина от OpenCode! 👻',3000);
-      if(O.spawnBats)O.spawnBats();
-    },
-    html:pumpkinSvg
-  });
-
-  comp=h('div',{id:'composer'},pumpkinEl,popEl,h('div',{class:'cbox'},nokeyEl,attsEl,ta,cbarRow),fileIn);
+  comp=h('div',{id:'composer'},popEl,h('div',{class:'cbox'},nokeyEl,attsEl,ta,cbarRow),fileIn);
   const wrap=h('div',{class:'chat-msgs-wrap',style:{position:'relative',flex:1,minHeight:0,display:'flex',flexDirection:'column'}},msgsEl,jumpEl);
   root.append(wrap,revEl,todoEl,statusEl,dockEl,comp);
   bus.on('open',()=>{renderAll()});
@@ -175,20 +127,12 @@ function getMsgDiff(m){
     if(p.type==='text'&&p.text){
       const mMatch=p.text.match(/(?:^|\n)\s*([+]\d+)\s+([-]\d+)\s*(?:$|\n)/);
       if(mMatch){
-        found=true;
         if(added===0&&deleted===0){
           added=parseInt(mMatch[1].replace('+',''),10)||0;
           deleted=parseInt(mMatch[2].replace('-',''),10)||0;
+          if(added>0||deleted>0)found=true;
         }
       }
-    }
-  }
-  // If not found in message parts directly, check session diffs
-  if(!found){
-    const d=S.diffs[m.info.sessionID||S.sid]||[];
-    if(d.length){
-      d.forEach(f=>{added+=(f.additions||0);deleted+=(f.deletions||0)});
-      if(added>0||deleted>0)found=true;
     }
   }
   return{added,deleted,found};
@@ -215,11 +159,11 @@ function metaUpdate(el,m){
     if(i.cost)t.push('$'+i.cost.toFixed(4));
     meta.append(h('span',null,t.join('  ')));
 
-    // Always render diff stats line under assistant messages (+N -M)
+    // Render diff stats line ONLY under messages that actually modified files (+N -M)
     const diffStat=getMsgDiff(m);
     const oldDiffLine=el.firstChild.querySelector('.msg-diff-line')||el.firstChild.querySelector('.msg-diff-badge');
-    const hasText=m.parts.some(p=>p.type==='text'&&String(p.text||'').trim()!=='');
-    if(hasText||diffStat.found||diffStat.added>0||diffStat.deleted>0){
+    const hasDiff = (diffStat.added > 0 || diffStat.deleted > 0);
+    if(hasDiff){
       const badge=h('div',{
         class:'msg-diff-line',
         title:O.tr('View code changes in project','Посмотреть изменения кода в проекте'),
@@ -255,7 +199,11 @@ async function forkAt(m){try{const s=await api('POST','/session/'+S.sid+'/fork',
 function toolMeta(p){const st=p.state||{},i=st.input||{},r=O.rel;
   switch(p.tool){
   case'bash':return{ic:'terminal',t:i.description||'Команда',s:String(i.command||'').split('\n')[0]};
-  case'read':return{ic:'file',t:'Чтение',s:r(i.filePath)};
+  case'read':{
+    const out=st.output!=null?st.output:(st.metadata&&st.metadata.output);
+    const lineCnt=out?String(out).split('\n').length:null;
+    return{ic:'file',t:'Чтение',s:r(i.filePath)+(lineCnt?(' ('+lineCnt+' строк)'):'')};
+  }
   case'edit':return{ic:'edit',t:'Правка',s:r(i.filePath)};
   case'write':return{ic:'edit',t:'Запись',s:r(i.filePath)};
   case'patch':case'apply_patch':return{ic:'edit',t:'Патч',s:''};
@@ -291,8 +239,8 @@ async function openChild(sid){try{if(!O.child(sid)){const s=await api('GET','/se
 
 // ---- banners / dock ----
 function renderRevert(){const s=cur();revEl.textContent='';
-  if(trail.length&&S.sid&&O.child(S.sid)){revEl.classList.remove('hide');revEl.append(h('div',{class:'card warn',style:{display:'flex',alignItems:'center',gap:'8px'}},h('span',{class:'grow'},'Сессия субагента'),h('button',{class:'btn sm',onclick:()=>{const p=trail.pop();O.openSession(p)}},'Назад')));return}
-  if(s&&s.revert){revEl.classList.remove('hide');revEl.append(h('div',{class:'card warn',style:{display:'flex',alignItems:'center',gap:'8px'}},h('span',{class:'grow'},'Изменения отменены'),h('button',{class:'btn sm',onclick:doRedo},O.icon('redo'),'Вернуть')))}
+  if(trail.length&&S.sid&&O.child(S.sid)){revEl.classList.remove('hide');revEl.append(h('div',{class:'card revert-banner',style:{display:'flex',alignItems:'center',gap:'10px'}},h('span',{class:'grow'},'Сессия субагента'),h('button',{class:'btn sm',onclick:()=>{const p=trail.pop();O.openSession(p)}},'Назад')));return}
+  if(s&&s.revert){revEl.classList.remove('hide');revEl.append(h('div',{class:'card revert-banner',style:{display:'flex',alignItems:'center',gap:'10px'}},h('span',{class:'revert-icon'},O.icon('undo')),h('span',{class:'grow',style:{color:'#ffffff'}},'Изменения отменены'),h('button',{class:'btn sm',onclick:doRedo},O.icon('redo'),'Вернуть')))}
   else revEl.classList.add('hide')}
 function renderTodos(){const t=(S.todos[S.sid]||[]);todoEl.textContent='';
   if(!t.length||t.every(x=>x.status==='completed')){todoEl.classList.add('hide');return}

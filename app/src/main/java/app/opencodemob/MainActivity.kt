@@ -102,29 +102,7 @@ class MainActivity : ComponentActivity() {
             android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
         )
         // Unlock 90Hz / 120Hz / 144Hz high refresh rate display mode
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try {
-                window.attributes.preferredRefreshRate = 120f
-                val modes = display?.supportedModes
-                val maxMode = modes?.maxByOrNull { it.refreshRate }
-                if (maxMode != null && maxMode.refreshRate >= 90f) {
-                    val lp = window.attributes
-                    lp.preferredDisplayModeId = maxMode.modeId
-                    window.attributes = lp
-                }
-            } catch (_: Exception) {}
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                @Suppress("DEPRECATION")
-                val modes = windowManager.defaultDisplay?.supportedModes
-                val maxMode = modes?.maxByOrNull { it.refreshRate }
-                if (maxMode != null && maxMode.refreshRate >= 90f) {
-                    val lp = window.attributes
-                    lp.preferredDisplayModeId = maxMode.modeId
-                    window.attributes = lp
-                }
-            } catch (_: Exception) {}
-        }
+        unlockHighRefreshRate()
         window.statusBarColor = 0xFF0D0D0F.toInt()
         window.navigationBarColor = 0xFF0D0D0F.toInt()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -146,7 +124,13 @@ class MainActivity : ComponentActivity() {
         }
         web = WebView(this).apply {
             setBackgroundColor(0xFF0D0D0F.toInt())
-            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            // Never use LAYER_TYPE_HARDWARE on WebView as it disables Chromium direct GPU swapchain and caps FPS to 60
+            setLayerType(View.LAYER_TYPE_NONE, null)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    setFrameRate(120f, android.view.Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
+                } catch (_: Throwable) {}
+            }
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
@@ -222,14 +206,68 @@ class MainActivity : ComponentActivity() {
     private fun handleWidgetIntent(intent: Intent?) {
         val act = intent?.getStringExtra("widget_action") ?: return
         val target = intent.getStringExtra("widget_target") ?: ""
+        if (act == "voice") {
+            ui.postDelayed({
+                try {
+                    val sp = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Слушаю...")
+                    }
+                    speechLauncher.launch(sp)
+                } catch (_: Exception) {
+                    emit("widget_action", JSONObject().put("action", "voice"))
+                }
+            }, 300)
+            return
+        }
         ui.postDelayed({
             emit("widget_action", JSONObject().put("action", act).put("target", target))
         }, 500)
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        unlockHighRefreshRate()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) unlockHighRefreshRate()
+    }
+
     override fun onResume() {
         super.onResume()
+        unlockHighRefreshRate()
         emit("perms", JSONObject())
+    }
+
+    private fun unlockHighRefreshRate() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val lp = window.attributes
+                lp.preferredRefreshRate = 120f
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    lp.preferredMinDisplayRefreshRate = 90f
+                    lp.preferredMaxDisplayRefreshRate = 144f
+                }
+                val disp = display ?: (getSystemService(Context.DISPLAY_SERVICE) as? android.hardware.display.DisplayManager)?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+                val modes = disp?.supportedModes
+                val maxMode = modes?.maxByOrNull { it.refreshRate }
+                if (maxMode != null && maxMode.refreshRate >= 90f) {
+                    lp.preferredDisplayModeId = maxMode.modeId
+                }
+                window.attributes = lp
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                @Suppress("DEPRECATION")
+                val modes = windowManager.defaultDisplay?.supportedModes
+                val maxMode = modes?.maxByOrNull { it.refreshRate }
+                if (maxMode != null && maxMode.refreshRate >= 90f) {
+                    val lp = window.attributes
+                    lp.preferredDisplayModeId = maxMode.modeId
+                    window.attributes = lp
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     override fun onDestroy() {
