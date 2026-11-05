@@ -108,11 +108,14 @@ O.openSettings=()=>{
 };
 
 // ---- agents / rules upload ----
-function openAgents(){const list=h('div');
+function openAgents(){
+  if(O.updateReadmeForModel) O.updateReadmeForModel();
+  const list=h('div');
   const up=(t,sbt,kind,dir)=>O.listRow('up',t,sbt,null,()=>OC.pickFile(kind,dir||''));
   const s=sub('Агенты и правила',h('div',null,
+    O.listRow('doc','Инструкции и README (AGENTS.md)','Текущие инструкции и джейлбрейк для активной модели',null,()=>editFile(CFG+'/AGENTS.md','Инструкции и README (AGENTS.md)')),
+    O.listRow('edit','Глобальный README.md','Текущие инструкции и джейлбрейк в README.md',null,()=>editFile(CFG+'/README.md','Глобальный README.md')),
     up('Глобальные правила (AGENTS.md)','Выберите файл — действует для всех проектов','rules'),
-    O.listRow('edit','Написать глобальные правила','Редактировать AGENTS.md здесь',null,()=>editFile(CFG+'/AGENTS.md','Глобальный AGENTS.md')),
     up('Правила проекта (AGENTS.md)','Сохраняются в текущую папку','project',S.dir),
     up('Файл навыка (.md)','Добавляет навык для агента','skill'),
     up('Файл агента (.md)','Добавляется в список ваших агентов','agent'),up('Файл команды (.md)','Добавляет /команду','command'),list));
@@ -361,6 +364,10 @@ O.toggleJailbreak=id=>{
   const arr=Array.from(set);
   O.store.set('active_jailbreak_ids',arr);
   O.store.set('active_jailbreak_id',arr[0]||null);
+  if(O.updateReadmeForModel){
+    const mid=S.model?S.model.modelID:null;
+    O.updateReadmeForModel(mid);
+  }
   return next;
 };
 
@@ -377,6 +384,86 @@ O.getActiveJailbreak=()=>{
   const jbs=O.getActiveJailbreaks();
   return jbs[0]||null;
 };
+
+const BASE_SYSTEM_INSTRUCTIONS = `# OpenCode Mobile Environment & Instructions (v2.0.1)
+
+You are running inside **OpenCode Mobile** directly on native Android (ARM64 / aarch64 architecture).
+You have full access to a complete Linux userspace environment, terminal tools, and native Android integrations.
+
+## 1. Environment & Architecture
+- Platform: Native Android Linux Userspace (ARM64 / aarch64).
+- Package manager: Always use \`pkg\` (\`pkg install <package>\`, do NOT pass \`-y\`) or \`pip\` / \`npm\`.
+- Compilations: Target ARM64/aarch64 architecture.
+- Storage: \`/root\` is internal storage ($HOME). \`/sdcard\` or \`/storage/emulated/0\` is shared Android storage with \`noexec\` restriction. Always run scripts with explicit interpreter: \`python script.py\`, \`bash script.sh\`.
+
+## 2. Core Skill: Launching Android Applications
+You have the built-in skill to open and switch to any installed Android application or system setting on the device!
+Whenever the user asks you to open, launch, or switch to an app:
+1. Execute the bash command:
+   \`openapp <app_name_or_package>\`
+2. Inform the user in your response that the application is opening, and include an action button:
+   \`<button data-action="open_app" data-target="<app_name>">Открыть <app_name></button>\`
+
+## 3. Core Skill: In-App Web Project Preview
+You have the built-in skill to preview web projects directly inside OpenCode Mobile:
+- To launch the in-app preview from shell, execute: \`openpreview <path>\`
+- Or include an interactive artifact button in your response:
+  \`<button data-action="preview" data-path="index.html">Открыть сайт</button>\`
+
+## 4. Interactive Artifact Buttons
+- \`<button data-action="new_chat">Новый чат</button>\`
+- \`<button data-action="open_app" data-target="telegram">Открыть Telegram</button>\`
+- \`<button data-action="preview" data-path="index.html">Открыть сайт</button>\`
+- \`<button data-action="files">Открыть Файлы</button>\`
+- \`<button data-action="term">Терминал</button>\`
+
+## 5. Diff Statistics Reporting (MANDATORY)
+At the very end of EVERY response, you MUST output a separate line with line additions and deletions:
++N -M
+(If no files were edited, output: +0 -0)`;
+
+O.updateReadmeForModel = (modelID) => {
+  try {
+    const curMid = modelID || (S.model ? S.model.modelID : null);
+    const activeJbs = (O.getActiveJailbreaks ? O.getActiveJailbreaks(curMid) : []);
+
+    let content = '';
+    if (activeJbs && activeJbs.length) {
+      const jbSections = activeJbs.map(jb => {
+        const target = jb.model ? ` (Модель: ${jb.model})` : ' (Все модели)';
+        return `## ⚡ [JAILBREAK DIRECTIVE: ${jb.title}${target}]\n${(jb.prompt || '').trim()}`;
+      }).join('\n\n---\n\n');
+
+      content = `# OpenCode System Directives & Instructions (Active: ${curMid || 'Universal'})\n\n${jbSections}\n\n---\n\n${BASE_SYSTEM_INSTRUCTIONS}`;
+    } else {
+      content = BASE_SYSTEM_INSTRUCTIONS;
+    }
+
+    const targets = [
+      CFG + '/AGENTS.md',
+      CFG + '/README.md',
+      '/root/AGENTS.md',
+      '/root/README.md'
+    ];
+    if (S.dir && S.dir !== '/root') {
+      targets.push(S.dir + '/AGENTS.md');
+      targets.push(S.dir + '/README.md');
+    }
+
+    targets.forEach(path => {
+      try {
+        O.native.fs('mkdir', O.dirname(path));
+        O.native.writeText(path, content);
+      } catch (_) {}
+    });
+  } catch (_) {}
+};
+
+setTimeout(() => {
+  try {
+    if (O.updateReadmeForModel) O.updateReadmeForModel();
+  } catch (_) {}
+}, 500);
 
 const SYSTEM_PLUG_IDS=new Set(['plug_git_autopush','plug_code_format','plug_resource_mon']);
 const DEFAULT_PLUGINS=[];

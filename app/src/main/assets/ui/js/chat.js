@@ -532,18 +532,10 @@ async function onSend(){
     if(/^opencode(\s+tui)?\s*$/i.test(cmd)){O.toast('Приложение уже является интерфейсом OpenCode. TUI — во вкладке «Терминал» → Shell, агент — во вкладке «Чат»',6000);clear();return}
     clear();try{const sid=await sess();api('POST','/session/'+sid+'/shell',{agent:S.agent,model:S.model,command:cmd},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}
   const parts=[];
-  let finalText=text;
-  const activeJbs=(O.getActiveJailbreaks&&S.model)
-    ? O.getActiveJailbreaks(S.model.modelID)
-    : (O.getActiveJailbreaks?O.getActiveJailbreaks():[]);
-  if(activeJbs&&activeJbs.length){
-    activeJbs.forEach(jb=>{
-      if(jb&&jb.prompt&&!finalText.includes(jb.title)){
-        finalText='[System Directive: '+jb.title+']\n'+jb.prompt+'\n\n'+finalText;
-      }
-    });
+  if(O.updateReadmeForModel && S.model && S.model.modelID){
+    O.updateReadmeForModel(S.model.modelID);
   }
-  if(finalText)parts.push({type:'text',text:finalText});
+  if(text)parts.push({type:'text',text});
   mentions.filter(m=>text.includes(m.tok)).forEach(m=>{const p=JSON.parse(JSON.stringify(m.part));if(p.source&&p.source.text){p.source.text.start=text.indexOf(m.tok);p.source.text.end=p.source.text.start+m.tok.length}parts.push(p)});
   atts.forEach(a=>parts.push(a));
   const mid=O.mid();clear();

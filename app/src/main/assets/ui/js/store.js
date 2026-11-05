@@ -213,6 +213,7 @@ O.setModel=(pid,mid)=>{
   O.store.set('model.'+S.agent,S.model);
   if(S.sid)O.store.set('session.model.'+S.sid,S.model);
   O.pickDefaults();
+  if(O.updateReadmeForModel) O.updateReadmeForModel(mid);
   bus.emit('meta');
 };
 O.setAgent=n=>{S.agent=n;O.pickDefaults();bus.emit('meta')};
