@@ -364,17 +364,22 @@ O.toggleJailbreak=id=>{
   return next;
 };
 
-O.getActiveJailbreaks=()=>{
+O.getActiveJailbreaks=currentModelID=>{
   const activeIds=O.getActiveJailbreakIds();
   if(!activeIds.size)return [];
   const all=O.getJailbreaks();
-  return all.filter(j=>activeIds.has(j.id));
+  return all.filter(j=>activeIds.has(j.id)&&(
+    !currentModelID||!j.model||j.model==='Все модели'||j.model===currentModelID
+  ));
 };
 
 O.getActiveJailbreak=()=>{
   const jbs=O.getActiveJailbreaks();
   return jbs[0]||null;
 };
+
+const SYSTEM_PLUG_IDS=new Set(['plug_git_autopush','plug_code_format','plug_resource_mon']);
+const DEFAULT_PLUGINS=[];
 
 try{
   const cur=O.store.get('custom_jailbreaks',[]);
@@ -384,24 +389,22 @@ try{
       O.store.set('custom_jailbreaks',cleaned);
     }
   }
+  const curP=O.store.get('custom_plugins',[]);
+  if(Array.isArray(curP)){
+    const cleanedP=curP.filter(p=>p&&p.author!=='system'&&!SYSTEM_PLUG_IDS.has(p.id));
+    if(cleanedP.length!==curP.length){
+      O.store.set('custom_plugins',cleanedP);
+    }
+  }
   const curAct=O.store.get('active_jailbreak_id');
   if(curAct&&(SYSTEM_JB_IDS.has(curAct)||LEGACY_JB_IDS.has(curAct))){
     O.store.set('active_jailbreak_id',null);
   }
 }catch(_){}
 
-const DEFAULT_PLUGINS=[
-  {id:'plug_git_autopush',name:'Git Auto-Push',version:'1.2.0',desc:'Автоматический git commit и git push при завершении каждой задачи агентом.',author:'system',code:'// git-autopush plugin\nexport default { name: "git-autopush" };'},
-  {id:'plug_code_format',name:'Auto-Formatter',version:'1.0.4',desc:'Автоматическое выравнивание отступов и очистка лишних пробелов перед записью файлов.',author:'system',code:'// code-formatter plugin\nexport default { name: "code-formatter" };'},
-  {id:'plug_resource_mon',name:'Hardware Resource Monitor',version:'2.1.0',desc:'Инспектор потребления оперативной памяти и времени выполнения системных вызовов.',author:'system',code:'// resource-monitor plugin\nexport default { name: "resource-monitor" };'}
-];
-
 O.getCustomPlugins=()=>{
-  const local=O.store.get('custom_plugins',[]);
-  const map=new Map();
-  DEFAULT_PLUGINS.forEach(p=>map.set(p.id,p));
-  local.forEach(p=>map.set(p.id,p));
-  return Array.from(map.values());
+  let local=O.store.get('custom_plugins',[]);
+  return local.filter(p=>p&&p.author!=='system'&&!SYSTEM_PLUG_IDS.has(p.id));
 };
 
 function getLiveModelList(){
@@ -513,16 +516,38 @@ function openJailbreaks(){
   const syncCloud=async(silent)=>{
     try{
       const remote=await O.cloudDb.fetchAll('jailbreaks');
-      if(remote&&Array.isArray(remote)&&remote.length){
+      if(remote&&Array.isArray(remote)){
         let local=O.store.get('custom_jailbreaks',[]);
         const map=new Map();
-        local.forEach(x=>{if(x&&x.id)map.set(x.id,x)});
+        local.forEach(x=>{if(x&&x.id)map.set(String(x.id),x)});
         remote.forEach(r=>{
           if(r&&r.title&&r.prompt){
-            const key=r.id||('remote_'+r.title);
-            if(!map.has(key))map.set(key,r);
+            const rId=String(r.id);
+            if(map.has(rId)){
+              map.set(rId,Object.assign({},map.get(rId),r));
+            }else{
+              let foundTemp=null;
+              for(const [lid,item] of map.entries()){
+                if(!/^\d+$/.test(lid)&&item.title===r.title&&item.author===r.author){
+                  foundTemp=lid;
+                  break;
+                }
+              }
+              if(foundTemp){
+                map.delete(foundTemp);
+                map.set(rId,Object.assign({},r));
+              }else{
+                map.set(rId,r);
+              }
+            }
           }
         });
+        const remoteIds=new Set(remote.map(r=>String(r.id)));
+        for(const [lid,item] of map.entries()){
+          if(/^\d+$/.test(lid)&&!remoteIds.has(lid)){
+            map.delete(lid);
+          }
+        }
         O.store.set('custom_jailbreaks',Array.from(map.values()));
         draw();
       }
@@ -531,7 +556,7 @@ function openJailbreaks(){
   syncCloud(true);
 
   const searchInp=h('input',{
-    placeholder:O.tr('Search jailbreak by title or description...','Поиск джейлбрейков...'),
+    placeholder:O.tr('Search jailbreak by title or description...','Поиск джейлбрейков сообщества...'),
     style:{
       width:'100%',
       marginBottom:'14px',
@@ -558,7 +583,7 @@ function openJailbreaks(){
       list.append(h('div',{class:'mut',style:{padding:'24px 16px',textAlign:'center'}},
         q
           ? O.tr('No jailbreaks found for this query.','Джейлбрейки по запросу не найдены.')
-          : O.tr('No custom jailbreaks yet. Tap «Upload Custom Jailbreak» below.','Джейлбрейков пока нет. Нажмите «Загрузить свой джейлбрейк» ниже.')
+          : O.tr('No community jailbreaks yet. Tap «Publish Custom Jailbreak» below.','В каталоге сообщества пока нет джейлбрейков. Нажмите «Опубликовать свой джейлбрейк» ниже, чтобы добавить его для всех.')
       ));
     }else{
       filtered.forEach(jb=>{
@@ -568,22 +593,22 @@ function openJailbreaks(){
           style:{minWidth:'84px'},
           onclick:()=>{
             const nxt=O.toggleJailbreak(jb.id);
-            O.toast(nxt?O.tr('Jailbreak enabled globally: ','Джейлбрейк включён глобально: ')+jb.title:O.tr('Jailbreak disabled','Джейлбрейк выключен'),1500);
+            O.toast(nxt?O.tr('Jailbreak enabled: ','Джейлбрейк включён: ')+jb.title:O.tr('Jailbreak disabled','Джейлбрейк выключен'),1500);
             draw();
           }
-        },isActive?O.tr('Active (Global)','Включён'):O.tr('Enable','Включить'));
+        },isActive?O.tr('Enabled','Включён'):O.tr('Enable','Включить'));
 
         const viewBtn=h('button',{class:'ibtn s',title:O.tr('View prompt text','Посмотреть текст'),onclick:()=>{
           const content=h('div',null,
-            h('div',{class:'mut s',style:{marginBottom:'8px',color:'#38bdf8'}},'Область действия: Глобально (ко всем моделям)'),
+            h('div',{class:'mut s',style:{marginBottom:'8px',color:'#38bdf8'}},'Модель: '+(jb.model||'Все модели')+' • Сообщество: доступно всем'),
             h('p',{style:{color:'#a1a1aa',marginBottom:'10px'}},jb.desc||''),
             h('pre',{class:'code-pre',style:{maxHeight:'320px',overflowY:'auto'}},jb.prompt));
           O.sheet(jb.title,content);
         }},O.icon('eye'));
 
         const isMine=(jb.author===myToken||jb.author==='local');
-        const delBtn=isMine?h('button',{class:'ibtn s',title:O.tr('Delete','Удалить'),onclick:async()=>{
-          if(!await O.confirm('Удалить джейлбрейк '+jb.title+'?','','Удалить',true))return;
+        const delBtn=isMine?h('button',{class:'ibtn s',title:O.tr('Delete from community','Удалить из сообщества'),onclick:async()=>{
+          if(!await O.confirm('Удалить джейлбрейк '+jb.title+' из сообщества?','Это удалит его для всех пользователей.','Удалить',true))return;
           let local=O.store.get('custom_jailbreaks',[]);
           local=local.filter(x=>x.id!==jb.id);
           O.store.set('custom_jailbreaks',local);
@@ -593,7 +618,7 @@ function openJailbreaks(){
             O.store.set('active_jailbreak_ids',Array.from(actIds));
           }
           O.cloudDb.removeItem('jailbreaks',jb.id);
-          O.toast('Удалено',1200);
+          O.toast('Удалено из сообщества',1200);
           draw();
         }},O.icon('trash')):null;
 
@@ -601,7 +626,10 @@ function openJailbreaks(){
           h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
             h('div',{class:'grow',style:{minWidth:0}},
               h('b',{style:{color:'#fff',fontSize:'14px',display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},jb.title),
-              h('span',{class:'widget-custom-tag',style:{marginTop:'4px',display:'inline-block'}},'Глобально (Все модели)')),
+              h('div',{style:{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap',marginTop:'4px'}},
+                h('span',{class:'widget-custom-tag'},jb.model||'Все модели'),
+                h('span',{class:'widget-custom-tag',style:{background:'rgba(56,189,248,0.15)',color:'#38bdf8'}},
+                  isMine?'Мой пресет':'Сообщество (для всех)'))),
             h('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginLeft:'8px'}},viewBtn,delBtn,toggleBtn)),
           h('div',{class:'mut s',style:{lineHeight:'1.4'}},jb.desc||''));
         list.append(row);
@@ -610,10 +638,10 @@ function openJailbreaks(){
   };
 
   const uploadBtn=h('button',{class:'btn pri wide',style:{marginTop:'16px'},onclick:()=>{openUploadJailbreakModal(()=>{draw()})}},
-    O.icon('plus'),O.tr('Upload Custom Jailbreak','Загрузить свой джейлбрейк'));
+    O.icon('plus'),O.tr('Upload Custom Jailbreak','Опубликовать свой джейлбрейк'));
 
   const syncRow=h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',padding:'6px 2px'}},
-    h('div',{class:'mut s'},'Облачная база сообщества: онлайн'),
+    h('div',{class:'mut s'},'Облачный каталог сообщества: для всех пользователей'),
     h('div',{style:{display:'flex',gap:'8px'}},
       h('button',{class:'btn sm',type:'button',onclick:async()=>{O.toast('Синхронизация...');await syncCloud();O.toast('Синхронизировано',1200)}},O.icon('refresh'),'Обновить'),
       h('button',{class:'ibtn s',title:'Сменить адрес базы',onclick:async()=>{
@@ -629,7 +657,7 @@ function openJailbreaks(){
   );
 
   body.append(
-    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Active jailbreaks apply globally to all models and chat sessions.','Все включённые джейлбрейки применяются глобально для всех моделей и сессий OpenCode.')),
+    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Community jailbreaks are available to all users across all devices. Enable presets to apply them to your chat models.','Общий каталог пресетов сообщества: все загруженные джейлбрейки видны всем пользователям на любых телефонах.')),
     syncRow,
     searchInp,
     list,
@@ -640,6 +668,37 @@ function openJailbreaks(){
 function openUploadJailbreakModal(onDone){
   const titleInp=h('input',{placeholder:O.tr('Jailbreak Title','Название джейлбрейка, напр. Ultra Code Unleashed')});
   const descInp=h('input',{placeholder:O.tr('Description','Краткое описание назначения')});
+
+  let selectedModel='Все модели';
+  const modelValLabel=h('span',{style:{fontWeight:'600',color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},'Все модели');
+  const modelPickerBtn=h('button',{
+    class:'btn wide',
+    type:'button',
+    style:{
+      display:'flex',
+      alignItems:'center',
+      justifyContent:'space-between',
+      padding:'12px 14px',
+      borderRadius:'12px',
+      background:'rgba(255,255,255,0.06)',
+      border:'1px solid var(--line)',
+      textAlign:'left',
+      width:'100%'
+    },
+    onclick:()=>{
+      openModelPickerSheet({
+        title:O.tr('Target Model','Для какой модели'),
+        current:selectedModel,
+        includeAll:true,
+        onSelect:m=>{
+          selectedModel=m;
+          const info=(m!=='Все модели')?(O.modelInfo('opencode',m)||(O.allModels?O.allModels().find(x=>x.mid===m):null)):null;
+          modelValLabel.textContent=(info&&info.name&&info.name!==m)?`${info.name} (${m})`:m;
+        }
+      });
+    }
+  },h('div',{style:{display:'flex',alignItems:'center',gap:'8px',minWidth:0,overflow:'hidden'}},O.icon('cpu'),modelValLabel),O.icon('chevR'));
+
   const promptTa=h('textarea',{class:'editor',rows:8,placeholder:O.tr('Paste prompt instructions or load from file...','Вставьте системный промпт или загрузите файл...')});
 
   const fileInp=h('input',{type:'file',accept:'*/*',class:'hide',onchange:e=>{
@@ -659,40 +718,44 @@ function openUploadJailbreakModal(onDone){
     O.icon('up'),O.tr('Load from file (.md / .txt)','Загрузить из файла (.md / .txt)'));
 
   let modal=null;
-  const saveBtn=h('button',{class:'btn pri wide',style:{marginTop:'12px'},onclick:()=>{
+  const saveBtn=h('button',{class:'btn pri wide',style:{marginTop:'12px'},onclick:async()=>{
     const title=titleInp.value.trim();
     const prompt=promptTa.value.trim();
     if(!title)return O.toast('Введите название джейлбрейка');
     if(!prompt)return O.toast('Введите текст инструкций');
 
+    saveBtn.disabled=true;
+    saveBtn.textContent='Публикация в сообществе...';
+
     const newItem={
-      id:'jb_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,6),
       title,
       desc:descInp.value.trim(),
-      model:'Все модели',
+      model:selectedModel,
       prompt,
       author:getAuthorToken(),
       time:Date.now()
     };
 
-    let local=O.store.get('custom_jailbreaks',[]);
-    local.unshift(newItem);
-    O.store.set('custom_jailbreaks',local);
-    O.toggleJailbreak(newItem.id);
-    O.cloudDb.syncItem('jailbreaks',newItem);
+    const saved=await O.cloudDb.syncItem('jailbreaks',newItem);
+    const finalItem=Object.assign({},newItem,saved);
+    if(!finalItem.id)finalItem.id='jb_'+Date.now().toString(36);
 
-    O.toast('Джейлбрейк сохранён и активирован глобально!',2000);
+    let local=O.store.get('custom_jailbreaks',[]);
+    local=local.filter(x=>x.id!==finalItem.id);
+    local.unshift(finalItem);
+    O.store.set('custom_jailbreaks',local);
+    O.toggleJailbreak(finalItem.id);
+
+    O.toast('Опубликовано в сообществе для всех людей!',2000);
     if(modal)modal.close();
     if(onDone)onDone();
-  }},O.icon('check'),O.tr('Save & Activate','Сохранить и активировать'));
+  }},O.icon('check'),O.tr('Publish to Community','Опубликовать для всех'));
 
-  modal=O.sheet(O.tr('New Custom Jailbreak','Загрузить свой джейлбрейк'),h('div',null,
+  modal=O.sheet(O.tr('New Custom Jailbreak','Опубликовать свой джейлбрейк'),h('div',null,
     pickFileBtn,fileInp,
     h('div',{class:'field'},h('label',null,O.tr('Title','Название')),titleInp),
     h('div',{class:'field'},h('label',null,O.tr('Description','Описание')),descInp),
-    h('div',{class:'field'},h('label',null,O.tr('Scope','Область действия')),
-      h('div',{style:{color:'#38bdf8',fontSize:'13px',fontWeight:'600',padding:'4px 0'}},'Глобально (для всех моделей)')
-    ),
+    h('div',{class:'field'},h('label',null,O.tr('Target Model','Для какой модели')),modelPickerBtn),
     h('div',{class:'field'},h('label',null,O.tr('Prompt Instructions','Инструкции промпта')),promptTa),
     saveBtn),{hud:true,full:true});
 }
@@ -720,16 +783,38 @@ function openCustomPlugins(){
   const syncCloudPlugins=async(silent)=>{
     try{
       const remote=await O.cloudDb.fetchAll('plugins');
-      if(remote&&Array.isArray(remote)&&remote.length){
+      if(remote&&Array.isArray(remote)){
         let local=O.store.get('custom_plugins',[]);
         const map=new Map();
-        local.forEach(x=>{if(x&&x.id)map.set(x.id,x)});
+        local.forEach(x=>{if(x&&x.id)map.set(String(x.id),x)});
         remote.forEach(r=>{
           if(r&&r.name&&r.code){
-            const key=r.id||('remote_'+r.name);
-            if(!map.has(key))map.set(key,r);
+            const rId=String(r.id);
+            if(map.has(rId)){
+              map.set(rId,Object.assign({},map.get(rId),r));
+            }else{
+              let foundTemp=null;
+              for(const [lid,item] of map.entries()){
+                if(!/^\d+$/.test(lid)&&item.name===r.name&&item.author===r.author){
+                  foundTemp=lid;
+                  break;
+                }
+              }
+              if(foundTemp){
+                map.delete(foundTemp);
+                map.set(rId,Object.assign({},r));
+              }else{
+                map.set(rId,r);
+              }
+            }
           }
         });
+        const remoteIds=new Set(remote.map(r=>String(r.id)));
+        for(const [lid,item] of map.entries()){
+          if(/^\d+$/.test(lid)&&!remoteIds.has(lid)){
+            map.delete(lid);
+          }
+        }
         O.store.set('custom_plugins',Array.from(map.values()));
         syncEnabledPluginsToDisk();
         draw();
@@ -744,7 +829,7 @@ function openCustomPlugins(){
     const enabledIds=new Set(O.store.get('enabled_plugins',[]));
 
     if(!all.length){
-      list.append(h('div',{class:'mut',style:{padding:'24px 16px',textAlign:'center'}},'Плагинов пока нет. Нажмите «Загрузить свой плагин» ниже.'));
+      list.append(h('div',{class:'mut',style:{padding:'24px 16px',textAlign:'center'}},'В каталоге сообщества пока нет плагинов. Нажмите «Опубликовать плагин» ниже, чтобы добавить его для всех.'));
     }else{
       all.forEach(p=>{
         const isEnabled=enabledIds.has(p.id);
@@ -762,14 +847,14 @@ function openCustomPlugins(){
                 O.native.fs('delete',CFG+'/plugins/'+fileSafe);
               }
             }catch(_){}
-            O.toast(isEnabled?'Плагин выключен':'Плагин включён глобально: '+p.name,1200);
+            O.toast(isEnabled?'Плагин выключен':'Плагин включён: '+p.name,1200);
             draw();
           }
-        },isEnabled?O.tr('Active (Global)','Включён'):O.tr('Enable','Включить'));
+        },isEnabled?O.tr('Enabled','Включён'):O.tr('Enable','Включить'));
 
         const isMine=(p.author===myToken||p.author==='local');
-        const delBtn=isMine?h('button',{class:'ibtn s',title:'Удалить',onclick:async()=>{
-          if(!await O.confirm('Удалить плагин '+p.name+'?','','Удалить',true))return;
+        const delBtn=isMine?h('button',{class:'ibtn s',title:'Удалить из сообщества',onclick:async()=>{
+          if(!await O.confirm('Удалить плагин '+p.name+' из сообщества?','Это удалит его для всех пользователей.','Удалить',true))return;
           let local=O.store.get('custom_plugins',[]);
           local=local.filter(x=>x.id!==p.id);
           O.store.set('custom_plugins',local);
@@ -784,7 +869,8 @@ function openCustomPlugins(){
             h('div',null,
               h('b',{style:{color:'#fff',fontSize:'14px'}},p.name),
               h('span',{class:'mut s',style:{marginLeft:'6px'}},'v'+(p.version||'1.0')),
-              h('span',{class:'widget-custom-tag',style:{marginLeft:'6px'}},'Глобально')),
+              h('span',{class:'widget-custom-tag',style:{marginLeft:'6px',background:'rgba(56,189,248,0.15)',color:'#38bdf8'}},
+                isMine?'Мой плагин':'Сообщество (для всех)')),
             h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},delBtn,toggleBtn)),
           h('div',{class:'mut s'},p.desc||''));
         list.append(card);
@@ -793,17 +879,17 @@ function openCustomPlugins(){
   };
 
   const addBtn=h('button',{class:'btn pri wide',style:{marginTop:'16px'},onclick:()=>{openUploadPluginModal(()=>{draw()})}},
-    O.icon('plus'),O.tr('Upload Custom Plugin','Загрузить свой плагин'));
+    O.icon('plus'),O.tr('Upload Custom Plugin','Опубликовать свой плагин'));
 
   const syncRow=h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',padding:'6px 2px'}},
-    h('div',{class:'mut s'},'Облачная база сообщества: онлайн'),
+    h('div',{class:'mut s'},'Облачный каталог сообщества: для всех пользователей'),
     h('div',{style:{display:'flex',gap:'8px'}},
       h('button',{class:'btn sm',type:'button',onclick:async()=>{O.toast('Синхронизация...');await syncCloudPlugins();O.toast('Синхронизировано',1200)}},O.icon('refresh'),'Обновить')
     )
   );
 
   body.append(
-    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Custom plugins apply globally for all models and chat sessions.','Пользовательские плагины применяются глобально для всех моделей и сессий OpenCode.')),
+    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Community plugins are shared with all users. All uploaded plugins are available across all devices.','Общий каталог плагинов сообщества: все загруженные плагины видны всем людям на любых устройствах.')),
     syncRow,
     list,
     addBtn);
@@ -832,12 +918,14 @@ function openUploadPluginModal(onDone){
     O.icon('up'),'Загрузить файл скрипта (.js / .ts)');
 
   let modal=null;
-  const saveBtn=h('button',{class:'btn pri wide',style:{marginTop:'12px'},onclick:()=>{
+  const saveBtn=h('button',{class:'btn pri wide',style:{marginTop:'12px'},onclick:async()=>{
     const name=nameInp.value.trim();
     if(!name)return O.toast('Введите название плагина');
 
+    saveBtn.disabled=true;
+    saveBtn.textContent='Публикация в сообществе...';
+
     const newPlug={
-      id:'plug_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,6),
       name,
       desc:descInp.value.trim(),
       code:codeTa.value.trim(),
@@ -845,35 +933,71 @@ function openUploadPluginModal(onDone){
       time:Date.now()
     };
 
+    const saved=await O.cloudDb.syncItem('plugins',newPlug);
+    const finalPlug=Object.assign({},newPlug,saved);
+    if(!finalPlug.id)finalPlug.id='plug_'+Date.now().toString(36);
+
     let local=O.store.get('custom_plugins',[]);
-    local.unshift(newPlug);
+    local=local.filter(x=>x.id!==finalPlug.id);
+    local.unshift(finalPlug);
     O.store.set('custom_plugins',local);
 
     const enabledIds=new Set(O.store.get('enabled_plugins',[]));
-    enabledIds.add(newPlug.id);
+    enabledIds.add(finalPlug.id);
     O.store.set('enabled_plugins',Array.from(enabledIds));
-    const fileSafe=(newPlug.id||newPlug.name).replace(/[^a-zA-Z0-9_-]/g,'_')+'.js';
+    const fileSafe=(finalPlug.id||finalPlug.name).replace(/[^a-zA-Z0-9_-]/g,'_')+'.js';
     try{
       O.native.fs('mkdir',CFG+'/plugins');
-      O.native.writeText(CFG+'/plugins/'+fileSafe,newPlug.code||'// plugin: '+newPlug.name);
+      O.native.writeText(CFG+'/plugins/'+fileSafe,finalPlug.code||'// plugin: '+finalPlug.name);
     }catch(_){}
 
-    O.cloudDb.syncItem('plugins',newPlug);
-
-    O.toast('Плагин сохранён и включён глобально!',1500);
+    O.toast('Плагин опубликован в сообществе для всех людей!',1500);
     if(modal)modal.close();
     if(onDone)onDone();
-  }},O.icon('check'),'Сохранить и активировать');
+  }},O.icon('check'),'Опубликовать для всех');
 
-  modal=O.sheet('Загрузить свой плагин',h('div',null,
+  modal=O.sheet('Опубликовать плагин в сообществе',h('div',null,
     pickFileBtn,fileInp,
     h('div',{class:'field'},h('label',null,'Название'),nameInp),
     h('div',{class:'field'},h('label',null,'Описание'),descInp),
-    h('div',{class:'field'},h('label',null,'Область действия'),
-      h('div',{style:{color:'#38bdf8',fontSize:'13px',fontWeight:'600',padding:'4px 0'}},'Глобально (для всех моделей)')
+    h('div',{class:'field'},h('label',null,'Каталог сообщества'),
+      h('div',{style:{color:'#38bdf8',fontSize:'13px',fontWeight:'600',padding:'4px 0'}},'Для всех пользователей (в облачной базе)')
     ),
     h('div',{class:'field'},h('label',null,'Исходный код плагина'),codeTa),
     saveBtn),{hud:true,full:true});
 }
+
+// Background auto-sync for all community items on app start
+O.syncAllCommunity=async()=>{
+  try{
+    const [jbs, plugs]=await Promise.all([
+      O.cloudDb.fetchAll('jailbreaks'),
+      O.cloudDb.fetchAll('plugins')
+    ]);
+    if(Array.isArray(jbs)){
+      let localJ=O.store.get('custom_jailbreaks',[]);
+      const mapJ=new Map();
+      localJ.forEach(x=>{if(x&&x.id)mapJ.set(String(x.id),x)});
+      jbs.forEach(r=>{if(r&&r.title&&r.prompt)mapJ.set(String(r.id),r)});
+      const rIds=new Set(jbs.map(r=>String(r.id)));
+      for(const [lid] of mapJ.entries()){
+        if(/^\d+$/.test(lid)&&!rIds.has(lid))mapJ.delete(lid);
+      }
+      O.store.set('custom_jailbreaks',Array.from(mapJ.values()));
+    }
+    if(Array.isArray(plugs)){
+      let localP=O.store.get('custom_plugins',[]);
+      const mapP=new Map();
+      localP.forEach(x=>{if(x&&x.id)mapP.set(String(x.id),x)});
+      plugs.forEach(r=>{if(r&&r.name&&r.code)mapP.set(String(r.id),r)});
+      const rIdsP=new Set(plugs.map(r=>String(r.id)));
+      for(const [lid] of mapP.entries()){
+        if(/^\d+$/.test(lid)&&!rIdsP.has(lid))mapP.delete(lid);
+      }
+      O.store.set('custom_plugins',Array.from(mapP.values()));
+    }
+  }catch(_){}
+};
+setTimeout(()=>{try{O.syncAllCommunity()}catch(_){}},1000);
 
 })();
