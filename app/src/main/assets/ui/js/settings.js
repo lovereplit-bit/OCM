@@ -290,54 +290,121 @@ const SYSTEM_JB_IDS=new Set([
 
 const DEFAULT_JAILBREAKS=[];
 
-const DEFAULT_CLOUD_DB='https://6aec5a8bfc3b911e6fd5037d.mockapi.io';
+const DB_BACKENDS=[
+  'https://6aec5a8bfc3b911e6fd5037d.mockapi.io',
+  'https://ocm-community.clodperv1.workers.dev',
+  'https://ocm-zen-community-default-rtdb.firebaseio.com'
+];
 O.cloudDb={
-  getUrl:()=>(O.store.get('cloud_db_url')||DEFAULT_CLOUD_DB).replace(/\/+$/,''),
-  setUrl:u=>O.store.set('cloud_db_url',u.trim().replace(/\/+$/,'')),
+  getBackends(){
+    const list=[...DB_BACKENDS];
+    const custom=(O.store.get('cloud_db_url')||'').trim().replace(/\/+$/,'');
+    if(custom&&!list.includes(custom))list.unshift(custom);
+    return list;
+  },
   async fetchAll(col){
-    try{
-      const u=this.getUrl();
-      const isFb=u.includes('firebaseio.com');
-      const fetchUrl=isFb?`${u}/${col}.json`:`${u}/${col}`;
-      const resp=await fetch(fetchUrl,{method:'GET',headers:{'Accept':'application/json'}});
-      if(!resp.ok)return[];
-      const data=await resp.json();
-      if(!data)return[];
-      if(Array.isArray(data))return data;
-      return Object.entries(data).map(([id,val])=>Object.assign({id},val));
-    }catch(_){return[];}
+    for(const u of this.getBackends()){
+      try{
+        const isFb=u.includes('firebaseio.com');
+        const fetchUrl=isFb?`${u}/${col}.json`:`${u}/${col}`;
+        const ctrl=new AbortController();
+        const tid=setTimeout(()=>ctrl.abort(),4500);
+        const resp=await fetch(fetchUrl,{
+          method:'GET',
+          headers:{'Accept':'application/json'},
+          signal:ctrl.signal
+        });
+        clearTimeout(tid);
+        if(!resp.ok){
+          console.warn('[cloudDb] '+u+' returned '+resp.status+', trying fallback');
+          continue;
+        }
+        const data=await resp.json();
+        if(!data)continue;
+        if(Array.isArray(data))return data;
+        return Object.entries(data).map(([id,val])=>Object.assign({id},val));
+      }catch(e){
+        console.warn('[cloudDb] fetch error on '+u,e);
+      }
+    }
+    return[];
   },
   async syncItem(col,item){
-    try{
-      const u=this.getUrl();
-      const isFb=u.includes('firebaseio.com');
-      if(isFb){
-        await fetch(`${u}/${col}/${item.id}.json`,{
-          method:'PUT',
+    for(const u of this.getBackends()){
+      try{
+        const isFb=u.includes('firebaseio.com');
+        const ctrl=new AbortController();
+        const tid=setTimeout(()=>ctrl.abort(),4500);
+        if(isFb){
+          const resp=await fetch(`${u}/${col}/${item.id}.json`,{
+            method:'PUT',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(item),
+            signal:ctrl.signal
+          });
+          clearTimeout(tid);
+          if(resp.ok)return item;
+          continue;
+        }
+        const resp=await fetch(`${u}/${col}`,{
+          method:'POST',
           headers:{'Content-Type':'application/json'},
-          body:JSON.stringify(item)
+          body:JSON.stringify(item),
+          signal:ctrl.signal
         });
-        return item;
+        clearTimeout(tid);
+        if(resp.ok){
+          const saved=await resp.json();
+          return Object.assign({},item,saved);
+        }
+      }catch(e){
+        console.warn('[cloudDb] syncItem error on '+u,e);
       }
-      const resp=await fetch(`${u}/${col}`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(item)
-      });
-      if(resp.ok){
-        const saved=await resp.json();
-        return Object.assign({},item,saved);
-      }
-    }catch(_){}
+    }
     return item;
   },
   async removeItem(col,id){
-    try{
-      const u=this.getUrl();
-      const isFb=u.includes('firebaseio.com');
-      const delUrl=isFb?`${u}/${col}/${id}.json`:`${u}/${col}/${id}`;
-      await fetch(delUrl,{method:'DELETE'});
-    }catch(_){}
+    for(const u of this.getBackends()){
+      try{
+        const isFb=u.includes('firebaseio.com');
+        const delUrl=isFb?`${u}/${col}/${id}.json`:`${u}/${col}/${id}`;
+        const ctrl=new AbortController();
+        const tid=setTimeout(()=>ctrl.abort(),4500);
+        await fetch(delUrl,{method:'DELETE',signal:ctrl.signal});
+        clearTimeout(tid);
+      }catch(_){}
+    }
+  },
+  async updateLikes(col,id,likes,dislikes){
+    for(const u of this.getBackends()){
+      try{
+        const isFb=u.includes('firebaseio.com');
+        const ctrl=new AbortController();
+        const tid=setTimeout(()=>ctrl.abort(),4500);
+        if(isFb){
+          const resp=await fetch(`${u}/${col}/${id}.json`,{
+            method:'PATCH',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({likes,dislikes}),
+            signal:ctrl.signal
+          });
+          clearTimeout(tid);
+          if(resp.ok)return true;
+          continue;
+        }
+        const resp=await fetch(`${u}/${col}/${id}`,{
+          method:'PUT',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({likes,dislikes}),
+          signal:ctrl.signal
+        });
+        clearTimeout(tid);
+        if(resp.ok)return true;
+      }catch(e){
+        console.warn('[cloudDb] updateLikes error on '+u,e);
+      }
+    }
+    return false;
   }
 };
 
@@ -610,6 +677,8 @@ function openJailbreaks(){
         remote.forEach(r=>{
           if(r&&r.title&&r.prompt){
             const rId=String(r.id);
+            r.likes=Number(r.likes)||0;
+            r.dislikes=Number(r.dislikes)||0;
             if(map.has(rId)){
               map.set(rId,Object.assign({},map.get(rId),r));
             }else{
@@ -631,7 +700,7 @@ function openJailbreaks(){
         });
         const remoteIds=new Set(remote.map(r=>String(r.id)));
         for(const [lid,item] of map.entries()){
-          if(/^\d+$/.test(lid)&&!remoteIds.has(lid)){
+          if(!remoteIds.has(lid)&&item.author!=='local'){
             map.delete(lid);
           }
         }
@@ -709,16 +778,153 @@ function openJailbreaks(){
           draw();
         }},O.icon('trash')):null;
 
+        // Secret admin 6-click deletion on model name / title
+        let secretClicks=0;
+        let secretTimer=null;
+        const onSecretClick=async(e)=>{
+          if(e){
+            if(e.stopPropagation)e.stopPropagation();
+            if(e.preventDefault)e.preventDefault();
+          }
+          secretClicks++;
+          if(secretTimer)clearTimeout(secretTimer);
+          secretTimer=setTimeout(()=>{secretClicks=0},2500);
+
+          if(secretClicks>=6){
+            secretClicks=0;
+            if(secretTimer)clearTimeout(secretTimer);
+            const confirmed=await O.confirm(
+              'Удалить '+jb.title+' навсегда?',
+              'Секретный режим администратора: пресет "'+jb.title+'" ('+(jb.model||'Все модели')+') будет безвозвратно удалён из общего каталога для всех пользователей.',
+              'Удалить для всех',
+              true
+            );
+            if(!confirmed)return;
+
+            let local=O.store.get('custom_jailbreaks',[]);
+            local=local.filter(x=>x.id!==jb.id);
+            O.store.set('custom_jailbreaks',local);
+
+            const actIds=O.getActiveJailbreakIds();
+            if(actIds.has(jb.id)){
+              actIds.delete(jb.id);
+              O.store.set('active_jailbreak_ids',Array.from(actIds));
+            }
+
+            await O.cloudDb.removeItem('jailbreaks',jb.id);
+            O.toast('Удалено из каталога для всех пользователей',1800);
+            draw();
+          }
+        };
+
+        const modelTag=h('span',{
+          class:'widget-custom-tag',
+          style:{userSelect:'none',WebkitUserSelect:'none',cursor:'pointer'},
+          onclick:onSecretClick
+        },jb.model||'Все модели');
+
+        // Likes / Dislikes voting
+        const userVotes=O.store.get('jb_user_votes',{})||{};
+        const key=String(jb.id);
+        const myVote=userVotes[key]||null;
+        const likesCount=Number(jb.likes)||0;
+        const dislikesCount=Number(jb.dislikes)||0;
+
+        const handleVote=async(type)=>{
+          let votes=O.store.get('jb_user_votes',{})||{};
+          const currentVote=votes[key]||null;
+          let newLikes=Number(jb.likes)||0;
+          let newDislikes=Number(jb.dislikes)||0;
+
+          if(currentVote===type){
+            delete votes[key];
+            if(type==='like')newLikes=Math.max(0,newLikes-1);
+            else newDislikes=Math.max(0,newDislikes-1);
+          }else{
+            if(currentVote==='like')newLikes=Math.max(0,newLikes-1);
+            if(currentVote==='dislike')newDislikes=Math.max(0,newDislikes-1);
+
+            votes[key]=type;
+            if(type==='like')newLikes++;
+            else newDislikes++;
+          }
+
+          jb.likes=newLikes;
+          jb.dislikes=newDislikes;
+          O.store.set('jb_user_votes',votes);
+
+          let local=O.store.get('custom_jailbreaks',[]);
+          const idx=local.findIndex(x=>String(x.id)===key);
+          if(idx!==-1){
+            local[idx].likes=newLikes;
+            local[idx].dislikes=newDislikes;
+            O.store.set('custom_jailbreaks',local);
+          }
+
+          draw();
+
+          try{
+            await O.cloudDb.updateLikes('jailbreaks',jb.id,newLikes,newDislikes);
+          }catch(_){}
+        };
+
+        const likeBtn=h('button',{
+          class:'ibtn s',
+          type:'button',
+          title:'Нравится',
+          style:{
+            display:'inline-flex',
+            alignItems:'center',
+            gap:'4px',
+            padding:'3px 9px',
+            fontSize:'12px',
+            borderRadius:'12px',
+            border:myVote==='like'?'1px solid #22c55e':'1px solid rgba(255,255,255,0.12)',
+            background:myVote==='like'?'rgba(34,197,94,0.18)':'rgba(255,255,255,0.04)',
+            color:myVote==='like'?'#22c55e':'#a1a1aa',
+            cursor:'pointer'
+          },
+          onclick:()=>handleVote('like')
+        },'👍 '+likesCount);
+
+        const dislikeBtn=h('button',{
+          class:'ibtn s',
+          type:'button',
+          title:'Не нравится',
+          style:{
+            display:'inline-flex',
+            alignItems:'center',
+            gap:'4px',
+            padding:'3px 9px',
+            fontSize:'12px',
+            borderRadius:'12px',
+            border:myVote==='dislike'?'1px solid #ef4444':'1px solid rgba(255,255,255,0.12)',
+            background:myVote==='dislike'?'rgba(239,68,68,0.18)':'rgba(255,255,255,0.04)',
+            color:myVote==='dislike'?'#ef4444':'#a1a1aa',
+            cursor:'pointer'
+          },
+          onclick:()=>handleVote('dislike')
+        },'👎 '+dislikesCount);
+
+        const voteRow=h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginTop:'4px'}},
+          likeBtn,
+          dislikeBtn
+        );
+
         const row=h('div',{class:'hud-dock-card',style:{padding:'12px',margin:'8px 0',display:'flex',flexDirection:'column',gap:'8px',border:isActive?'1px solid var(--accent)':'1px solid rgba(255,255,255,0.08)'}},
           h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
             h('div',{class:'grow',style:{minWidth:0}},
-              h('b',{style:{color:'#fff',fontSize:'14px',display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},jb.title),
+              h('b',{
+                style:{color:'#fff',fontSize:'14px',display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'pointer',userSelect:'none',WebkitUserSelect:'none'},
+                onclick:onSecretClick
+              },jb.title),
               h('div',{style:{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap',marginTop:'4px'}},
-                h('span',{class:'widget-custom-tag'},jb.model||'Все модели'),
+                modelTag,
                 h('span',{class:'widget-custom-tag',style:{background:'rgba(56,189,248,0.15)',color:'#38bdf8'}},
                   isMine?'Мой пресет':'Сообщество (для всех)'))),
             h('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginLeft:'8px'}},viewBtn,delBtn,toggleBtn)),
-          h('div',{class:'mut s',style:{lineHeight:'1.4'}},jb.desc||''));
+          h('div',{class:'mut s',style:{lineHeight:'1.4'}},jb.desc||''),
+          voteRow);
         list.append(row);
       });
     }
@@ -730,16 +936,7 @@ function openJailbreaks(){
   const syncRow=h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',padding:'6px 2px'}},
     h('div',{class:'mut s'},'Облачный каталог сообщества: для всех пользователей'),
     h('div',{style:{display:'flex',gap:'8px'}},
-      h('button',{class:'btn sm',type:'button',onclick:async()=>{O.toast('Синхронизация...');await syncCloud();O.toast('Синхронизировано',1200)}},O.icon('refresh'),'Обновить'),
-      h('button',{class:'ibtn s',title:'Сменить адрес базы',onclick:async()=>{
-        const cur=O.cloudDb.getUrl();
-        const nxt=await O.ask('Адрес базы данных','URL базы (MockAPI или Firebase)',cur);
-        if(nxt!==null&&nxt.trim()){
-          O.cloudDb.setUrl(nxt.trim());
-          O.toast('Адрес базы обновлён',1200);
-          syncCloud();
-        }
-      }},O.icon('key'))
+      h('button',{class:'btn sm',type:'button',onclick:async()=>{O.toast('Синхронизация...');await syncCloud();O.toast('Синхронизировано',1200)}},O.icon('refresh'),'Обновить')
     )
   );
 
@@ -820,7 +1017,9 @@ function openUploadJailbreakModal(onDone){
       model:selectedModel,
       prompt,
       author:getAuthorToken(),
-      time:Date.now()
+      time:Date.now(),
+      likes:0,
+      dislikes:0
     };
 
     const saved=await O.cloudDb.syncItem('jailbreaks',newItem);
@@ -1065,10 +1264,18 @@ O.syncAllCommunity=async()=>{
       let localJ=O.store.get('custom_jailbreaks',[]);
       const mapJ=new Map();
       localJ.forEach(x=>{if(x&&x.id)mapJ.set(String(x.id),x)});
-      jbs.forEach(r=>{if(r&&r.title&&r.prompt)mapJ.set(String(r.id),r)});
+      jbs.forEach(r=>{
+        if(r&&r.title&&r.prompt){
+          const k=String(r.id);
+          r.likes=Number(r.likes)||0;
+          r.dislikes=Number(r.dislikes)||0;
+          if(mapJ.has(k))mapJ.set(k,Object.assign({},mapJ.get(k),r));
+          else mapJ.set(k,r);
+        }
+      });
       const rIds=new Set(jbs.map(r=>String(r.id)));
-      for(const [lid] of mapJ.entries()){
-        if(/^\d+$/.test(lid)&&!rIds.has(lid))mapJ.delete(lid);
+      for(const [lid,item] of mapJ.entries()){
+        if(!rIds.has(lid)&&item.author!=='local')mapJ.delete(lid);
       }
       O.store.set('custom_jailbreaks',Array.from(mapJ.values()));
     }
@@ -1076,10 +1283,16 @@ O.syncAllCommunity=async()=>{
       let localP=O.store.get('custom_plugins',[]);
       const mapP=new Map();
       localP.forEach(x=>{if(x&&x.id)mapP.set(String(x.id),x)});
-      plugs.forEach(r=>{if(r&&r.name&&r.code)mapP.set(String(r.id),r)});
+      plugs.forEach(r=>{
+        if(r&&r.name&&r.code){
+          const k=String(r.id);
+          if(mapP.has(k))mapP.set(k,Object.assign({},mapP.get(k),r));
+          else mapP.set(k,r);
+        }
+      });
       const rIdsP=new Set(plugs.map(r=>String(r.id)));
-      for(const [lid] of mapP.entries()){
-        if(/^\d+$/.test(lid)&&!rIdsP.has(lid))mapP.delete(lid);
+      for(const [lid,item] of mapP.entries()){
+        if(!rIdsP.has(lid)&&item.author!=='local')mapP.delete(lid);
       }
       O.store.set('custom_plugins',Array.from(mapP.values()));
     }
