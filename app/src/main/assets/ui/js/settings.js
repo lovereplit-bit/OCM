@@ -364,13 +364,11 @@ O.toggleJailbreak=id=>{
   return next;
 };
 
-O.getActiveJailbreaks=currentModelID=>{
+O.getActiveJailbreaks=()=>{
   const activeIds=O.getActiveJailbreakIds();
   if(!activeIds.size)return [];
   const all=O.getJailbreaks();
-  return all.filter(j=>activeIds.has(j.id)&&(
-    !currentModelID||j.model==='Все модели'||j.model===currentModelID
-  ));
+  return all.filter(j=>activeIds.has(j.id));
 };
 
 O.getActiveJailbreak=()=>{
@@ -511,7 +509,6 @@ function openJailbreaks(){
   const body=h('div');
   const s=sub(O.tr('Custom Jailbreaks','Пользовательские джейлбрейки'),body,{full:true});
   const myToken=getAuthorToken();
-  let filterModel='Все модели';
 
   const syncCloud=async(silent)=>{
     try{
@@ -533,49 +530,35 @@ function openJailbreaks(){
   };
   syncCloud(true);
 
-  const filterValLabel=h('span',{style:{fontWeight:'600',color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},'Все модели');
-  const filterBtn=h('button',{
-    class:'btn wide',
-    type:'button',
+  const searchInp=h('input',{
+    placeholder:O.tr('Search jailbreak by title or description...','Поиск джейлбрейков...'),
     style:{
-      display:'flex',
-      alignItems:'center',
-      justifyContent:'space-between',
+      width:'100%',
+      marginBottom:'14px',
       padding:'12px 14px',
       borderRadius:'12px',
       background:'rgba(255,255,255,0.06)',
       border:'1px solid var(--line)',
-      marginBottom:'14px',
-      textAlign:'left',
-      width:'100%'
-    },
-    onclick:()=>{
-      openModelPickerSheet({
-        title:O.tr('Filter by Model','Сортировка по модели'),
-        current:filterModel,
-        includeAll:true,
-        onSelect:m=>{
-          filterModel=m;
-          const info=(m!=='Все модели')?(O.modelInfo('opencode',m)||(O.allModels?O.allModels().find(x=>x.mid===m):null)):null;
-          filterValLabel.textContent=(info&&info.name&&info.name!==m)?`${info.name} (${m})`:m;
-          draw();
-        }
-      });
+      color:'#fff',
+      fontSize:'14px',
+      boxSizing:'border-box'
     }
-  },h('div',{style:{display:'flex',alignItems:'center',gap:'8px',minWidth:0,overflow:'hidden'}},O.icon('cpu'),filterValLabel),O.icon('chevR'));
+  });
+  searchInp.oninput=()=>draw();
 
   const list=h('div',{class:'jailbreak-list'});
 
   const draw=()=>{
     list.textContent='';
     const all=O.getJailbreaks();
-    const filtered=all.filter(j=>filterModel==='Все модели'||j.model==='Все модели'||j.model===filterModel);
+    const q=(searchInp.value||'').trim().toLowerCase();
+    const filtered=all.filter(j=>!q||(j.title||'').toLowerCase().includes(q)||(j.desc||'').toLowerCase().includes(q));
 
     if(!filtered.length){
       list.append(h('div',{class:'mut',style:{padding:'24px 16px',textAlign:'center'}},
-        filterModel==='Все модели'
-          ? O.tr('No custom jailbreaks yet. Tap «Upload Custom Jailbreak» below.','Джейлбрейков пока нет. Нажмите «Загрузить свой джейлбрейк» ниже.')
-          : O.tr('No jailbreaks found for this model.','Для этой модели пока нет джейлбрейков.')
+        q
+          ? O.tr('No jailbreaks found for this query.','Джейлбрейки по запросу не найдены.')
+          : O.tr('No custom jailbreaks yet. Tap «Upload Custom Jailbreak» below.','Джейлбрейков пока нет. Нажмите «Загрузить свой джейлбрейк» ниже.')
       ));
     }else{
       filtered.forEach(jb=>{
@@ -585,14 +568,14 @@ function openJailbreaks(){
           style:{minWidth:'84px'},
           onclick:()=>{
             const nxt=O.toggleJailbreak(jb.id);
-            O.toast(nxt?O.tr('Jailbreak enabled: ','Джейлбрейк включён: ')+jb.title:O.tr('Jailbreak disabled','Джейлбрейк выключен'),1500);
+            O.toast(nxt?O.tr('Jailbreak enabled globally: ','Джейлбрейк включён глобально: ')+jb.title:O.tr('Jailbreak disabled','Джейлбрейк выключен'),1500);
             draw();
           }
-        },isActive?O.tr('Active','Включён'):O.tr('Enable','Включить'));
+        },isActive?O.tr('Active (Global)','Включён'):O.tr('Enable','Включить'));
 
         const viewBtn=h('button',{class:'ibtn s',title:O.tr('View prompt text','Посмотреть текст'),onclick:()=>{
           const content=h('div',null,
-            h('div',{class:'mut s',style:{marginBottom:'8px'}},'Модель: '+(jb.model||'Все модели')),
+            h('div',{class:'mut s',style:{marginBottom:'8px',color:'#38bdf8'}},'Область действия: Глобально (ко всем моделям)'),
             h('p',{style:{color:'#a1a1aa',marginBottom:'10px'}},jb.desc||''),
             h('pre',{class:'code-pre',style:{maxHeight:'320px',overflowY:'auto'}},jb.prompt));
           O.sheet(jb.title,content);
@@ -618,7 +601,7 @@ function openJailbreaks(){
           h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
             h('div',{class:'grow',style:{minWidth:0}},
               h('b',{style:{color:'#fff',fontSize:'14px',display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},jb.title),
-              h('span',{class:'widget-custom-tag',style:{marginTop:'4px',display:'inline-block'}},jb.model||'Все модели')),
+              h('span',{class:'widget-custom-tag',style:{marginTop:'4px',display:'inline-block'}},'Глобально (Все модели)')),
             h('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginLeft:'8px'}},viewBtn,delBtn,toggleBtn)),
           h('div',{class:'mut s',style:{lineHeight:'1.4'}},jb.desc||''));
         list.append(row);
@@ -646,9 +629,9 @@ function openJailbreaks(){
   );
 
   body.append(
-    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Jailbreaks inject system directives to unlock uncensored code generation and autonomous reasoning on OpenCode Zen models.','Джейлбрейки внедряют системные инструкции для обхода фильтраций и автономной кодогенерации на моделях Zen.')),
+    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Active jailbreaks apply globally to all models and chat sessions.','Все включённые джейлбрейки применяются глобально для всех моделей и сессий OpenCode.')),
     syncRow,
-    h('div',{class:'field'},h('label',null,O.tr('Filter by Model','Сортировка по модели')),filterBtn),
+    searchInp,
     list,
     uploadBtn);
   draw();
@@ -657,37 +640,6 @@ function openJailbreaks(){
 function openUploadJailbreakModal(onDone){
   const titleInp=h('input',{placeholder:O.tr('Jailbreak Title','Название джейлбрейка, напр. Ultra Code Unleashed')});
   const descInp=h('input',{placeholder:O.tr('Description','Краткое описание назначения')});
-
-  let selectedModel='Все модели';
-  const modelValLabel=h('span',{style:{fontWeight:'600',color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},'Все модели');
-  const modelPickerBtn=h('button',{
-    class:'btn wide',
-    type:'button',
-    style:{
-      display:'flex',
-      alignItems:'center',
-      justifyContent:'space-between',
-      padding:'12px 14px',
-      borderRadius:'12px',
-      background:'rgba(255,255,255,0.06)',
-      border:'1px solid var(--line)',
-      textAlign:'left',
-      width:'100%'
-    },
-    onclick:()=>{
-      openModelPickerSheet({
-        title:O.tr('Target Model','Для какой модели'),
-        current:selectedModel,
-        includeAll:true,
-        onSelect:m=>{
-          selectedModel=m;
-          const info=(m!=='Все модели')?(O.modelInfo('opencode',m)||(O.allModels?O.allModels().find(x=>x.mid===m):null)):null;
-          modelValLabel.textContent=(info&&info.name&&info.name!==m)?`${info.name} (${m})`:m;
-        }
-      });
-    }
-  },h('div',{style:{display:'flex',alignItems:'center',gap:'8px',minWidth:0,overflow:'hidden'}},O.icon('cpu'),modelValLabel),O.icon('chevR'));
-
   const promptTa=h('textarea',{class:'editor',rows:8,placeholder:O.tr('Paste prompt instructions or load from file...','Вставьте системный промпт или загрузите файл...')});
 
   const fileInp=h('input',{type:'file',accept:'*/*',class:'hide',onchange:e=>{
@@ -717,7 +669,7 @@ function openUploadJailbreakModal(onDone){
       id:'jb_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,6),
       title,
       desc:descInp.value.trim(),
-      model:selectedModel,
+      model:'Все модели',
       prompt,
       author:getAuthorToken(),
       time:Date.now()
@@ -729,7 +681,7 @@ function openUploadJailbreakModal(onDone){
     O.toggleJailbreak(newItem.id);
     O.cloudDb.syncItem('jailbreaks',newItem);
 
-    O.toast('Джейлбрейк сохранён и активирован!',2000);
+    O.toast('Джейлбрейк сохранён и активирован глобально!',2000);
     if(modal)modal.close();
     if(onDone)onDone();
   }},O.icon('check'),O.tr('Save & Activate','Сохранить и активировать'));
@@ -738,7 +690,9 @@ function openUploadJailbreakModal(onDone){
     pickFileBtn,fileInp,
     h('div',{class:'field'},h('label',null,O.tr('Title','Название')),titleInp),
     h('div',{class:'field'},h('label',null,O.tr('Description','Описание')),descInp),
-    h('div',{class:'field'},h('label',null,O.tr('Target Model','Для какой модели')),modelPickerBtn),
+    h('div',{class:'field'},h('label',null,O.tr('Scope','Область действия')),
+      h('div',{style:{color:'#38bdf8',fontSize:'13px',fontWeight:'600',padding:'4px 0'}},'Глобально (для всех моделей)')
+    ),
     h('div',{class:'field'},h('label',null,O.tr('Prompt Instructions','Инструкции промпта')),promptTa),
     saveBtn),{hud:true,full:true});
 }
@@ -749,7 +703,21 @@ function openCustomPlugins(){
   const myToken=getAuthorToken();
   const list=h('div',{class:'plugins-list'});
 
-  const syncCloudPlugins=async()=>{
+  const syncEnabledPluginsToDisk=()=>{
+    try{
+      const enabledIds=new Set(O.store.get('enabled_plugins',[]));
+      const all=O.getCustomPlugins();
+      O.native.fs('mkdir',CFG+'/plugins');
+      all.forEach(p=>{
+        const fileSafe=(p.id||p.name).replace(/[^a-zA-Z0-9_-]/g,'_')+'.js';
+        if(enabledIds.has(p.id)){
+          O.native.writeText(CFG+'/plugins/'+fileSafe,p.code||'// plugin: '+p.name);
+        }
+      });
+    }catch(_){}
+  };
+
+  const syncCloudPlugins=async(silent)=>{
     try{
       const remote=await O.cloudDb.fetchAll('plugins');
       if(remote&&Array.isArray(remote)&&remote.length){
@@ -763,55 +731,80 @@ function openCustomPlugins(){
           }
         });
         O.store.set('custom_plugins',Array.from(map.values()));
+        syncEnabledPluginsToDisk();
         draw();
       }
     }catch(_){}
   };
-  syncCloudPlugins();
+  syncCloudPlugins(true);
 
   const draw=()=>{
     list.textContent='';
     const all=O.getCustomPlugins();
     const enabledIds=new Set(O.store.get('enabled_plugins',[]));
 
-    all.forEach(p=>{
-      const isEnabled=enabledIds.has(p.id);
-      const toggleBtn=h('button',{
-        class:'btn sm '+(isEnabled?'pri':''),
-        onclick:()=>{
-          if(isEnabled)enabledIds.delete(p.id);else enabledIds.add(p.id);
-          O.store.set('enabled_plugins',Array.from(enabledIds));
-          O.toast(isEnabled?'Плагин выключен':'Плагин включён: '+p.name,1200);
+    if(!all.length){
+      list.append(h('div',{class:'mut',style:{padding:'24px 16px',textAlign:'center'}},'Плагинов пока нет. Нажмите «Загрузить свой плагин» ниже.'));
+    }else{
+      all.forEach(p=>{
+        const isEnabled=enabledIds.has(p.id);
+        const toggleBtn=h('button',{
+          class:'btn sm '+(isEnabled?'pri':''),
+          onclick:()=>{
+            if(isEnabled)enabledIds.delete(p.id);else enabledIds.add(p.id);
+            O.store.set('enabled_plugins',Array.from(enabledIds));
+            const fileSafe=(p.id||p.name).replace(/[^a-zA-Z0-9_-]/g,'_')+'.js';
+            try{
+              if(!isEnabled){
+                O.native.fs('mkdir',CFG+'/plugins');
+                O.native.writeText(CFG+'/plugins/'+fileSafe,p.code||'// plugin: '+p.name);
+              }else{
+                O.native.fs('delete',CFG+'/plugins/'+fileSafe);
+              }
+            }catch(_){}
+            O.toast(isEnabled?'Плагин выключен':'Плагин включён глобально: '+p.name,1200);
+            draw();
+          }
+        },isEnabled?O.tr('Active (Global)','Включён'):O.tr('Enable','Включить'));
+
+        const isMine=(p.author===myToken||p.author==='local');
+        const delBtn=isMine?h('button',{class:'ibtn s',title:'Удалить',onclick:async()=>{
+          if(!await O.confirm('Удалить плагин '+p.name+'?','','Удалить',true))return;
+          let local=O.store.get('custom_plugins',[]);
+          local=local.filter(x=>x.id!==p.id);
+          O.store.set('custom_plugins',local);
+          const fileSafe=(p.id||p.name).replace(/[^a-zA-Z0-9_-]/g,'_')+'.js';
+          try{O.native.fs('delete',CFG+'/plugins/'+fileSafe)}catch(_){}
+          O.cloudDb.removeItem('plugins',p.id);
           draw();
-        }
-      },isEnabled?'Включён':'Включить');
+        }},O.icon('trash')):null;
 
-      const isMine=(p.author===myToken);
-      const delBtn=isMine?h('button',{class:'ibtn s',title:'Удалить',onclick:async()=>{
-        if(!await O.confirm('Удалить плагин '+p.name+'?','','Удалить',true))return;
-        let local=O.store.get('custom_plugins',[]);
-        local=local.filter(x=>x.id!==p.id);
-        O.store.set('custom_plugins',local);
-        O.cloudDb.removeItem('plugins',p.id);
-        draw();
-      }},O.icon('trash')):null;
-
-      const card=h('div',{class:'hud-dock-card',style:{padding:'12px',margin:'8px 0',display:'flex',flexDirection:'column',gap:'8px'}},
-        h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
-          h('div',null,
-            h('b',{style:{color:'#fff',fontSize:'14px'}},p.name),
-            h('span',{class:'mut s',style:{marginLeft:'6px'}},'v'+(p.version||'1.0'))),
-          h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},delBtn,toggleBtn)),
-        h('div',{class:'mut s'},p.desc||''));
-      list.append(card);
-    });
+        const card=h('div',{class:'hud-dock-card',style:{padding:'12px',margin:'8px 0',display:'flex',flexDirection:'column',gap:'8px',border:isEnabled?'1px solid var(--accent)':'1px solid rgba(255,255,255,0.08)'}},
+          h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+            h('div',null,
+              h('b',{style:{color:'#fff',fontSize:'14px'}},p.name),
+              h('span',{class:'mut s',style:{marginLeft:'6px'}},'v'+(p.version||'1.0')),
+              h('span',{class:'widget-custom-tag',style:{marginLeft:'6px'}},'Глобально')),
+            h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},delBtn,toggleBtn)),
+          h('div',{class:'mut s'},p.desc||''));
+        list.append(card);
+      });
+    }
   };
 
   const addBtn=h('button',{class:'btn pri wide',style:{marginTop:'16px'},onclick:()=>{openUploadPluginModal(()=>{draw()})}},
     O.icon('plus'),O.tr('Upload Custom Plugin','Загрузить свой плагин'));
 
+  const syncRow=h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',padding:'6px 2px'}},
+    h('div',{class:'mut s'},'Облачная база сообщества: онлайн'),
+    h('div',{style:{display:'flex',gap:'8px'}},
+      h('button',{class:'btn sm',type:'button',onclick:async()=>{O.toast('Синхронизация...');await syncCloudPlugins();O.toast('Синхронизировано',1200)}},O.icon('refresh'),'Обновить')
+    )
+  );
+
   body.append(
-    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Custom plugins allow adding automated git hooks, linting, formatting and Android integration scripts.','Пользовательские плагины позволяют расширять OpenCode Mobile хуками, авто-форматированием и скриптами.')),
+    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Custom plugins apply globally for all models and chat sessions.','Пользовательские плагины применяются глобально для всех моделей и сессий OpenCode.')),
+    syncRow,
     list,
     addBtn);
   draw();
@@ -855,17 +848,30 @@ function openUploadPluginModal(onDone){
     let local=O.store.get('custom_plugins',[]);
     local.unshift(newPlug);
     O.store.set('custom_plugins',local);
+
+    const enabledIds=new Set(O.store.get('enabled_plugins',[]));
+    enabledIds.add(newPlug.id);
+    O.store.set('enabled_plugins',Array.from(enabledIds));
+    const fileSafe=(newPlug.id||newPlug.name).replace(/[^a-zA-Z0-9_-]/g,'_')+'.js';
+    try{
+      O.native.fs('mkdir',CFG+'/plugins');
+      O.native.writeText(CFG+'/plugins/'+fileSafe,newPlug.code||'// plugin: '+newPlug.name);
+    }catch(_){}
+
     O.cloudDb.syncItem('plugins',newPlug);
 
-    O.toast('Плагин сохранён!',1500);
+    O.toast('Плагин сохранён и включён глобально!',1500);
     if(modal)modal.close();
     if(onDone)onDone();
-  }},O.icon('check'),'Сохранить плагин');
+  }},O.icon('check'),'Сохранить и активировать');
 
   modal=O.sheet('Загрузить свой плагин',h('div',null,
     pickFileBtn,fileInp,
     h('div',{class:'field'},h('label',null,'Название'),nameInp),
     h('div',{class:'field'},h('label',null,'Описание'),descInp),
+    h('div',{class:'field'},h('label',null,'Область действия'),
+      h('div',{style:{color:'#38bdf8',fontSize:'13px',fontWeight:'600',padding:'4px 0'}},'Глобально (для всех моделей)')
+    ),
     h('div',{class:'field'},h('label',null,'Исходный код плагина'),codeTa),
     saveBtn),{hud:true,full:true});
 }
