@@ -29,6 +29,7 @@ O.native={
   copy:t=>{try{OC.copy(t);O.toast('Скопировано',1200)}catch{}},share:t=>OC.share(t),open:u=>OC.openLink(u),
   openApp:t=>(window.OC&&OC.openApp?OC.openApp(t):false),
   preparePreview:p=>(window.OC&&OC.preparePreview?OC.preparePreview(p):''),
+  notify:(kind,title,text)=>{try{if(window.OC&&OC.notify)OC.notify(kind,title,text)}catch(_){}},
   state:()=>j(OC.state())||{}
 };
 O.openUrl=u=>{if(/^https?:\/\//i.test(u)&&!/appassets\.androidplatform\.net/i.test(u))OC.openLink(u)};

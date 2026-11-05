@@ -202,7 +202,40 @@ O.openConnect=async()=>{
   const keyForm=p=>{const inp=h('input',{type:'password',placeholder:'Вставьте API-ключ',autocapitalize:'off',autocorrect:'off'});
     const sh=O.sheet(name(p),h('div',null,h('div',{class:'field'},h('label',null,'API-ключ'),inp),
       p.id==='opencode'?h('div',{class:'note',style:{margin:'8px 0'}},'Получите ключ Zen на opencode.ai/zen. Бесплатные модели работают и без него.'):null,
-      h('button',{class:'btn pri wide',onclick:async()=>{if(!inp.value.trim())return;try{await api('PUT','/auth/'+p.id,{type:'api',key:inp.value.trim()});sh.close();after()}catch(e){O.toast(e.message)}}},'Сохранить')))};
+      h('button',{class:'btn pri wide',onclick:async()=>{
+        const key=inp.value.trim();if(!key)return;
+        try{
+          await api('PUT','/auth/'+p.id,{type:'api',key});
+          if(p.id==='openrouter'||p.id==='groq'){
+            try{
+              const t=O.native.cfgRead();let obj={};try{if(t.trim())obj=O.parseJsonc(t)}catch{}
+              obj.provider=obj.provider||{};
+              if(p.id==='openrouter'){
+                obj.provider.openrouter=Object.assign({
+                  name:'OpenRouter',
+                  npm:'@ai-sdk/openai',
+                  options:{
+                    baseURL:'https://openrouter.ai/api/v1',
+                    apiKey:key,
+                    headers:{'HTTP-Referer':'https://opencode.mobile','X-Title':'OpenCode Mobile'}
+                  }
+                },obj.provider.openrouter||{});
+              }else if(p.id==='groq'){
+                obj.provider.groq=Object.assign({
+                  name:'Groq',
+                  npm:'@ai-sdk/openai',
+                  options:{
+                    baseURL:'https://api.groq.com/openai/v1',
+                    apiKey:key
+                  }
+                },obj.provider.groq||{});
+              }
+              O.native.cfgWrite(JSON.stringify(obj,null,2));
+            }catch(_){}
+          }
+          sh.close();after();
+        }catch(e){O.toast(e.message)}
+      }},'Сохранить')))};
   const oauth=async(p,x)=>{const view=h('div',null,h('div',{class:'mut'},'Подготовка...'));const sh=O.sheet(name(p),view);
     try{const r=await api('POST','/provider/'+p.id+'/oauth/authorize',{method:x.i});view.textContent='';
       view.append(h('div',null,r.instructions||'Откройте ссылку и подтвердите доступ.'),h('div',{style:{display:'flex',gap:'8px',margin:'12px 0'}},
@@ -240,14 +273,25 @@ O.openCustomProvider=parentSheet=>{
   const statusBox=h('div',{class:'mut s',style:{margin:'8px 0'}});
   const modelList=h('div',{class:'hide',style:{maxHeight:'240px',overflowY:'auto',margin:'8px 0',border:'1px solid var(--line)',borderRadius:'8px',padding:'6px'}});
   let foundModels=[];const sel=new Set();
+
+  const presets=h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}},
+    h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='groq';nameInp.value='Groq';urlInp.value='https://api.groq.com/openai/v1'}},'⚡ Groq'),
+    h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='openrouter';nameInp.value='OpenRouter';urlInp.value='https://openrouter.ai/api/v1'}},'🌐 OpenRouter'),
+    h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='ollama';nameInp.value='Ollama (Local)';urlInp.value='http://127.0.0.1:11434/v1'}},'🦙 Ollama'),
+    h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='together';nameInp.value='Together AI';urlInp.value='https://api.together.xyz/v1'}},'Together'));
+
   const probeBtn=h('button',{class:'btn wide',style:{marginTop:'10px'},onclick:async()=>{
     let url=urlInp.value.trim().replace(/\/+$/,'');if(!url)return O.toast('Введите Base URL');
     if(!url.startsWith('http://')&&!url.startsWith('https://'))url='https://'+url;
     urlInp.value=url;const key=keyInp.value.trim();
     probeBtn.disabled=true;statusBox.textContent='Прозваниваю API...';
     try{
-      const target=url.endsWith('/models')?url:(url+'/models');
+      let target=url.endsWith('/models')?url:(url+'/models');
       const hd={'Accept':'application/json'};if(key)hd['Authorization']='Bearer '+key;
+      if(url.includes('openrouter.ai')||idInp.value==='openrouter'){
+        hd['HTTP-Referer']='https://opencode.mobile';
+        hd['X-Title']='OpenCode Mobile';
+      }
       const resp=await fetch(target,{method:'GET',headers:hd});
       if(!resp.ok)throw new Error('HTTP '+resp.status);
       const json=await resp.json();
@@ -271,10 +315,17 @@ O.openCustomProvider=parentSheet=>{
     let url=urlInp.value.trim().replace(/\/+$/,'');if(!url)return O.toast('Введите Base URL');
     if(!url.startsWith('http://')&&!url.startsWith('https://'))url='https://'+url;
     const key=keyInp.value.trim();
+    if(pid==='groq'||url.includes('groq.com')){
+      if(!url.includes('/openai/v1'))url=url.replace(/\/+$/,'')+'/openai/v1';
+    }
     const mo={};if(sel.size>0){sel.forEach(mid=>{mo[mid]={name:mid}})}else mo['default']={name:'Default Model'};
     const t=O.native.cfgRead();let obj={};try{if(t.trim())obj=O.parseJsonc(t)}catch{}
     obj.provider=obj.provider||{};
-    obj.provider[pid]={name:pname,npm:'@ai-sdk/openai',options:{baseURL:url,apiKey:key||'dummy'},models:mo};
+    const provOpts={baseURL:url,apiKey:key||'dummy'};
+    if(pid==='openrouter'||url.includes('openrouter.ai')){
+      provOpts.headers={'HTTP-Referer':'https://opencode.mobile','X-Title':'OpenCode Mobile'};
+    }
+    obj.provider[pid]={name:pname,npm:'@ai-sdk/openai',options:provOpts,models:mo};
     const w=O.native.cfgWrite(JSON.stringify(obj,null,2));
     if(!w.ok)return O.toast(w.err||'Ошибка записи');
     if(key)try{await api('PUT','/auth/'+pid,{type:'api',key})}catch(_){}
@@ -284,6 +335,7 @@ O.openCustomProvider=parentSheet=>{
   },O.icon('check'),'Сохранить и подключить');
 
   const sh=O.sheet('Свой провайдер / Прозвон моделей',h('div',null,
+    presets,
     h('div',{class:'field'},h('label',null,'ID провайдера (латиница)'),idInp),
     h('div',{class:'field'},h('label',null,'Отображаемое имя'),nameInp),
     h('div',{class:'field'},h('label',null,'Base URL (OpenAI-совместимый)'),urlInp),

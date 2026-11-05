@@ -41,10 +41,17 @@ O.chatInit=root=>{
   bus.on('sessions',()=>{renderRevert()});
   bus.on('meta',updateChips);bus.on('conn',updateChips);
   bus.on('serror',p=>{if(p&&(!p.sessionID||p.sessionID===S.sid)){const e=p.error;const t=e&&(e.data&&e.data.message||e.name);if(t&&e.name!=='MessageAbortedError'){
-    if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|balance|funds|\b429\b/i.test(String(t)))O.showQuotaAccountModal(t);
+    if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|balance|funds|\b429\b/i.test(String(t))){
+      O.notifyLimit(O.tr('Limit Reached','Лимит исчерпан'),O.tr('Free quota limit reached.','Бесплатные лимиты закончились.'));
+      O.showQuotaAccountModal(t);
+    }
     else O.toast(t,4000)}}});
   O.on('voice',d=>{if(d&&d.text){ta.value=(ta.value?ta.value+' ':'')+d.text;onInput();ta.focus()}});
   updateChips();renderAll();
+};
+O.notifyLimit=(title,text)=>{
+  try{if(window.OC&&OC.testSound)OC.testSound('quota')}catch(_){}
+  try{if(O.native&&O.native.notify)O.native.notify('quota',title||O.tr('Limit Reached','Лимит исчерпан'),text||O.tr('Free quota limit reached.','Бесплатные лимиты закончились.'))}catch(_){}
 };
 const nearBottom=()=>msgsEl.scrollHeight-msgsEl.scrollTop-msgsEl.clientHeight<140;
 const scrollEnd=f=>{requestAnimationFrame(()=>{msgsEl.scrollTop=msgsEl.scrollHeight;if(f){stick=true;jumpEl.classList.add('hide')}})};
@@ -71,7 +78,7 @@ function buildMsg(m){
   msgEls.set(m.info.id,el);syncParts(el,m);metaUpdate(el,m);return el}
 function showPart(m,p){
   if(m.info.role==='user')return(p.type==='text'&&!p.synthetic&&!p.ignored)||p.type==='file'||p.type==='agent';
-  switch(p.type){case'text':return true;case'reasoning':return S.opts.thinking&&String(p.text||'').trim()!=='';case'tool':case'patch':case'retry':case'compaction':return true}return false}
+  switch(p.type){case'text':return true;case'reasoning':{if(!S.opts.thinking)return false;const t=p.text||p.reasoning||p.thinking||'';return String(t).trim()!==''||!(p.time&&p.time.end)}case'tool':case'patch':case'retry':case'compaction':return true}return false}
 function syncParts(el,m){
   const body=el.firstChild;const keep=new Set();let prev=null;
   for(const p of m.parts){if(!showPart(m,p))continue;keep.add(p.id);
@@ -146,7 +153,7 @@ function render(el){
   O.mdInto(el,cleanText);
   if(O.initCustomWidgets)O.initCustomWidgets(el);
 }
-function renderR(el,b){const p=el._p;if(b._t===p.text)return;b._t=p.text;O.mdInto(b,p.text);
+function renderR(el,b){const p=el._p;const t=p.text||p.reasoning||p.thinking||'';if(b._t===t)return;b._t=t;O.mdInto(b,t);
   const run=!(p.time&&p.time.end);el._d.firstChild.textContent=run?'Думает…':'Размышления'}
 function sched(id,fn){if(timers.has(id))return;timers.set(id,setTimeout(()=>{timers.delete(id);fn();if(stick)scrollEnd()},100))}
 
@@ -182,6 +189,7 @@ function metaUpdate(el,m){
       let em=(i.error.data&&i.error.data.message)||i.error.name||'Ошибка';
       if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|\b429\b/i.test(String(em))){
         em+='\n\n'+quotaHint();
+        O.notifyLimit(O.tr('Limit Reached','Лимит исчерпан'),O.tr('Free quota limit reached.','Бесплатные лимиты закончились.'));
         O.showQuotaAccountModal(em);
       }
       el.firstChild.append(h('div',{class:'errbox'},em))}
@@ -190,8 +198,26 @@ function metaUpdate(el,m){
 function msgText(m){return m.parts.filter(p=>p.type==='text'&&!p.synthetic).map(p=>p.text).join('\n')}
 function msgActions(m){O.actions(m.info.role==='user'?'Сообщение':'Ответ',[
   {label:'Копировать текст',icon:'copy',fn:()=>O.native.copy(msgText(m))},
+  {label:'Экспорт сессии в Markdown',icon:'doc',fn:()=>exportSessionMd()},
   m.info.role==='user'?{label:'Отменить отсюда',sub:'Откатить это сообщение и всё после него',icon:'undo',fn:()=>revertTo(m)}:null,
   {label:'Форк сессии отсюда',icon:'branch',fn:()=>forkAt(m)}])}
+function exportSessionMd(){
+  if(!S.sid)return;
+  const list=O.visibleMsgs(S.sid);
+  if(!list.length)return O.toast('Сессия пуста');
+  let out='# OpenCode Mobile — '+(S.sessions.find(x=>x.id===S.sid)?.title||'Сессия')+'\n\n';
+  list.forEach(m=>{
+    out+=(m.info.role==='user'?'### Пользователь':'### Ассистент')+'\n\n';
+    m.parts.forEach(p=>{
+      if(p.type==='text'&&p.text)out+=p.text+'\n\n';
+      else if(p.type==='reasoning'&&(p.text||p.reasoning))out+='> *Размышления:*\n> '+String(p.text||p.reasoning).split('\n').join('\n> ')+'\n\n';
+      else if(p.type==='tool'&&p.state&&p.state.input)out+='```bash\n# Tool: '+(p.tool||'')+'\n'+JSON.stringify(p.state.input,null,2)+'\n```\n\n';
+    });
+  });
+  O.actions('Экспорт сессии в Markdown',[
+    {label:'Скопировать Markdown',icon:'copy',fn:()=>O.native.copy(out)},
+    {label:'Поделиться файлом/текстом',icon:'share',fn:()=>{if(O.native&&O.native.share)O.native.share(out);else O.native.copy(out)}}]);
+}
 async function revertTo(m){try{await api('POST','/session/'+S.sid+'/revert',{messageID:m.info.id});if(m.info.role==='user'){ta.value=msgText(m);onInput()}}catch(e){O.toast(e.message)}}
 async function forkAt(m){try{const s=await api('POST','/session/'+S.sid+'/fork',{messageID:m.info.id});await O.loadSessions();await O.openSession(s.id)}catch(e){O.toast(e.message)}}
 
@@ -505,7 +531,15 @@ async function onSend(){
   if(text.startsWith('!')){const cmd=text.slice(1).trim();
     if(/^opencode(\s+tui)?\s*$/i.test(cmd)){O.toast('Приложение уже является интерфейсом OpenCode. TUI — во вкладке «Терминал» → Shell, агент — во вкладке «Чат»',6000);clear();return}
     clear();try{const sid=await sess();api('POST','/session/'+sid+'/shell',{agent:S.agent,model:S.model,command:cmd},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}
-  const parts=[];if(text)parts.push({type:'text',text});
+  const parts=[];
+  let finalText=text;
+  const activeJb=O.getActiveJailbreak&&O.getActiveJailbreak();
+  if(activeJb&&activeJb.prompt){
+    if(!finalText.includes(activeJb.title)){
+      finalText='[System Directive: '+activeJb.title+']\n'+activeJb.prompt+'\n\n'+finalText;
+    }
+  }
+  if(finalText)parts.push({type:'text',text:finalText});
   mentions.filter(m=>text.includes(m.tok)).forEach(m=>{const p=JSON.parse(JSON.stringify(m.part));if(p.source&&p.source.text){p.source.text.start=text.indexOf(m.tok);p.source.text.end=p.source.text.start+m.tok.length}parts.push(p)});
   atts.forEach(a=>parts.push(a));
   const mid=O.mid();clear();
@@ -516,6 +550,7 @@ async function onSend(){
   }catch(e){
     const s=O.msgs(S.sid);s.list=s.list.filter(x=>x.info.id!==mid);s.idx.delete(mid);const el=msgEls.get(mid);if(el){el.remove();msgEls.delete(mid)}
     if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|\b429\b/i.test(String(e.message))){
+      O.notifyLimit(O.tr('Limit Reached','Лимит исчерпан'),O.tr('Free quota limit reached.','Бесплатные лимиты закончились.'));
       O.showQuotaAccountModal(e.message);
     }else{
       O.toast(e.message,4000);

@@ -25,7 +25,7 @@ O.upsertPart=part=>{const s=O.msgs(part.sessionID);let m=s.idx.get(part.messageI
 O.visibleMsgs=sid=>{const s=O.msgs(sid),ses=S.sessions.find(x=>x.id===sid)||O.child(sid),rv=ses&&ses.revert&&ses.revert.messageID;
   return rv?s.list.filter(m=>m.info.id<rv):s.list};
 O.child=sid=>S.childSessions&&S.childSessions[sid];
-const saveMsgs=O.debounce(sid=>{const l=O.msgs(sid).list.slice(-400).map(m=>({info:m.info,parts:m.parts}));O.kv.set('msgs:'+sid,l)},1200);
+const saveMsgs=O.debounce(sid=>{const l=O.msgs(sid).list.slice(-250).map(m=>({info:m.info,parts:m.parts}));O.kv.set('msgs:'+sid,l)},2000);
 
 // ---- server events ----
 let liveSyncTimer=null;
@@ -46,11 +46,25 @@ O.syncSessionMessages=async(sid)=>{
 };
 O.startLiveSync=(sid)=>{
   if(liveSyncTimer)return;
-  liveSyncTimer=setInterval(()=>{
+  liveSyncTimer=setInterval(async()=>{
+    if(!S.sid){O.stopLiveSync();return}
+    try{
+      const stMap=await api('GET','/session/status',null,{timeout:4000});
+      if(stMap){
+        for(const k in stMap)S.status[k]=stMap[k];
+        if(!stMap[S.sid]||stMap[S.sid].type==='idle'){
+          S.status[S.sid]={type:'idle'};
+          bus.emit('status',S.sid);
+          O.stopLiveSync();
+          O.syncSessionMessages(S.sid);
+          return;
+        }
+      }
+    }catch(_){}
     const st=S.status[S.sid];
     if(!st||st.type==='idle'){O.stopLiveSync();return}
     O.syncSessionMessages(S.sid);
-  },1500);
+  },3000);
 };
 O.stopLiveSync=()=>{
   if(liveSyncTimer){clearInterval(liveSyncTimer);liveSyncTimer=null;}
@@ -84,8 +98,19 @@ O.onServerEvent=raw=>{let o;try{o=JSON.parse(raw)}catch{return}
     const s=O.msgs(p.sessionID);let m=s.idx.get(p.messageID);
     if(!m)m=O.upsertMsg({id:p.messageID,sessionID:p.sessionID,role:'assistant',time:{created:Date.now()}});
     let pt=m.parts.find(x=>x.id===p.partID);
-    if(!pt){pt={id:p.partID,sessionID:p.sessionID,messageID:p.messageID,type:'text',[p.field||'text']:'',time:{start:Date.now()}};m.parts.push(pt)}
-    const f=p.field||'text';pt[f]=(pt[f]||'')+p.delta;bus.emit('part',p.sessionID,m,pt);break}
+    const isThink=(p.field==='reasoning'||p.field==='thinking'||(pt&&pt.type==='reasoning'));
+    if(!pt){
+      pt={id:p.partID,sessionID:p.sessionID,messageID:p.messageID,type:isThink?'reasoning':'text',text:'',time:{start:Date.now()}};
+      if(p.field)pt[p.field]='';
+      m.parts.push(pt);
+    }
+    const f=p.field||'text';
+    pt[f]=(pt[f]||'')+p.delta;
+    if(isThink){
+      pt.type='reasoning';
+      if(!pt.text||pt.text!==pt[f])pt.text=pt[f];
+    }
+    bus.emit('part',p.sessionID,m,pt);break}
   case'message.part.removed':{const m=O.msgs(p.sessionID).idx.get(p.messageID);if(m){m.parts=m.parts.filter(x=>x.id!==p.partID);bus.emit('part-removed',p.sessionID,m,p.partID)}break}
   case'permission.updated':case'permission.asked':{const q=normPerm(p);if(!S.perms.some(x=>x.id===q.id))S.perms.push(q);bus.emit('perm');break}
   case'permission.replied':{const id=p.permissionID||p.requestID||p.id;S.perms=S.perms.filter(x=>x.id!==id);bus.emit('perm');break}
@@ -148,9 +173,16 @@ O.allModels=()=>{
 };
 O.pickDefaults=()=>{
   const prim=O.primaryAgents();if(!prim.some(a=>a.name===S.agent))S.agent=(prim[0]&&prim[0].name)||'build';
-  const saved=O.store.get('model.'+S.agent);
   const ok=m=>m&&O.modelInfo(m.providerID,m.modelID);
-  let m=ok(saved)?saved:null;
+  let m=null;
+  if(S.sid){
+    const sesSaved=O.store.get('session.model.'+S.sid);
+    if(ok(sesSaved))m=sesSaved;
+  }
+  if(!m){
+    const saved=O.store.get('model.'+S.agent);
+    if(ok(saved))m=saved;
+  }
   const ag=S.agents.find(a=>a.name===S.agent);
   if(!m&&ag&&ag.model&&ok(ag.model))m=ag.model;
   if(!m&&typeof S.cfg.model==='string'&&S.cfg.model.includes('/')){const[i,...r]=S.cfg.model.split('/');const c={providerID:i,modelID:r.join('/')};if(ok(c))m=c}
@@ -165,10 +197,31 @@ O.pickDefaults=()=>{
     if(d)m={providerID:d.pid,modelID:d.mid};
   }
   S.model=m||null;
-  const v=O.store.get('variant.'+(m?m.providerID+'/'+m.modelID:''));S.variant=v&&m&&O.modelInfo(m.providerID,m.modelID)&&O.modelInfo(m.providerID,m.modelID).variants&&O.modelInfo(m.providerID,m.modelID).variants[v]?v:null};
-O.setModel=(pid,mid)=>{S.model={providerID:pid,modelID:mid};O.store.set('model.'+S.agent,S.model);O.pickDefaults();bus.emit('meta')};
+  let v=null;
+  if(S.sid){
+    const sesV=O.store.get('session.variant.'+S.sid);
+    if(sesV&&m&&O.modelInfo(m.providerID,m.modelID)&&O.modelInfo(m.providerID,m.modelID).variants&&O.modelInfo(m.providerID,m.modelID).variants[sesV])v=sesV;
+  }
+  if(!v){
+    const globalV=O.store.get('variant.'+(m?m.providerID+'/'+m.modelID:''));
+    if(globalV&&m&&O.modelInfo(m.providerID,m.modelID)&&O.modelInfo(m.providerID,m.modelID).variants&&O.modelInfo(m.providerID,m.modelID).variants[globalV])v=globalV;
+  }
+  S.variant=v;
+};
+O.setModel=(pid,mid)=>{
+  S.model={providerID:pid,modelID:mid};
+  O.store.set('model.'+S.agent,S.model);
+  if(S.sid)O.store.set('session.model.'+S.sid,S.model);
+  O.pickDefaults();
+  bus.emit('meta');
+};
 O.setAgent=n=>{S.agent=n;O.pickDefaults();bus.emit('meta')};
-O.setVariant=v=>{S.variant=v;if(S.model)O.store.set('variant.'+S.model.providerID+'/'+S.model.modelID,v);bus.emit('meta')};
+O.setVariant=v=>{
+  S.variant=v;
+  if(S.model)O.store.set('variant.'+S.model.providerID+'/'+S.model.modelID,v);
+  if(S.sid)O.store.set('session.variant.'+S.sid,v);
+  bus.emit('meta');
+};
 
 O.loadSessions=async()=>{
   try{const l=await api('GET','/session');S.sessions=l.filter(s=>!s.parentID).sort((a,b)=>b.time.updated-a.time.updated);S.offline=false;O.kv.set('sessions:'+S.dir,S.sessions)}
@@ -182,12 +235,36 @@ O.loadPending=async()=>{
 O.openSession=async(sid,fresh)=>{
   S.sid=sid;O.store.set('sid.'+S.dir,sid);
   if(!sid){bus.emit('open',null);return}
+  const ok=m=>m&&O.modelInfo(m.providerID,m.modelID);
+  const sesSaved=O.store.get('session.model.'+sid);
+  if(ok(sesSaved)){
+    S.model=sesSaved;
+    S.variant=O.store.get('session.variant.'+sid)||null;
+  }else{
+    const s0=O.msgs(sid);
+    const lastM=[...s0.list].reverse().find(x=>x.info&&x.info.providerID&&x.info.modelID);
+    if(lastM&&ok({providerID:lastM.info.providerID,modelID:lastM.info.modelID})){
+      S.model={providerID:lastM.info.providerID,modelID:lastM.info.modelID};
+      O.store.set('session.model.'+sid,S.model);
+    }else{
+      O.pickDefaults();
+    }
+  }
+  bus.emit('meta');
   const s=O.msgs(sid);
   if(!s.list.length){const c=await O.kv.get('msgs:'+sid);if(c)c.forEach(m=>{s.list.push(m);s.idx.set(m.info.id,m)})}
   bus.emit('open',sid);
   if(fresh)return;
   try{const arr=await api('GET','/session/'+sid+'/message',null,{timeout:120000});
     s.list=[];s.idx=new Map();for(const m of arr){const x={info:m.info,parts:m.parts};s.list.push(x);s.idx.set(m.info.id,x)}
+    if(!sesSaved){
+      const lastRemote=[...s.list].reverse().find(x=>x.info&&x.info.providerID&&x.info.modelID);
+      if(lastRemote&&ok({providerID:lastRemote.info.providerID,modelID:lastRemote.info.modelID})){
+        S.model={providerID:lastRemote.info.providerID,modelID:lastRemote.info.modelID};
+        O.store.set('session.model.'+sid,S.model);
+        bus.emit('meta');
+      }
+    }
     S.offline=false;bus.emit('open',sid);saveMsgs(sid)}catch(e){S.offline=true;bus.emit('conn')}
   api('GET','/session/'+sid+'/todo').then(t=>{S.todos[sid]=t;bus.emit('todo',sid)}).catch(()=>{});
   api('GET','/session/'+sid+'/diff').then(d=>{S.diffs[sid]=d;bus.emit('diff',sid)}).catch(()=>{});

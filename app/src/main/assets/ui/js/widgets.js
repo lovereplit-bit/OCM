@@ -194,61 +194,88 @@ O.openPreview=function(relPath){
   O._activePreviewSheet=s;
 };
 
-// 3 Built-in Detailed Widgets
+// 3 Built-in Developer Widgets (Adaptive & Native HUD Style)
 O.getBuiltinWidgets=function(){
-  // Widget 1: System HUD
-  const sysBody=h('div',{class:'ocm-widget-body'},
+  // Widget 1: Runtime & Model Monitor
+  const usage=O.contextUsage?O.contextUsage(S.sid):null;
+  const curModel=S.model?((S.model.providerID||'')+'/'+(S.model.modelID||'')):O.tr('Not selected','Не выбрана');
+  const isBusy=S.status&&S.status[S.sid]&&S.status[S.sid].type!=='idle';
+
+  const monitorBody=h('div',{class:'ocm-widget-body ocm-adaptive-widget'},
     h('div',{class:'hud-metric-row'},
-      h('div',{class:'hud-metric'},h('span',{class:'hud-metric-label'},'Архитектура'),h('b',{class:'hud-metric-val'},'ARM64 Linux')),
-      h('div',{class:'hud-metric'},h('span',{class:'hud-metric-label'},'Частота экрана'),h('b',{class:'hud-metric-val',style:{color:'#22c55e'}},'120 Hz ⚡')),
-      h('div',{class:'hud-metric'},h('span',{class:'hud-metric-label'},'Статус ядра'),h('b',{class:'hud-metric-val',style:{color:S.up?'#22c55e':'#eab308'}},S.up?'Онлайн':'Запуск'))),
+      h('div',{class:'hud-metric',style:{gridColumn:'span 2'}},
+        h('div',{class:'hud-metric-lbl'},O.tr('Active Model','Текущая модель')),
+        h('b',{class:'hud-metric-val',style:{fontSize:'12px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',display:'block'}},curModel)),
+      h('div',{class:'hud-metric'},
+        h('div',{class:'hud-metric-lbl'},O.tr('Tokens','Контекст')),
+        h('b',{class:'hud-metric-val',style:{color:'#a78bfa'}},usage&&usage.tot?O.fmtK(usage.tot):'0 tok'))),
     h('div',{class:'widget-actions-grid'},
-      h('button',{class:'btn-widget-action',onclick:()=>O.dispatchAction('restart_server')},O.icon('refresh'),'Перезапуск ядра'),
-      h('button',{class:'btn-widget-action',onclick:()=>O.dispatchAction('open_app','telegram')},O.icon('tg'),'Telegram'),
-      h('button',{class:'btn-widget-action',onclick:()=>O.dispatchAction('open_settings')},O.icon('sliders'),'Настройки')));
+      h('button',{class:'btn-widget-action',onclick:()=>O.dispatchAction('new_chat')},O.icon('plus'),O.tr('New Session','Новый чат')),
+      h('button',{class:'btn-widget-action',onclick:()=>O.openModels()},O.icon('cpu'),O.tr('Model','Сменить')),
+      h('button',{class:'btn-widget-action',onclick:()=>O.dispatchAction('restart_server')},O.icon('refresh'),O.tr('Restart','Рестарт'))));
 
-  // Widget 2: Quick Launch & Dev Actions
-  const launchBody=h('div',{class:'ocm-widget-body'},
-    h('div',{class:'widget-quick-tiles'},
-      h('button',{class:'quick-tile',onclick:()=>O.dispatchAction('new_chat')},
-        h('div',{class:'tile-icon purple'},O.icon('plus')),h('b',null,'Новый чат'),h('span',null,'Начать чистую сессию')),
-      h('button',{class:'quick-tile',onclick:()=>O.dispatchAction('open_term')},
-        h('div',{class:'tile-icon green'},O.icon('terminal')),h('b',null,'Терминал'),h('span',null,'Команды bash & pkg')),
-      h('button',{class:'quick-tile',onclick:()=>O.dispatchAction('open_files')},
-        h('div',{class:'tile-icon blue'},O.icon('folder')),h('b',null,'Файлы'),h('span',null,'Проводник проектов')),
-      h('button',{class:'quick-tile',onclick:()=>O.dispatchAction('preview')},
-        h('div',{class:'tile-icon amber'},O.icon('globe')),h('b',null,'Веб-Превью'),h('span',null,'Запуск сайта в приложении'))));
+  // Widget 2: Workspace & Git Hub
+  const projName=S.dir?O.basename(S.dir):'Workspace';
+  const branch=S.branch||'main';
+  const diffCount=(S.diffs&&S.diffs[S.sid]||[]).length;
 
-  // Widget 3: Audio chimes & notifications
-  const magicBody=h('div',{class:'ocm-widget-body'},
-    h('div',{class:'widget-sound-grid'},
-      h('button',{class:'btn-sound-card',onclick:()=>O.dispatchAction('sound_done')},
-        h('span',{style:{fontSize:'20px'}},'🔔'),h('b',null,'Чайм финиша'),h('span',null,'Звук E5→A5→E6')),
-      h('button',{class:'btn-sound-card',onclick:()=>O.dispatchAction('sound_action')},
-        h('span',{style:{fontSize:'20px'}},'⚡'),h('b',null,'Чайм вопроса'),h('span',null,'Звук G5→C6')),
-      h('button',{class:'btn-sound-card',onclick:()=>O.dispatchAction('sound_quota')},
-        h('span',{style:{fontSize:'20px'}},'ℹ️'),h('b',null,'Чайм квоты'),h('span',null,'Звук G4→Eb4'))));
+  const workspaceBody=h('div',{class:'ocm-widget-body ocm-adaptive-widget'},
+    h('div',{class:'hud-metric-row'},
+      h('div',{class:'hud-metric',style:{gridColumn:'span 2'}},
+        h('div',{class:'hud-metric-lbl'},O.tr('Project / Directory','Проект')),
+        h('b',{class:'hud-metric-val',style:{fontSize:'13px',color:'#f4f4f5'}},projName)),
+      h('div',{class:'hud-metric'},
+        h('div',{class:'hud-metric-lbl'},'Git'),
+        h('b',{class:'hud-metric-val',style:{color:'#22c55e',fontSize:'12px'}},' '+branch))),
+    h('div',{class:'widget-actions-grid'},
+      h('button',{class:'btn-widget-action',onclick:()=>O.dispatchAction('open_files')},O.icon('folder'),O.tr('Files','Файлы')),
+      h('button',{class:'btn-widget-action',onclick:()=>O.dispatchAction('open_term')},O.icon('terminal'),O.tr('Terminal','Терминал')),
+      h('button',{class:'btn-widget-action',onclick:()=>O.dispatchAction('preview')},O.icon('globe'),O.tr('Preview','Превью'))));
+
+  // Widget 3: Quick Developer Snippets
+  const snips=[
+    ['🐛 Баги','Найди потенциальные баги, ошибки типов и утечки памяти в текущем проекте.'],
+    ['⚡ Рефактор','Проведи рефакторинг кода: оптимизируй архитектуру и удали дублирование.'],
+    ['🧪 Тесты','Напиши подробные автоматические тесты с проверкой граничных условий.'],
+    ['📝 Доки','Создай или обнови техническую документацию в README.md.']
+  ];
+  const snipBody=h('div',{class:'ocm-widget-body ocm-adaptive-widget'},
+    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(2, 1fr)',gap:'8px'}},
+      snips.map(([label,text])=>h('button',{
+        class:'btn-widget-action',
+        style:{padding:'10px 8px',textAlign:'left',justifyContent:'flex-start'},
+        onclick:()=>O.dispatchAction('prompt',text)
+      },h('span',{style:{fontSize:'13px',fontWeight:'600'}},label)))));
 
   return [
-    {id:'sys_hud',title:'Системный HUD',icon:'cpu',body:sysBody},
-    {id:'quick_launch',title:'Быстрый запуск разработчика',icon:'sliders',body:launchBody},
-    {id:'audio_feedback',title:'Звуковые оповещения',icon:'bell',body:magicBody}
+    {id:'core_monitor',title:O.tr('Core & Model Monitor','Монитор рантайма и модели'),icon:'cpu',body:monitorBody},
+    {id:'workspace_git',title:O.tr('Workspace & Git','Рабочее пространство & Git'),icon:'branch',body:workspaceBody},
+    {id:'prompt_scratchpad',title:O.tr('Developer Snippets','Быстрые сниппеты разработки'),icon:'terminal',body:snipBody}
   ];
 };
 
-// Modal exhibiting all widgets
+// Modal exhibiting all widgets with visual preview
 O.openWidgetsModal=function(){
   const wrap=h('div',{class:'widgets-modal-wrap'});
   const widgets=O.getBuiltinWidgets();
+
   widgets.forEach(w=>{
+    const previewContainer=h('div',{class:'widget-preview-box',style:{margin:'6px 0',borderRadius:'10px',border:'1px dashed rgba(255,255,255,0.15)',padding:'8px',background:'rgba(0,0,0,0.2)'}},
+      h('div',{style:{fontSize:'11px',color:'#71717a',marginBottom:'6px',display:'flex',alignItems:'center',gap:'4px'}},
+        O.icon('eye'),h('span',null,O.tr('Preview','Превью виджета'))),
+      w.body.cloneNode(true));
+
+    O.initCustomWidgets(previewContainer);
+
     const card=h('div',{class:'hud-dock-card widget-card'},
       h('div',{class:'hud-dock-header'},
         h('div',{class:'hud-dock-header-left'},
           h('div',{class:'badge-icon'},O.icon(w.icon)),
           h('b',null,w.title))),
-      w.body);
+      previewContainer);
     wrap.append(card);
   });
+
   const customSection=h('div',{style:{marginTop:'16px',textAlign:'center'}},
     h('button',{class:'btn wide',onclick:()=>{s.close();O.openCustomWidgetCreator()}},O.icon('plus'),O.tr('Create Custom Widget from HTML','Создать свой виджет из HTML')));
   wrap.append(customSection);

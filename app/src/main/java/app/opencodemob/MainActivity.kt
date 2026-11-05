@@ -1016,6 +1016,13 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface fun testSound(kind: String) { Notifier.beep(kind) }
+        @JavascriptInterface fun notify(kind: String, title: String, text: String) {
+            runOnUiThread {
+                try {
+                    Notifier.event(this@MainActivity, kind, title, text)
+                } catch (_: Exception) {}
+            }
+        }
 
         @JavascriptInterface fun startVoiceInput(lang: String) {
             runOnUiThread {
