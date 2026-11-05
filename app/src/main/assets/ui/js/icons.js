@@ -50,6 +50,8 @@ play:'<path d="M6 4l14 8-14 8z" fill="currentColor"/>',
 layout:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h18"/>',
 grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
 pen:'<path d="M18 2l4 4-14 14H4v-4L18 2z"/>',
+thumbUp:'<path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.3a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/>',
+thumbDown:'<path d="M10 15v4a3 3 0 003 3l4-9V2H5.7a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h3a2 2 0 012 2v7a2 2 0 01-2 2h-3"/>',
 logo:'<path d="M5 3h14v18H5zM9 7h6v10H9z" fill="currentColor" fill-rule="evenodd" stroke="none"/>'
 };
 O.icon=(n,c)=>{const s=document.createElement('span');s.className='ic'+(c?' '+c:'');

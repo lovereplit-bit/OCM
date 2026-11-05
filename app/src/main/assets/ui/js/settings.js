@@ -869,49 +869,50 @@ function openJailbreaks(){
         };
 
         const likeBtn=h('button',{
-          class:'ibtn s',
+          class:'jb-vote-btn'+(myVote==='like'?' active-like':''),
           type:'button',
           title:'Нравится',
-          style:{
-            display:'inline-flex',
-            alignItems:'center',
-            gap:'4px',
-            padding:'3px 9px',
-            fontSize:'12px',
-            borderRadius:'12px',
-            border:myVote==='like'?'1px solid #22c55e':'1px solid rgba(255,255,255,0.12)',
-            background:myVote==='like'?'rgba(34,197,94,0.18)':'rgba(255,255,255,0.04)',
-            color:myVote==='like'?'#22c55e':'#a1a1aa',
-            cursor:'pointer'
-          },
           onclick:()=>handleVote('like')
-        },'👍 '+likesCount);
+        },
+          O.icon('thumbUp'),
+          h('span',{class:'count'},String(likesCount))
+        );
+
+        const sep=h('div',{class:'jb-vote-sep'});
 
         const dislikeBtn=h('button',{
-          class:'ibtn s',
+          class:'jb-vote-btn'+(myVote==='dislike'?' active-dislike':''),
           type:'button',
           title:'Не нравится',
-          style:{
-            display:'inline-flex',
-            alignItems:'center',
-            gap:'4px',
-            padding:'3px 9px',
-            fontSize:'12px',
-            borderRadius:'12px',
-            border:myVote==='dislike'?'1px solid #ef4444':'1px solid rgba(255,255,255,0.12)',
-            background:myVote==='dislike'?'rgba(239,68,68,0.18)':'rgba(255,255,255,0.04)',
-            color:myVote==='dislike'?'#ef4444':'#a1a1aa',
-            cursor:'pointer'
-          },
           onclick:()=>handleVote('dislike')
-        },'👎 '+dislikesCount);
+        },
+          O.icon('thumbDown'),
+          h('span',{class:'count'},String(dislikesCount))
+        );
 
-        const voteRow=h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginTop:'4px'}},
+        const voteCapsule=h('div',{class:'jb-vote-capsule'},
           likeBtn,
+          sep,
           dislikeBtn
         );
 
-        const row=h('div',{class:'hud-dock-card',style:{padding:'12px',margin:'8px 0',display:'flex',flexDirection:'column',gap:'8px',border:isActive?'1px solid var(--accent)':'1px solid rgba(255,255,255,0.08)'}},
+        const footerRow=h('div',{style:{display:'flex',alignItems:'center',justifyContent:'flex-start',marginTop:'2px'}},
+          voteCapsule
+        );
+
+        const row=h('div',{
+          class:'hud-dock-card',
+          style:{
+            padding:'12px 14px',
+            margin:'8px 0',
+            display:'flex',
+            flexDirection:'column',
+            gap:'8px',
+            border:isActive?'1px solid var(--accent)':'1px solid rgba(255,255,255,0.08)',
+            boxSizing:'border-box',
+            overflow:'hidden'
+          }
+        },
           h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
             h('div',{class:'grow',style:{minWidth:0}},
               h('b',{
@@ -923,8 +924,8 @@ function openJailbreaks(){
                 h('span',{class:'widget-custom-tag',style:{background:'rgba(56,189,248,0.15)',color:'#38bdf8'}},
                   isMine?'Мой пресет':'Сообщество (для всех)'))),
             h('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginLeft:'8px'}},viewBtn,delBtn,toggleBtn)),
-          h('div',{class:'mut s',style:{lineHeight:'1.4'}},jb.desc||''),
-          voteRow);
+          h('div',{class:'mut s',style:{lineHeight:'1.4',wordBreak:'break-word'}},jb.desc||''),
+          footerRow);
         list.append(row);
       });
     }
