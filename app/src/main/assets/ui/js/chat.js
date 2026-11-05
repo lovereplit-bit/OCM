@@ -533,11 +533,15 @@ async function onSend(){
     clear();try{const sid=await sess();api('POST','/session/'+sid+'/shell',{agent:S.agent,model:S.model,command:cmd},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}
   const parts=[];
   let finalText=text;
-  const activeJb=O.getActiveJailbreak&&O.getActiveJailbreak();
-  if(activeJb&&activeJb.prompt){
-    if(!finalText.includes(activeJb.title)){
-      finalText='[System Directive: '+activeJb.title+']\n'+activeJb.prompt+'\n\n'+finalText;
-    }
+  const activeJbs=(O.getActiveJailbreaks&&S.model)
+    ? O.getActiveJailbreaks(S.model.modelID)
+    : (O.getActiveJailbreak?[O.getActiveJailbreak()].filter(Boolean):[]);
+  if(activeJbs&&activeJbs.length){
+    activeJbs.forEach(jb=>{
+      if(jb&&jb.prompt&&!finalText.includes(jb.title)){
+        finalText='[System Directive: '+jb.title+']\n'+jb.prompt+'\n\n'+finalText;
+      }
+    });
   }
   if(finalText)parts.push({type:'text',text:finalText});
   mentions.filter(m=>text.includes(m.tok)).forEach(m=>{const p=JSON.parse(JSON.stringify(m.part));if(p.source&&p.source.text){p.source.text.start=text.indexOf(m.tok);p.source.text.end=p.source.text.start+m.tok.length}parts.push(p)});

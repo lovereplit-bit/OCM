@@ -287,31 +287,53 @@ const SYSTEM_JB_IDS=new Set([
 
 const DEFAULT_JAILBREAKS=[];
 
-const DEFAULT_CLOUD_DB='https://ocm-zen-community-default-rtdb.firebaseio.com';
+const DEFAULT_CLOUD_DB='https://6aec5a8bfc3b911e6fd5037d.mockapi.io';
 O.cloudDb={
   getUrl:()=>(O.store.get('cloud_db_url')||DEFAULT_CLOUD_DB).replace(/\/+$/,''),
   setUrl:u=>O.store.set('cloud_db_url',u.trim().replace(/\/+$/,'')),
   async fetchAll(col){
     try{
-      const resp=await fetch(`${this.getUrl()}/${col}.json`,{method:'GET'});
+      const u=this.getUrl();
+      const isFb=u.includes('firebaseio.com');
+      const fetchUrl=isFb?`${u}/${col}.json`:`${u}/${col}`;
+      const resp=await fetch(fetchUrl,{method:'GET',headers:{'Accept':'application/json'}});
       if(!resp.ok)return[];
       const data=await resp.json();
       if(!data)return[];
+      if(Array.isArray(data))return data;
       return Object.entries(data).map(([id,val])=>Object.assign({id},val));
     }catch(_){return[];}
   },
   async syncItem(col,item){
     try{
-      await fetch(`${this.getUrl()}/${col}/${item.id}.json`,{
-        method:'PUT',
+      const u=this.getUrl();
+      const isFb=u.includes('firebaseio.com');
+      if(isFb){
+        await fetch(`${u}/${col}/${item.id}.json`,{
+          method:'PUT',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(item)
+        });
+        return item;
+      }
+      const resp=await fetch(`${u}/${col}`,{
+        method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(item)
       });
+      if(resp.ok){
+        const saved=await resp.json();
+        return Object.assign({},item,saved);
+      }
     }catch(_){}
+    return item;
   },
   async removeItem(col,id){
     try{
-      await fetch(`${this.getUrl()}/${col}/${id}.json`,{method:'DELETE'});
+      const u=this.getUrl();
+      const isFb=u.includes('firebaseio.com');
+      const delUrl=isFb?`${u}/${col}/${id}.json`:`${u}/${col}/${id}`;
+      await fetch(delUrl,{method:'DELETE'});
     }catch(_){}
   }
 };
@@ -322,10 +344,38 @@ O.getJailbreaks=()=>{
   return local;
 };
 
+O.getActiveJailbreakIds=()=>{
+  const ids=O.store.get('active_jailbreak_ids');
+  if(Array.isArray(ids))return new Set(ids);
+  const oldSingle=O.store.get('active_jailbreak_id');
+  if(oldSingle)return new Set([oldSingle]);
+  return new Set();
+};
+
+O.isJailbreakActive=id=>O.getActiveJailbreakIds().has(id);
+
+O.toggleJailbreak=id=>{
+  const set=O.getActiveJailbreakIds();
+  const next=!set.has(id);
+  if(next)set.add(id);else set.delete(id);
+  const arr=Array.from(set);
+  O.store.set('active_jailbreak_ids',arr);
+  O.store.set('active_jailbreak_id',arr[0]||null);
+  return next;
+};
+
+O.getActiveJailbreaks=currentModelID=>{
+  const activeIds=O.getActiveJailbreakIds();
+  if(!activeIds.size)return [];
+  const all=O.getJailbreaks();
+  return all.filter(j=>activeIds.has(j.id)&&(
+    !currentModelID||j.model==='Все модели'||j.model===currentModelID
+  ));
+};
+
 O.getActiveJailbreak=()=>{
-  const activeId=O.store.get('active_jailbreak_id');
-  if(!activeId||SYSTEM_JB_IDS.has(activeId)||LEGACY_JB_IDS.has(activeId))return null;
-  return O.getJailbreaks().find(j=>j.id===activeId)||null;
+  const jbs=O.getActiveJailbreaks();
+  return jbs[0]||null;
 };
 
 try{
@@ -463,6 +513,26 @@ function openJailbreaks(){
   const myToken=getAuthorToken();
   let filterModel='Все модели';
 
+  const syncCloud=async(silent)=>{
+    try{
+      const remote=await O.cloudDb.fetchAll('jailbreaks');
+      if(remote&&Array.isArray(remote)&&remote.length){
+        let local=O.store.get('custom_jailbreaks',[]);
+        const map=new Map();
+        local.forEach(x=>{if(x&&x.id)map.set(x.id,x)});
+        remote.forEach(r=>{
+          if(r&&r.title&&r.prompt){
+            const key=r.id||('remote_'+r.title);
+            if(!map.has(key))map.set(key,r);
+          }
+        });
+        O.store.set('custom_jailbreaks',Array.from(map.values()));
+        draw();
+      }
+    }catch(_){}
+  };
+  syncCloud(true);
+
   const filterValLabel=h('span',{style:{fontWeight:'600',color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},'Все модели');
   const filterBtn=h('button',{
     class:'btn wide',
@@ -499,7 +569,6 @@ function openJailbreaks(){
   const draw=()=>{
     list.textContent='';
     const all=O.getJailbreaks();
-    const activeId=O.store.get('active_jailbreak_id');
     const filtered=all.filter(j=>filterModel==='Все модели'||j.model==='Все модели'||j.model===filterModel);
 
     if(!filtered.length){
@@ -510,14 +579,13 @@ function openJailbreaks(){
       ));
     }else{
       filtered.forEach(jb=>{
-        const isActive=(activeId===jb.id);
+        const isActive=O.isJailbreakActive(jb.id);
         const toggleBtn=h('button',{
           class:'btn sm '+(isActive?'pri':''),
           style:{minWidth:'84px'},
           onclick:()=>{
-            const nxt=isActive?null:jb.id;
-            O.store.set('active_jailbreak_id',nxt);
-            O.toast(nxt?O.tr('Jailbreak activated: ','Джейлбрейк включён: ')+jb.title:O.tr('Jailbreak disabled','Джейлбрейк выключен'),1500);
+            const nxt=O.toggleJailbreak(jb.id);
+            O.toast(nxt?O.tr('Jailbreak enabled: ','Джейлбрейк включён: ')+jb.title:O.tr('Jailbreak disabled','Джейлбрейк выключен'),1500);
             draw();
           }
         },isActive?O.tr('Active','Включён'):O.tr('Enable','Включить'));
@@ -536,7 +604,11 @@ function openJailbreaks(){
           let local=O.store.get('custom_jailbreaks',[]);
           local=local.filter(x=>x.id!==jb.id);
           O.store.set('custom_jailbreaks',local);
-          if(O.store.get('active_jailbreak_id')===jb.id)O.store.set('active_jailbreak_id',null);
+          const actIds=O.getActiveJailbreakIds();
+          if(actIds.has(jb.id)){
+            actIds.delete(jb.id);
+            O.store.set('active_jailbreak_ids',Array.from(actIds));
+          }
           O.cloudDb.removeItem('jailbreaks',jb.id);
           O.toast('Удалено',1200);
           draw();
@@ -557,8 +629,25 @@ function openJailbreaks(){
   const uploadBtn=h('button',{class:'btn pri wide',style:{marginTop:'16px'},onclick:()=>{openUploadJailbreakModal(()=>{draw()})}},
     O.icon('plus'),O.tr('Upload Custom Jailbreak','Загрузить свой джейлбрейк'));
 
+  const syncRow=h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',padding:'6px 2px'}},
+    h('div',{class:'mut s'},'Облачная база сообщества: онлайн'),
+    h('div',{style:{display:'flex',gap:'8px'}},
+      h('button',{class:'btn sm',type:'button',onclick:async()=>{O.toast('Синхронизация...');await syncCloud();O.toast('Синхронизировано',1200)}},O.icon('refresh'),'Обновить'),
+      h('button',{class:'ibtn s',title:'Сменить адрес базы',onclick:async()=>{
+        const cur=O.cloudDb.getUrl();
+        const nxt=await O.ask('Адрес базы данных','URL базы (MockAPI или Firebase)',cur);
+        if(nxt!==null&&nxt.trim()){
+          O.cloudDb.setUrl(nxt.trim());
+          O.toast('Адрес базы обновлён',1200);
+          syncCloud();
+        }
+      }},O.icon('key'))
+    )
+  );
+
   body.append(
     h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Jailbreaks inject system directives to unlock uncensored code generation and autonomous reasoning on OpenCode Zen models.','Джейлбрейки внедряют системные инструкции для обхода фильтраций и автономной кодогенерации на моделях Zen.')),
+    syncRow,
     h('div',{class:'field'},h('label',null,O.tr('Filter by Model','Сортировка по модели')),filterBtn),
     list,
     uploadBtn);
@@ -601,18 +690,21 @@ function openUploadJailbreakModal(onDone){
 
   const promptTa=h('textarea',{class:'editor',rows:8,placeholder:O.tr('Paste prompt instructions or load from file...','Вставьте системный промпт или загрузите файл...')});
 
-  const fileInp=h('input',{type:'file',accept:'.txt,.md,.json',class:'hide',onchange:e=>{
+  const fileInp=h('input',{type:'file',accept:'*/*',class:'hide',onchange:e=>{
     const f=e.target.files&&e.target.files[0];
     if(!f)return;
     if(!titleInp.value)titleInp.value=f.name.replace(/\.[^.]+$/,'');
     const reader=new FileReader();
-    reader.onload=ev=>{promptTa.value=ev.target.result};
+    reader.onload=ev=>{
+      promptTa.value=ev.target.result;
+      O.toast('Файл прочитан: '+f.name,1200);
+    };
+    reader.onerror=()=>{O.toast('Ошибка чтения файла')};
     reader.readAsText(f);
-    O.toast('Файл прочитан: '+f.name,1200);
   }});
 
   const pickFileBtn=h('button',{class:'btn wide',type:'button',style:{marginBottom:'12px'},onclick:()=>fileInp.click()},
-    O.icon('up'),O.tr('Load from file (.txt / .md)','Загрузить из файла (.txt / .md)'));
+    O.icon('up'),O.tr('Load from file (.md / .txt)','Загрузить из файла (.md / .txt)'));
 
   let modal=null;
   const saveBtn=h('button',{class:'btn pri wide',style:{marginTop:'12px'},onclick:()=>{
@@ -622,7 +714,7 @@ function openUploadJailbreakModal(onDone){
     if(!prompt)return O.toast('Введите текст инструкций');
 
     const newItem={
-      id:'jb_'+Date.now().toString(36),
+      id:'jb_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,6),
       title,
       desc:descInp.value.trim(),
       model:selectedModel,
@@ -634,7 +726,7 @@ function openUploadJailbreakModal(onDone){
     let local=O.store.get('custom_jailbreaks',[]);
     local.unshift(newItem);
     O.store.set('custom_jailbreaks',local);
-    O.store.set('active_jailbreak_id',newItem.id);
+    O.toggleJailbreak(newItem.id);
     O.cloudDb.syncItem('jailbreaks',newItem);
 
     O.toast('Джейлбрейк сохранён и активирован!',2000);
@@ -656,6 +748,26 @@ function openCustomPlugins(){
   const s=sub(O.tr('Custom Plugins','Пользовательские плагины'),body,{full:true});
   const myToken=getAuthorToken();
   const list=h('div',{class:'plugins-list'});
+
+  const syncCloudPlugins=async()=>{
+    try{
+      const remote=await O.cloudDb.fetchAll('plugins');
+      if(remote&&Array.isArray(remote)&&remote.length){
+        let local=O.store.get('custom_plugins',[]);
+        const map=new Map();
+        local.forEach(x=>{if(x&&x.id)map.set(x.id,x)});
+        remote.forEach(r=>{
+          if(r&&r.name&&r.code){
+            const key=r.id||('remote_'+r.name);
+            if(!map.has(key))map.set(key,r);
+          }
+        });
+        O.store.set('custom_plugins',Array.from(map.values()));
+        draw();
+      }
+    }catch(_){}
+  };
+  syncCloudPlugins();
 
   const draw=()=>{
     list.textContent='';
@@ -710,14 +822,17 @@ function openUploadPluginModal(onDone){
   const descInp=h('input',{placeholder:'Краткое описание работы'});
   const codeTa=h('textarea',{class:'editor',rows:8,placeholder:'// JavaScript / TypeScript код плагина\nexport default {\n  name: "custom-plugin",\n  onFinish: () => {}\n};'});
 
-  const fileInp=h('input',{type:'file',accept:'.js,.ts,.json',class:'hide',onchange:e=>{
+  const fileInp=h('input',{type:'file',accept:'*/*',class:'hide',onchange:e=>{
     const f=e.target.files&&e.target.files[0];
     if(!f)return;
     if(!nameInp.value)nameInp.value=f.name.replace(/\.[^.]+$/,'');
     const reader=new FileReader();
-    reader.onload=ev=>{codeTa.value=ev.target.result};
+    reader.onload=ev=>{
+      codeTa.value=ev.target.result;
+      O.toast('Файл прочитан: '+f.name,1200);
+    };
+    reader.onerror=()=>{O.toast('Ошибка чтения файла')};
     reader.readAsText(f);
-    O.toast('Файл прочитан: '+f.name,1200);
   }});
 
   const pickFileBtn=h('button',{class:'btn wide',type:'button',style:{marginBottom:'12px'},onclick:()=>fileInp.click()},
@@ -729,7 +844,7 @@ function openUploadPluginModal(onDone){
     if(!name)return O.toast('Введите название плагина');
 
     const newPlug={
-      id:'plug_'+Date.now().toString(36),
+      id:'plug_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,6),
       name,
       desc:descInp.value.trim(),
       code:codeTa.value.trim(),

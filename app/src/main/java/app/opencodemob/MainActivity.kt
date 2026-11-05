@@ -175,7 +175,21 @@ class MainActivity : ComponentActivity() {
             webChromeClient = object : WebChromeClient() {
                 override fun onShowFileChooser(w: WebView, cb: ValueCallback<Array<Uri>>, p: FileChooserParams): Boolean {
                     fileCb?.onReceiveValue(null); fileCb = cb
-                    return try { chooser.launch(p.createIntent()); true } catch (_: Exception) { fileCb = null; false }
+                    val intent = try {
+                        val base = p.createIntent()
+                        val types = p.acceptTypes
+                        if (types.isNullOrEmpty() || types.any { it.contains(".md", ignoreCase = true) || it == "*/*" || it.contains("markdown", ignoreCase = true) }) {
+                            base.type = "*/*"
+                            base.putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("*/*"))
+                        }
+                        base
+                    } catch (_: Exception) {
+                        Intent(Intent.ACTION_GET_CONTENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                        }
+                    }
+                    return try { chooser.launch(intent); true } catch (_: Exception) { fileCb = null; false }
                 }
             }
             addJavascriptInterface(Bridge(), "OC")
