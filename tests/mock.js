@@ -41,7 +41,7 @@ window.OC={
  authLogin(){window.__authLogin=1},authCancel(){},authLogout(e){window.__authLogout=e;setTimeout(()=>OCEvent('authlogout',{ok:true}),5)},
  install(){if(window.__failInstall){window.__failInstall=0;OCEvent('install',{error:'Не удалось распаковать элемент «usr/bin» — ENOSPC'});return}OCEvent('install',{pct:10});setTimeout(()=>OCEvent('install',{done:true}),20)},
  resetInstall(){window.__resetInstall=1;OCEvent('install',{pct:30});setTimeout(()=>OCEvent('install',{done:true}),20)},
- start(){setTimeout(()=>OCEvent('ready',{}),10)},restartServer(){window.__restarted=1},resetConfig(){window.__resetConfig=1},minimize(){},grant(k){window.__granted=k},setFlag(k,v){(window.__flags=window.__flags||{})[k]=v},testSound(){},
+ start(){setTimeout(()=>OCEvent('ready',{}),10)},restartServer(){window.__restarted=1},resetConfig(){window.__resetConfig=1},minimize(){},grant(k){window.__granted=k},setFlag(k,v){(window.__flags=window.__flags||{})[k]=v},testSound(){},notify(k,t,m){},
  http(id,m,p,b){setTimeout(()=>{try{OCEvent('http',{id,status:200,ct:'application/json',body:JSON.stringify(route(m,p,b))})}catch(e){OCEvent('http',{id,status:500,ct:'text/plain',body:String(e)})}},4)},
  drop(){},sseStart(){sse=true;setTimeout(()=>OCEvent('sse',{t:'open'}),5)},sseStop(){},wsOpen(id){setTimeout(()=>{OCEvent('ws',{id,t:'open'});OCEvent('ws',{id,t:'msg',d:'root@phone:~# '})},5)},wsSend(id,t){(window.__wsSent=window.__wsSent||[]).push(t)},wsClose(){},
  ls:p=>JSON.stringify({ok:true,path:p,items:[{name:'app',dir:true},{name:'notes.txt',dir:false}]}),fs:()=>JSON.stringify({ok:true}),readText:()=>JSON.stringify({ok:true,text:'abc'}),writeText:()=>JSON.stringify({ok:true}),

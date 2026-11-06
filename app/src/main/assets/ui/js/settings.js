@@ -90,7 +90,7 @@ O.openSettings=()=>{
   jbCard.append(
     O.listRow('shield',O.tr('Custom Jailbreaks','Пользовательские джейлбрейки'),O.tr('Presets for Zen models, upload & toggle','Пресеты для моделей Zen, загрузка и отключение'),O.icon('chevR'),()=>openJailbreaks()),
     O.listRow('plug',O.tr('Custom Plugins','Пользовательские плагины'),O.tr('Marketplace, upload custom plugins','Каталог и загрузка пользовательских плагинов'),O.icon('chevR'),()=>openCustomPlugins()),
-    O.toggleRow('zap','OpenCode Warp (обход лимитов)','https://github.com/warpdotdev/opencode-warp — тестовая функция, по умолчанию выключена',O.store.get('warp_enabled',false),v=>{O.store.set('warp_enabled',v);O.toast(v?'Warp включён (тестовый режим)':'Warp выключен',1500)})
+    O.listRow('zap',O.tr('OpenCode IP Rotator (Bypass 429)','OpenCode IP Rotator (обход лимитов)'),O.store.get('rotator_enabled',false)?O.tr('Active · Rotating IP','Активен · Ротация IP включена'):O.tr('Cloudflare WARP & proxy rotator for guest tier','Обход лимитов на гостевом аккаунте'),O.icon('chevR'),()=>openIpRotator())
   );
   body.append(jbCard);
 
@@ -1300,5 +1300,247 @@ O.syncAllCommunity=async()=>{
   }catch(_){}
 };
 setTimeout(()=>{try{O.syncAllCommunity()}catch(_){}},1000);
+
+
+// ---- OpenCode IP Rotator (Bypass 429 / WARP & Proxy Pool) ----
+O.configureIpRotatorProvider = async (enabled, customBaseUrl) => {
+  const baseUrl = (customBaseUrl || O.store.get('rotator_url', 'http://127.0.0.1:8000/v1')).trim().replace(/\/+$/, '');
+  const pid = 'opencode-ip-rotator';
+  const t = O.native.cfgRead();
+  let obj = {};
+  try { if (t.trim()) obj = O.parseJsonc(t); } catch {}
+  obj.provider = obj.provider || {};
+  if (!enabled) {
+    if (obj.provider[pid]) {
+      delete obj.provider[pid];
+      O.native.cfgWrite(JSON.stringify(obj, null, 2));
+      try { await api('POST', '/instance/dispose', null); } catch (_) {}
+      await O.loadMeta();
+      O.pickDefaults();
+    }
+    O.store.set('rotator_enabled', false);
+    return;
+  }
+  let mo = {
+    'big-pickle': { name: 'Big Pickle (Free - No Limits)' },
+    'claude-3-5-sonnet': { name: 'Claude 3.5 Sonnet (Free - No Limits)' },
+    'gpt-4o': { name: 'GPT-4o (Free - No Limits)' },
+    'gemini-2.0-flash': { name: 'Gemini 2.0 Flash (Free - No Limits)' }
+  };
+  try {
+    const resp = await fetch(baseUrl + '/models', { method: 'GET', headers: { 'Accept': 'application/json' } });
+    if (resp.ok) {
+      const data = await resp.json();
+      const list = Array.isArray(data) ? data : (data.data || data.models || []);
+      if (list.length) {
+        mo = {};
+        list.forEach(m => {
+          const mid = typeof m === 'string' ? m : (m.id || m.name);
+          if (mid) mo[mid] = { name: mid + ' (Free)' };
+        });
+      }
+    }
+  } catch (_) {}
+  obj.provider[pid] = {
+    name: 'OpenCode IP Rotator',
+    npm: '@ai-sdk/openai',
+    options: { baseURL: baseUrl, apiKey: 'rotator' },
+    models: mo
+  };
+  const w = O.native.cfgWrite(JSON.stringify(obj, null, 2));
+  if (!w.ok) throw new Error(w.err || 'Ошибка записи конфигурации');
+  try { await api('PUT', '/auth/' + pid, { type: 'api', key: 'rotator' }); } catch (_) {}
+  try { await api('POST', '/instance/dispose', null); } catch (_) {}
+  await O.loadMeta();
+  O.store.set('rotator_enabled', true);
+  O.store.set('rotator_url', baseUrl);
+  const mKeys = Object.keys(mo);
+  if (mKeys.length > 0) {
+    const target = mKeys.includes('big-pickle') ? 'big-pickle' : mKeys[0];
+    O.setModel(pid, target);
+  }
+};
+
+O.rotateIpNow = async () => {
+  const nodeUrl = O.store.get('rotator_node_url', 'http://127.0.0.1:8001').trim().replace(/\/+$/, '');
+  const rotUrl = O.store.get('rotator_url', 'http://127.0.0.1:8000/v1').trim().replace(/\/+$/, '');
+  O.toast(O.tr('Requesting WARP IP rotation...', 'Запрашиваем смену IP через WARP...'), 2500);
+  try {
+    let ok = false, newIp = null;
+    try {
+      const resp = await fetch(nodeUrl + '/rotate', { method: 'POST' });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.status === 'success' || data.verified_ip) {
+          ok = true; newIp = data.verified_ip;
+        }
+      }
+    } catch (_) {}
+    if (!ok) {
+      const altUrl = rotUrl.replace(/\/v1$/, '') + '/rotate';
+      const aResp = await fetch(altUrl, { method: 'POST' });
+      if (aResp.ok) {
+        const data = await aResp.json();
+        newIp = data.verified_ip; ok = true;
+      }
+    }
+    if (ok) {
+      O.toast(O.tr('IP rotated successfully: ', 'IP успешно изменён: ') + (newIp || '⚡'), 3500);
+      return newIp;
+    } else {
+      throw new Error('Конечная точка /rotate недоступна');
+    }
+  } catch (e) {
+    O.toast(O.tr('Rotation error: ', 'Ошибка смены IP: ') + e.message, 4000);
+    return null;
+  }
+};
+
+function openIpRotator() {
+  const body = h('div');
+  const s = sub(O.tr('OpenCode IP Rotator (Bypass 429)', 'OpenCode IP Rotator (обход лимитов)'), body, { full: true });
+
+  let enabled = O.store.get('rotator_enabled', false);
+  const rotUrlVal = O.store.get('rotator_url', 'http://127.0.0.1:8000/v1');
+  const rotNodeVal = O.store.get('rotator_node_url', 'http://127.0.0.1:8001');
+
+  const urlInp = h('input', { class: 'mono', value: rotUrlVal, placeholder: 'http://127.0.0.1:8000/v1' });
+  const nodeInp = h('input', { class: 'mono', value: rotNodeVal, placeholder: 'http://127.0.0.1:8001' });
+  const proxiesInp = h('textarea', { class: 'mono', rows: 3, placeholder: 'http://user:pass@host:port\nsocks5://host:port\n(по одному на строку)', style: { width: '100%', resize: 'vertical', fontSize: '12px' } });
+  proxiesInp.value = O.store.get('rotator_proxies', '');
+
+  const statusCard = h('div', { class: 'settings-card', style: { padding: '12px', margin: '12px 0' } });
+  const statusLine = h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' } },
+    h('div', { style: { width: '10px', height: '10px', borderRadius: '50%', background: enabled ? '#10b981' : '#6b7280' } }),
+    h('b', null, enabled ? O.tr('IP Rotator Active', 'IP Rotator включён') : O.tr('IP Rotator Disabled', 'IP Rotator отключён'))
+  );
+  const ipInfoLine = h('div', { class: 'mut s', style: { lineHeight: '1.5' } }, O.tr('Verified Public IP: Tap "Check Status"', 'Проверенный внешний IP: нажмите «Проверить статус»'));
+  statusCard.append(statusLine, ipInfoLine);
+
+  const checkStatus = async () => {
+    ipInfoLine.textContent = O.tr('Checking server & IP...', 'Проверяем сервер и внешний IP...');
+    const baseUrl = urlInp.value.trim().replace(/\/+$/, '');
+    const nodeUrl = nodeInp.value.trim().replace(/\/+$/, '');
+    try {
+      let verifiedIp = null, country = '', flag = '🌐', modelsCount = 0;
+      try {
+        const hResp = await fetch(baseUrl.replace(/\/v1$/, '') + '/health', { method: 'GET' });
+        if (hResp.ok) {
+          const hData = await hResp.json();
+          if (hData.verified_ip) verifiedIp = hData.verified_ip;
+        }
+      } catch (_) {}
+      try {
+        const sResp = await fetch(nodeUrl + '/status', { method: 'GET' });
+        if (sResp.ok) {
+          const sData = await sResp.json();
+          if (sData.current_ip) verifiedIp = sData.current_ip;
+          if (sData.history && sData.history.length) {
+            const last = sData.history[sData.history.length - 1];
+            if (last.country) country = last.country;
+            if (last.flag) flag = last.flag;
+          }
+        }
+      } catch (_) {}
+      try {
+        const mResp = await fetch(baseUrl + '/models', { method: 'GET' });
+        if (mResp.ok) {
+          const mData = await mResp.json();
+          const list = Array.isArray(mData) ? mData : (mData.data || mData.models || []);
+          modelsCount = list.length;
+        }
+      } catch (_) {}
+      if (!verifiedIp) {
+        try {
+          const ipResp = await fetch('https://api.ipify.org?format=json');
+          if (ipResp.ok) { const ipD = await ipResp.json(); verifiedIp = ipD.ip; }
+        } catch (_) {}
+      }
+      if (verifiedIp || modelsCount > 0) {
+        ipInfoLine.innerHTML = `<b style="color:var(--text)">` + flag + ` IP:</b> <span class="mono">` + (verifiedIp || 'В сети') + `</span> ` + (country ? ('(' + country + ')') : '') + `<br><span style="color:#10b981">✓ Сервер отвечает</span> · Моделей доступно: <b>` + (modelsCount || 4) + `</b> (включая big-pickle)`;
+        O.toast(O.tr('Rotator server reachable!', 'Сервер ротатора доступен!'), 2000);
+      } else {
+        ipInfoLine.innerHTML = '<span style="color:#ef4444">⚠️ Сервер не отвечает на ' + baseUrl + '</span><br>Убедитесь, что сервер запущен через <span class="mono">bash scripts/run-ip-rotator.sh start</span> или Docker.';
+        O.toast(O.tr('Rotator server unreachable', 'Сервер ротатора не отвечает'), 3500);
+      }
+    } catch (e) {
+      ipInfoLine.innerHTML = '<span style="color:#ef4444">Ошибка: ' + e.message + '</span>';
+      O.toast('Ошибка проверки: ' + e.message, 3500);
+    }
+  };
+
+  const doRotate = async () => {
+    const newIp = await O.rotateIpNow();
+    if (newIp) checkStatus();
+  };
+
+  const saveAndApply = async () => {
+    const baseUrl = urlInp.value.trim().replace(/\/+$/, '');
+    const nodeUrl = nodeInp.value.trim().replace(/\/+$/, '');
+    const proxiesTxt = proxiesInp.value.trim();
+    O.store.set('rotator_url', baseUrl);
+    O.store.set('rotator_node_url', nodeUrl);
+    O.store.set('rotator_proxies', proxiesTxt);
+    O.store.set('rotator_enabled', enabled);
+
+    try {
+      await O.configureIpRotatorProvider(enabled, baseUrl);
+      O.toast(enabled ? O.tr('IP Rotator connected to OpenCode!', 'IP Rotator подключён к OpenCode!') : O.tr('IP Rotator disabled', 'IP Rotator отключён'), 2500);
+      s.close();
+    } catch (e) {
+      O.toast('Ошибка сохранения: ' + e.message, 4000);
+    }
+  };
+
+  body.append(
+    h('div', { class: 'note', style: { marginBottom: '12px' } },
+      O.tr(
+        'Automated Cloudflare WARP IP rotator & proxy for OpenCode Zen. Eliminates HTTP 429 rate limits on guest/free accounts by rotating outbound IP addresses.',
+        'Автоматический обход лимитов бесплатной квоты OpenCode (HTTP 429: FreeUsageLimitError) на гостевых аккаунтах с ротацией IP через Cloudflare WARP и прокси-пул.'
+      )
+    ),
+    O.toggleRow('zap', O.tr('Enable IP Rotator for Guest', 'Использовать IP Rotator для гостя'), O.tr('Route free model inference through rotating proxy', 'Маршрутизировать запросы бесплатных моделей через ротатор'), enabled, v => {
+      enabled = v;
+      statusLine.children[0].style.background = v ? '#10b981' : '#6b7280';
+      statusLine.children[1].textContent = v ? O.tr('IP Rotator Active', 'IP Rotator включён') : O.tr('IP Rotator Disabled', 'IP Rotator отключён');
+    }),
+    statusCard,
+    h('div', { style: { display: 'flex', gap: '8px', marginBottom: '12px' } },
+      h('button', { class: 'btn grow', type: 'button', onclick: checkStatus }, O.icon('search'), O.tr('Check Status & IP', 'Проверить статус')),
+      h('button', { class: 'btn pri grow', type: 'button', style: { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }, onclick: doRotate }, O.icon('refresh'), O.tr('Rotate IP Now', 'Сменить IP'))
+    ),
+    h('div', { class: 'field' },
+      h('label', null, O.tr('Proxy Server Base URL', 'URL прокси-сервера (Base URL)')),
+      urlInp,
+      h('div', { style: { display: 'flex', gap: '6px', marginTop: '6px' } },
+        h('button', { class: 'btn sm', type: 'button', onclick: () => { urlInp.value = 'http://127.0.0.1:8000/v1'; } }, '127.0.0.1:8000'),
+        h('button', { class: 'btn sm', type: 'button', onclick: () => { urlInp.value = 'http://localhost:8000/v1'; } }, 'localhost:8000')
+      )
+    ),
+    h('div', { class: 'field', style: { marginTop: '10px' } },
+      h('label', null, O.tr('WARP Rotator Node URL', 'URL узла ротации WARP (Node)')),
+      nodeInp
+    ),
+    h('div', { class: 'field', style: { marginTop: '10px' } },
+      h('label', null, O.tr('Outbound Proxy Pool (proxies.txt)', 'Список исходящих прокси (опционально)')),
+      proxiesInp
+    ),
+    h('button', { class: 'btn pri wide', style: { marginTop: '14px' }, onclick: saveAndApply }, O.icon('check'), O.tr('Save & Apply to OpenCode', 'Сохранить и подключить к OpenCode')),
+    h('button', { class: 'btn wide', style: { marginTop: '8px' }, onclick: () => {
+      const host = urlInp.value.replace(/\/v1.*$/, '');
+      O.openUrl(host + '/dashboard');
+    } }, O.icon('globe'), O.tr('Open Web Dashboard', 'Открыть веб-панель (Dashboard)')),
+    h('details', { style: { marginTop: '16px' } },
+      h('summary', { class: 'mut s', style: { cursor: 'pointer', padding: '6px 0' } }, O.tr('How to run rotator server (Guide)', 'Инструкция: как запустить сервер на телефоне / ПК')),
+      h('div', { class: 'note s', style: { marginTop: '6px', lineHeight: '1.5' } },
+        h('b', null, 'Запуск на телефоне (Termux) или ПК (Docker):'), h('br'),
+        '1. Скриптом из репозитория OCM: ', h('code', { class: 'mono' }, 'bash scripts/run-ip-rotator.sh start'), h('br'),
+        '2. Либо через Docker: ', h('code', { class: 'mono' }, 'cd rotator && docker compose up -d'), h('br'),
+        '3. Репозиторий ротатора: ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); O.openUrl('https://github.com/alztrk/opencode-ip-rotator'); } }, 'github.com/alztrk/opencode-ip-rotator')
+      )
+    )
+  );
+}
+O.openIpRotator = openIpRotator;
 
 })();

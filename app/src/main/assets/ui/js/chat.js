@@ -391,6 +391,14 @@ O.showQuotaAccountModal=msg=>{
         'Вы используете общую квоту без авторизации, которая временно исчерпана.\n\nВойдите через Google или GitHub, чтобы получить персональную бесплатную квоту OpenCode, либо подключите собственный API ключ.'
       )
     ),
+    h('button',{class:'btn pri wide',style:{marginBottom:'10px',background:'linear-gradient(135deg,#2563eb,#7c3aed)',color:'#fff'},onclick:()=>{
+      s.close();
+      if(O.store.get('rotator_enabled',false)&&O.rotateIpNow){
+        O.rotateIpNow();
+      }else if(O.openIpRotator){
+        O.openIpRotator();
+      }
+    }},O.icon('zap'),O.store.get('rotator_enabled',false)?O.tr('Rotate IP via Rotator & Retry','Сменить IP через Rotator и повторить'):O.tr('Bypass limit with OpenCode IP Rotator','Обойти лимит через OpenCode IP Rotator')),
     h('button',{class:'btn pri wide',style:{marginBottom:'10px'},onclick:()=>{s.close();O.openAccount()}},O.icon('user'),O.tr('Sign in with Google / GitHub','Войти через Google / GitHub')),
     h('button',{class:'btn wide',style:{marginBottom:'10px'},onclick:()=>{s.close();O.openConnect()}},O.icon('key'),O.tr('Connect own API key','Подключить свой API ключ')),
     h('button',{class:'btn wide',onclick:()=>s.close()},O.tr('Later','Позже'))
