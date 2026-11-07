@@ -197,6 +197,8 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(web, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
+        ModelDownloader.onProgress = { json -> emit("model_download_progress", json) }
+        try { LocalBridgeServer.start(this) } catch (_: Exception) {}
         checkOpenAppTrigger()
 
         onBackPressedDispatcher.addCallback(this) {
@@ -1115,6 +1117,34 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun openApp(target: String): Boolean = this@MainActivity.launchApp(target)
 
         @JavascriptInterface fun preparePreview(path: String): String = this@MainActivity.prepareWebPreview(path)
+
+        // --- Local AI Models (Hugging Face / GGUF) ---
+        @JavascriptInterface fun downloadModel(id: String, url: String, filename: String, name: String): String {
+            return ModelDownloader.startDownload(this@MainActivity, id, url, filename, name).toString()
+        }
+
+        @JavascriptInterface fun cancelModelDownload(id: String): String {
+            return ModelDownloader.cancelDownload(this@MainActivity, id).toString()
+        }
+
+        @JavascriptInterface fun deleteModel(id: String, filename: String): String {
+            return ModelDownloader.deleteModel(this@MainActivity, id, filename).toString()
+        }
+
+        @JavascriptInterface fun getLocalModels(): String {
+            return ModelDownloader.getLocalModels(this@MainActivity).toString()
+        }
+
+        @JavascriptInterface fun startLocalBridge(): Boolean {
+            return LocalBridgeServer.start(this@MainActivity)
+        }
+
+        @JavascriptInterface fun getLocalBridgeStatus(): String {
+            return JSONObject()
+                .put("running", LocalBridgeServer.isAlive())
+                .put("port", LocalBridgeServer.activePort)
+                .toString()
+        }
 
         // --- OTA ---
         @JavascriptInterface fun checkUpdates() {

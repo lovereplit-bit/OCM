@@ -77,13 +77,19 @@ O.openModels=()=>{
       h('span',{class:'recommended-badge'},O.tr('Recommended','Рекомендуется'))),
     h('div',{class:'detached-card-right'},effortTxt));
 
+  const localModelsCard=h('button',{class:'detached-card',onclick:()=>{s.close();O.openLocalModels()}},
+    h('div',{class:'detached-card-left'},
+      O.icon('download'),
+      h('span',{style:{marginLeft:'6px'}},O.tr('Download Local Models (Hugging Face)','Локальные ИИ модели (Hugging Face)'))),
+    h('div',{class:'detached-card-right'},'›'));
+
   const connectCard=h('button',{class:'detached-card',onclick:()=>{s.close();O.openConnect()}},
     h('div',{class:'detached-card-left'},
       O.icon('key'),
       h('span',{style:{marginLeft:'6px'}},O.tr('Connect more providers','Подключить провайдеров (API ключи)'))),
     h('div',{class:'detached-card-right'},'›'));
 
-  const container=h('div',null,q,listEl,h('div',{style:{height:'10px'}}),swRow,effortCard,connectCard);
+  const container=h('div',null,q,listEl,h('div',{style:{height:'10px'}}),swRow,effortCard,localModelsCard,connectCard);
   const s=O.sheet(O.tr('Select model','Выбор модели'),container,{hud:true,full:true});
 
   function draw(){
@@ -119,6 +125,9 @@ O.openModels=()=>{
       const aOn=(a.pid+'/'+a.mid)===activeKey;
       const bOn=(b.pid+'/'+b.mid)===activeKey;
       if(aOn!==bOn)return aOn?-1:1;
+      const aLoc=a.isLocal||a.pid==='local';
+      const bLoc=b.isLocal||b.pid==='local';
+      if(aLoc!==bLoc)return aLoc?-1:1;
       return (a.name||a.mid).localeCompare(b.name||b.mid);
     });
 
@@ -126,21 +135,23 @@ O.openModels=()=>{
     items.forEach(x=>{
       const isSel=activeKey===(x.pid+'/'+x.mid);
       const isFree=O.isModelFree(x);
-      const badge=h('span',{class:'badge-model '+(isFree?'badge-free':'badge-paid')},
-        isFree?O.tr('Free','Бесплатно'):O.tr('Paid','Платная')
+      const isLoc=Boolean(x.isLocal || x.pid==='local' || (x.name&&x.name.includes('(Локально)')));
+      const badge=h('span',{class:'badge-model '+(isLoc?'badge-local':(isFree?'badge-free':'badge-paid'))},
+        isLoc?O.tr('Local','Локально'):(isFree?O.tr('Free','Бесплатно'):O.tr('Paid','Платная'))
       );
 
       const ctx=x.m&&x.m.limit&&x.m.limit.context,parts=[];
-      parts.push(x.pname||x.pid);
+      parts.push(isLoc?'Локальный мост (Hugging Face)':(x.pname||x.pid));
       if(ctx)parts.push(O.fmtK(ctx)+' context');
-      if(x.m&&(x.m.modalities&&x.m.modalities.includes('image')||x.m.attachment!==false))parts.push('images');
+      if(x.m&&(x.m.modalities&&x.m.modalities.includes('image')||x.m.attachment!==false))parts.push('images / t2i');
       if(x.m&&(x.m.reasoning||x.m.variants))parts.push('reasoning');
-      if(!isFree&&x.m&&x.m.cost&&typeof x.m.cost.input==='number'&&x.m.cost.input>0){
+      if(isLoc)parts.push('офлайн');
+      else if(!isFree&&x.m&&x.m.cost&&typeof x.m.cost.input==='number'&&x.m.cost.input>0){
         parts.push('$'+x.m.cost.input+'/1M');
       }
       const sub=parts.join(' · ');
 
-      const row=h('button',{class:'model-row'+(isSel?' on':''),onclick:()=>{
+      const row=h('button',{class:'model-row'+(isSel?' on':'')+(isLoc?' model-row-local':''),onclick:()=>{
         O.setModel(x.pid,x.mid);
         s.close();
         O.toast(O.tr('Selected: ','Выбрана: ')+(x.name||x.mid),1500);

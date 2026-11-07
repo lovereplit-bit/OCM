@@ -149,16 +149,17 @@ O.loadMeta=async()=>{
   O.pickDefaults();bus.emit('meta')};
 O.isModelFree=x=>{
   if(!x)return false;
+  if(x.isLocal || x.pid==='local')return true;
   if(x.free===true)return true;
   const m=x.m||x;
-  if(m.free===true)return true;
+  if(m.free===true || m.local===true)return true;
   const c=m.cost;
   if(c&&typeof c.input==='number'&&typeof c.output==='number'){
     if(c.input===0&&c.output===0)return true;
     if(c.input>0||c.output>0)return false;
   }
   const str=((x.name||'')+' '+(x.mid||'')+' '+(x.pid||'')).toLowerCase();
-  if(/\bfree\b|бесплатн/i.test(str))return true;
+  if(/\bfree\b|бесплатн|локальн/i.test(str))return true;
   if(x.pid==='opencode'&&(!c||(!c.input&&!c.output)))return true;
   return false;
 };
@@ -166,10 +167,51 @@ O.primaryAgents=()=>S.agents.filter(a=>a.mode!=='subagent'&&!a.hidden);
 O.modelInfo=(pid,mid)=>{
   const p=S.providers.find(x=>x.id===pid);
   if(p&&p.models&&p.models[mid])return p.models[mid];
+  if(pid==='local'){
+    try{
+      const locals=O.native.getLocalModels?O.native.getLocalModels():[];
+      const f=locals.find(x=>x.id===mid);
+      if(f&&f.downloaded){
+        const displayName=f.name.includes('(Локально)')?f.name:(f.name+' (Локально)');
+        return {id:f.id,name:displayName,free:true,local:true,attachment:f.type==='image'||f.type==='vlm',limit:{context:f.type==='image'?4096:32768}};
+      }
+    }catch(_){}
+  }
   return null;
 };
 O.allModels=()=>{
-  return S.providers.flatMap(p=>Object.values(p.models||{}).map(m=>({pid:p.id,pname:p.name,mid:m.id,name:m.name||m.id,m})));
+  const list=S.providers.flatMap(p=>Object.values(p.models||{}).map(m=>({pid:p.id,pname:p.name,mid:m.id,name:m.name||m.id,m})));
+  try{
+    const locals=O.native.getLocalModels?O.native.getLocalModels():[];
+    locals.filter(x=>x.downloaded).forEach(loc=>{
+      const displayName=loc.name.includes('(Локально)')?loc.name:(loc.name+' (Локально)');
+      const exists=list.find(m=>m.pid==='local'&&m.mid===loc.id);
+      if(exists){
+        exists.name=displayName;
+        exists.isLocal=true;
+        exists.m=exists.m||{};
+        exists.m.free=true;
+        exists.m.local=true;
+      }else{
+        list.unshift({
+          pid:'local',
+          pname:'Локально (GGUF)',
+          mid:loc.id,
+          name:displayName,
+          isLocal:true,
+          m:{
+            id:loc.id,
+            name:displayName,
+            free:true,
+            local:true,
+            attachment:loc.type==='image'||loc.type==='vlm',
+            limit:{context:loc.type==='image'?4096:32768}
+          }
+        });
+      }
+    });
+  }catch(_){}
+  return list;
 };
 O.pickDefaults=()=>{
   const prim=O.primaryAgents();if(!prim.some(a=>a.name===S.agent))S.agent=(prim[0]&&prim[0].name)||'build';

@@ -41,6 +41,13 @@ object ServerState {
 object Runtime {
     fun rootfs(c: Context) = File(c.filesDir, "rootfs")
 
+    /** Directory for downloaded local GGUF & Hugging Face models */
+    fun modelsDir(c: Context): File {
+        val sd = File("/storage/emulated/0/OpenCode/models")
+        if (sd.exists() || sd.mkdirs()) return sd
+        return File(c.filesDir, "models").apply { mkdirs() }
+    }
+
     /** Every Google account gets its own HOME: sessions, auth.json, config. Nothing is shared. */
     fun home(c: Context, uid: String): File = File(c.filesDir, "users/$uid/home").apply { mkdirs() }
 
@@ -289,32 +296,126 @@ object Runtime {
                 if (forceReset) {
                     val bak = File(cfgDir, f.name + ".bak-" + System.currentTimeMillis())
                     try { f.renameTo(bak) } catch (_: Exception) {}
-                    f.writeText("{}\n")
+                    val fresh = org.json.JSONObject()
+                    syncLocalProvider(c, fresh)
+                    f.writeText(fresh.toString(2))
                     continue
                 }
                 val txt = f.readText().trim()
                 if (txt.isEmpty()) {
-                    f.writeText("{}\n")
+                    val fresh = org.json.JSONObject()
+                    syncLocalProvider(c, fresh)
+                    f.writeText(fresh.toString(2))
                     continue
                 }
                 try {
                     val obj = org.json.JSONObject(txt)
-                    val prov = obj.optJSONObject("provider")
-                    if (prov != null) {
-                        prov.remove("local")
-                        prov.remove("ollama")
-                        if (prov.length() == 0) obj.remove("provider")
-                    }
+                    syncLocalProvider(c, obj)
                     f.writeText(obj.toString(2))
                 } catch (_: Exception) {
                     val bak = File(cfgDir, f.name + ".corrupt-" + System.currentTimeMillis())
                     try { f.renameTo(bak) } catch (_: Exception) {}
-                    f.writeText("{}\n")
+                    val fresh = org.json.JSONObject()
+                    syncLocalProvider(c, fresh)
+                    f.writeText(fresh.toString(2))
                 }
             }
             if (!configFile.exists()) {
-                configFile.writeText("{}\n")
+                val fresh = org.json.JSONObject()
+                syncLocalProvider(c, fresh)
+                configFile.writeText(fresh.toString(2))
             }
+        } catch (_: Exception) {}
+    }
+
+    /** Synchronizes local provider (GGUF & Hugging Face models) in opencode.json for OpenCode v1 */
+    fun syncLocalProvider(c: Context, rootObj: org.json.JSONObject) {
+        try {
+            val prov = rootObj.optJSONObject("provider") ?: org.json.JSONObject().also { rootObj.put("provider", it) }
+            val localProv = prov.optJSONObject("local") ?: org.json.JSONObject().also { prov.put("local", it) }
+            localProv.put("name", "Локальные модели (GGUF)")
+            localProv.put("npm", "@ai-sdk/openai")
+            localProv.put("options", org.json.JSONObject()
+                .put("baseURL", "http://127.0.0.1:8088/v1")
+                .put("apiKey", "local")
+            )
+
+            val modelsObj = localProv.optJSONObject("models") ?: org.json.JSONObject().also { localProv.put("models", it) }
+
+            // Base catalog models
+            if (!modelsObj.has("walkyrie")) {
+                modelsObj.put("walkyrie", org.json.JSONObject().put("name", "Walkyrie (Локально, Text-to-Image)").put("attachment", true).put("free", true))
+            }
+            if (!modelsObj.has("sakura-iris-3b")) {
+                modelsObj.put("sakura-iris-3b", org.json.JSONObject().put("name", "Sakura-Iris-3B (Локально)").put("free", true))
+            }
+            if (!modelsObj.has("nanosaur-2")) {
+                modelsObj.put("nanosaur-2", org.json.JSONObject().put("name", "Nanosaur 2 (Локально, Vision)").put("attachment", true).put("free", true))
+            }
+
+            // Dynamically register any downloaded GGUF/model files
+            val mDir = modelsDir(c)
+            mDir.listFiles { file -> file.isFile && (file.name.endsWith(".gguf") || file.name.endsWith(".safetensors") || file.name.endsWith(".bin")) }
+                ?.forEach { file ->
+                    val id = file.name.substringBeforeLast('.').lowercase().replace("[^a-z0-9_-]".toRegex(), "-")
+                    if (!modelsObj.has(id)) {
+                        val isImg = file.name.contains("image", true) || file.name.contains("safetensors", true) || id.contains("walkyrie")
+                        modelsObj.put(id, org.json.JSONObject()
+                            .put("name", "${file.name.substringBeforeLast('.')} (Локально)")
+                            .put("free", true)
+                            .put("attachment", isImg)
+                        )
+                    }
+                }
+        } catch (_: Exception) {}
+    }
+
+    fun registerLocalModel(c: Context, id: String, name: String, filename: String) {
+        try {
+            val uid = Prefs.get(c, "uid")
+            if (uid.isEmpty()) return
+            val home = home(c, uid)
+            val cfgFile = File(home, ".config/opencode/opencode.json")
+            val obj = if (cfgFile.exists()) {
+                try { org.json.JSONObject(cfgFile.readText()) } catch (_: Exception) { org.json.JSONObject() }
+            } else org.json.JSONObject()
+
+            val prov = obj.optJSONObject("provider") ?: org.json.JSONObject().also { obj.put("provider", it) }
+            val localProv = prov.optJSONObject("local") ?: org.json.JSONObject().also { prov.put("local", it) }
+            localProv.put("name", "Локальные модели (GGUF)")
+            localProv.put("npm", "@ai-sdk/openai")
+            localProv.put("options", org.json.JSONObject()
+                .put("baseURL", "http://127.0.0.1:8088/v1")
+                .put("apiKey", "local")
+            )
+
+            val modelsObj = localProv.optJSONObject("models") ?: org.json.JSONObject().also { localProv.put("models", it) }
+            val isImg = id.contains("walkyrie") || filename.contains("safetensors") || id.contains("image")
+            val displayName = if (name.contains("(Локально)")) name else "$name (Локально)"
+            modelsObj.put(id, org.json.JSONObject()
+                .put("name", displayName)
+                .put("free", true)
+                .put("attachment", isImg)
+            )
+
+            cfgFile.parentFile?.mkdirs()
+            cfgFile.writeText(obj.toString(2))
+        } catch (_: Exception) {}
+    }
+
+    fun unregisterLocalModel(c: Context, id: String) {
+        try {
+            val uid = Prefs.get(c, "uid")
+            if (uid.isEmpty()) return
+            val home = home(c, uid)
+            val cfgFile = File(home, ".config/opencode/opencode.json")
+            if (!cfgFile.exists()) return
+            val obj = try { org.json.JSONObject(cfgFile.readText()) } catch (_: Exception) { return }
+            val prov = obj.optJSONObject("provider") ?: return
+            val localProv = prov.optJSONObject("local") ?: return
+            val modelsObj = localProv.optJSONObject("models") ?: return
+            modelsObj.remove(id)
+            cfgFile.writeText(obj.toString(2))
         } catch (_: Exception) {}
     }
 
@@ -566,6 +667,7 @@ For example:
 
     fun startServer(c: Context, uid: String, port: Int, password: String, noSeccomp: Boolean): Process {
         ensureDefaults(c, uid)
+        try { LocalBridgeServer.start(c) } catch (_: Exception) {}
         val lib = c.applicationInfo.nativeLibraryDir
         val root = rootfs(c)
         val home = home(c, uid)

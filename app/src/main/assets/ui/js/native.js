@@ -30,7 +30,13 @@ O.native={
   openApp:t=>(window.OC&&OC.openApp?OC.openApp(t):false),
   preparePreview:p=>(window.OC&&OC.preparePreview?OC.preparePreview(p):''),
   notify:(kind,title,text)=>{try{if(window.OC&&OC.notify)OC.notify(kind,title,text)}catch(_){}},
-  state:()=>j(OC.state())||{}
+  state:()=>j(OC.state())||{},
+  downloadModel:(id,url,filename,name)=>j(window.OC&&OC.downloadModel?OC.downloadModel(id,url,filename,name):'{}')||{ok:false},
+  cancelModelDownload:id=>j(window.OC&&OC.cancelModelDownload?OC.cancelModelDownload(id):'{}')||{ok:false},
+  deleteModel:(id,filename)=>j(window.OC&&OC.deleteModel?OC.deleteModel(id,filename):'{}')||{ok:false},
+  getLocalModels:()=>j(window.OC&&OC.getLocalModels?OC.getLocalModels():'[]')||[],
+  startLocalBridge:()=>Boolean(window.OC&&OC.startLocalBridge&&OC.startLocalBridge()),
+  getLocalBridgeStatus:()=>j(window.OC&&OC.getLocalBridgeStatus?OC.getLocalBridgeStatus():'{}')||{running:false}
 };
 O.openUrl=u=>{if(/^https?:\/\//i.test(u)&&!/appassets\.androidplatform\.net/i.test(u))OC.openLink(u)};
 document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a[href]');if(!a)return;const u=a.getAttribute('href');e.preventDefault();if(/^https?:\/\//i.test(u))O.openUrl(u)});
