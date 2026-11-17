@@ -81,13 +81,8 @@ jobs:
           # Stay above every previously published versionCode (the 1.1.x upstream-client line
           # reached 29887625), so this build installs over anything shipped before it.
           CODE=$((29887625 + GITHUB_RUN_NUMBER))
-          if ! gradle :app:assembleRelease --no-daemon --stacktrace -PappVersionName="$VERSION_NAME" -PappVersionCode="$CODE" 2>&1 | tee gradle-build.log; then
-            echo "### ❌ Gradle Build Failed" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -n 80 gradle-build.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
+          set -o pipefail
+          gradle :app:assembleRelease --no-daemon --stacktrace -PappVersionName="$VERSION_NAME" -PappVersionCode="$CODE" 2>&1 | tee gradle-build.log
           cp app/build/outputs/apk/release/app-release.apk "OpenCode-${VERSION_NAME}-${CODE}.apk"
           {
             echo "OpenCode Mobile ${VERSION_NAME} — Релиз v2.0.2"
@@ -103,6 +98,25 @@ jobs:
             echo
             echo "Telegram: https://t.me/OpenCodeMob"
           } > notes.md
+
+      - name: Report failure details
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f gradle-build.log ]; then
+            ERR="$(tail -n 60 gradle-build.log)"
+            echo "::error title=Gradle Build Error::$ERR"
+            echo "### ❌ Gradle Build Failed" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "$ERR" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+              -f body="### ❌ Сборка APK завершилась с ошибкой:
+\`\`\`
+$ERR
+\`\`\`" || true
+          fi
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
