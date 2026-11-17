@@ -103,20 +103,15 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ -f gradle-build.log ]; then
-            ERR="$(tail -n 60 gradle-build.log)"
-            echo "::error title=Gradle Build Error::$ERR"
-            echo "### ❌ Gradle Build Failed" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            echo "$ERR" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
-              -f body="### ❌ Сборка APK завершилась с ошибкой:
-\`\`\`
-$ERR
-\`\`\`" || true
-          fi
+        run: python3 scripts/report-failure.py
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: gradle-build.log
+          if-no-files-found: ignore
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
