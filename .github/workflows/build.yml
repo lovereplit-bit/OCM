@@ -93,8 +93,10 @@ jobs:
             echo "- 🔧 Починены кастомные провайдеры (@ai-sdk/openai-compatible) и автоматический перезапуск OpenCode для применения моделей"
             echo "- 🌐 Исправлена стабильность OpenRouter и Anthropic (динамический DNS в proot, защита конфига от очистки)"
             echo "- 📁 Ввод произвольного пути и быстрые кнопки папок в разделе «Файлы» (Загрузки, Документы, DCIM, OpenCode, /root)"
-            echo "- ⚡ Интеграция локального smart-роутера ClawRouter (BlockRunAI) на localhost:8402 с каталогом бесплатных моделей"
-            echo "- 🚀 Высокая производительность и стабильность"
+            echo "- 🧠 Полная починка локальных моделей (GGUF и Hugging Face): устранена ошибка SessionPrompt.getModel"
+            echo "- 📥 Исправлена загрузка моделей с Hugging Face (Walkyrie 2.79GB safetensors, Sakura-Iris 3.37GB, Nanosaur 2 1.33GB, Valkyrie-V1 7B)"
+            echo "- 🛡️ Устранены фантомные локальные модели: в списке отображаются только реально скачанные модели"
+            echo "- 🚀 Удален ClawRouter, оптимизирована скорость и стабильность работы"
             echo
             echo "Telegram: https://t.me/OpenCodeMob"
           } > notes.md

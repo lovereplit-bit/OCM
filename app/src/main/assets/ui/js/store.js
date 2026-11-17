@@ -149,7 +149,7 @@ O.loadMeta=async()=>{
   O.pickDefaults();bus.emit('meta')};
 O.isModelFree=x=>{
   if(!x)return false;
-  if(x.isLocal || x.pid==='local' || x.pid==='clawrouter')return true;
+  if(x.isLocal || x.pid==='local')return true;
   if(x.free===true)return true;
   const m=x.m||x;
   if(m.free===true || m.local===true)return true;
@@ -159,7 +159,7 @@ O.isModelFree=x=>{
     if(c.input>0||c.output>0)return false;
   }
   const str=((x.name||'')+' '+(x.mid||'')+' '+(x.pid||'')).toLowerCase();
-  if(/\bfree\b|бесплатн|локальн|clawrouter/i.test(str))return true;
+  if(/\bfree\b|бесплатн|локальн/i.test(str))return true;
   if(x.pid==='opencode'&&(!c||(!c.input&&!c.output)))return true;
   return false;
 };
@@ -177,24 +177,29 @@ O.modelInfo=(pid,mid)=>{
       }
     }catch(_){}
   }
-  if(pid==='clawrouter'){
-    const names={
-      'auto':'ClawRouter Auto (Умная маршрутизация)',
-      'free':'ClawRouter Free (Бесплатный роутер)',
-      'deepseek-v3':'DeepSeek V3 (ClawRouter)',
-      'llama-3.3-70b':'Llama 3.3 70B (ClawRouter)',
-      'qwen-2.5-coder-32b':'Qwen 2.5 Coder 32B (ClawRouter)',
-      'gemini-2.0-flash':'Gemini 2.0 Flash (ClawRouter)'
-    };
-    return {id:mid,name:names[mid]||(mid+' (ClawRouter)'),free:true,limit:{context:128000}};
-  }
   return null;
 };
 O.allModels=()=>{
-  const list=S.providers.flatMap(p=>Object.values(p.models||{}).map(m=>({pid:p.id,pname:p.name,mid:m.id,name:m.name||m.id,m})));
+  const locals=(O.native.getLocalModels?O.native.getLocalModels():[]).filter(x=>x.downloaded);
+  const downloadedIds=new Set(locals.map(x=>x.id));
+
+  const list=S.providers.flatMap(p=>{
+    if(p.id==='local'){
+      // Never show ghost or un-downloaded models in the active picker
+      return Object.values(p.models||{}).filter(m=>downloadedIds.has(m.id)).map(m=>({
+        pid:p.id,
+        pname:p.name||'Локально (GGUF)',
+        mid:m.id,
+        name:m.name||m.id,
+        isLocal:true,
+        m
+      }));
+    }
+    return Object.values(p.models||{}).map(m=>({pid:p.id,pname:p.name,mid:m.id,name:m.name||m.id,m}));
+  });
+
   try{
-    const locals=O.native.getLocalModels?O.native.getLocalModels():[];
-    locals.filter(x=>x.downloaded).forEach(loc=>{
+    locals.forEach(loc=>{
       const displayName=loc.name.includes('(Локально)')?loc.name:(loc.name+' (Локально)');
       const exists=list.find(m=>m.pid==='local'&&m.mid===loc.id);
       if(exists){
@@ -222,34 +227,6 @@ O.allModels=()=>{
       }
     });
   }catch(_){}
-
-  // Inject ClawRouter free model tier (BlockRunAI standard on localhost:8402)
-  const clawCatalog=[
-    {id:'auto',name:'ClawRouter Auto (Умная маршрутизация)'},
-    {id:'free',name:'ClawRouter Free (Бесплатный роутер)'},
-    {id:'deepseek-v3',name:'DeepSeek V3 (ClawRouter)'},
-    {id:'llama-3.3-70b',name:'Llama 3.3 70B (ClawRouter)'},
-    {id:'qwen-2.5-coder-32b',name:'Qwen 2.5 Coder 32B (ClawRouter)'},
-    {id:'gemini-2.0-flash',name:'Gemini 2.0 Flash (ClawRouter)'}
-  ];
-  clawCatalog.forEach(cm=>{
-    const exists=list.find(m=>m.pid==='clawrouter'&&m.mid===cm.id);
-    if(exists){
-      exists.name=cm.name;
-      exists.free=true;
-      exists.m=exists.m||{};
-      exists.m.free=true;
-    }else{
-      list.push({
-        pid:'clawrouter',
-        pname:'ClawRouter (Localhost:8402)',
-        mid:cm.id,
-        name:cm.name,
-        free:true,
-        m:{id:cm.id,name:cm.name,free:true,limit:{context:128000}}
-      });
-    }
-  });
 
   return list;
 };

@@ -52,7 +52,10 @@ object LocalBridgeServer {
         appContext = context.applicationContext
         activePort = port
         return try {
-            val ss = ServerSocket(port, 50, InetAddress.getByName("127.0.0.1"))
+            val ss = ServerSocket().apply {
+                reuseAddress = true
+                bind(java.net.InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 50)
+            }
             serverSocket = ss
             isRunning.set(true)
             thread(name = "LocalBridgeServer-Acceptor", isDaemon = true) {
@@ -151,51 +154,32 @@ object LocalBridgeServer {
         val ctx = appContext
         val modelsList = JSONArray()
 
-        // Default local catalog models
-        val defaults = listOf(
-            Triple("walkyrie", "Walkyrie (Локально, Text-to-Image)", "image"),
-            Triple("sakura-iris-3b", "Sakura-Iris-3B (Локально)", "llm"),
-            Triple("nanosaur-2", "Nanosaur 2 (Локально, Vision)", "vlm"),
-            Triple("qwen2.5-coder-0.5b", "Qwen2.5-Coder-0.5B (Локально)", "llm"),
-            Triple("qwen2.5-coder-1.5b", "Qwen2.5-Coder-1.5B (Локально)", "llm"),
-            Triple("deepseek-r1-distill-qwen-1.5b", "DeepSeek-R1-1.5B (Локально)", "llm"),
-            Triple("smollm2-1.7b", "SmolLM2-1.7B (Локально)", "llm"),
-            Triple("llama-3.2-1b", "Llama-3.2-1B (Локально)", "llm"),
-            Triple("llama-3.2-3b", "Llama-3.2-3B (Локально)", "llm"),
-            Triple("phi-3.5-mini", "Phi-3.5-mini (Локально)", "llm"),
-            Triple("qwen2.5-coder-3b", "Qwen2.5-Coder-3B (Локально)", "llm")
-        )
-
-        for ((id, name, type) in defaults) {
-            val item = JSONObject()
-                .put("id", id)
-                .put("object", "model")
-                .put("created", System.currentTimeMillis() / 1000)
-                .put("owned_by", "local")
-                .put("name", name)
-                .put("type", type)
-            modelsList.put(item)
-        }
-
-        // Also list any custom GGUF files found in models directory
         if (ctx != null) {
             try {
                 val dir = Runtime.modelsDir(ctx)
-                dir.listFiles()?.filter { f -> f.isFile && (f.name.endsWith(".gguf") || f.name.endsWith(".safetensors") || f.name.endsWith(".bin")) }
-                    ?.forEach { f ->
-                        val baseId = f.name.substringBeforeLast('.').lowercase().replace("[^a-z0-9_-]".toRegex(), "-")
-                        if (!defaults.any { it.first == baseId }) {
-                            modelsList.put(JSONObject()
-                                .put("id", baseId)
-                                .put("object", "model")
-                                .put("created", f.lastModified() / 1000)
-                                .put("owned_by", "local")
-                                .put("name", "${f.name.substringBeforeLast('.')} (Локально)")
-                                .put("filename", f.name)
-                                .put("size", f.length())
-                            )
-                        }
-                    }
+                val files = dir.listFiles()?.filter { f ->
+                    f.isFile && !f.name.endsWith(".part") &&
+                    (f.name.endsWith(".gguf") || f.name.endsWith(".safetensors") || f.name.endsWith(".bin"))
+                } ?: emptyList()
+
+                for (f in files) {
+                    val catItem = ModelDownloader.CATALOG.find { it.filename == f.name }
+                    val id = catItem?.id ?: f.name.substringBeforeLast('.').lowercase().replace("[^a-z0-9_-]".toRegex(), "-")
+                    val name = catItem?.name?.let { if (it.contains("Локально")) it else "$it (Локально)" }
+                        ?: "${f.name.substringBeforeLast('.')} (Локально)"
+                    val type = catItem?.type ?: if (f.name.contains("safetensors", true) || id.contains("walkyrie")) "image" else "llm"
+
+                    val item = JSONObject()
+                        .put("id", id)
+                        .put("object", "model")
+                        .put("created", f.lastModified() / 1000)
+                        .put("owned_by", "local")
+                        .put("name", name)
+                        .put("type", type)
+                        .put("filename", f.name)
+                        .put("size", f.length())
+                    modelsList.put(item)
+                }
             } catch (_: Exception) {}
         }
 
@@ -428,11 +412,25 @@ object LocalBridgeServer {
         val created = System.currentTimeMillis() / 1000
 
         val header = "HTTP/1.1 200 OK\r\n" +
-                "Content-Type: text/event-stream\r\n" +
+                "Content-Type: text/event-stream; charset=utf-8\r\n" +
                 "Cache-Control: no-cache\r\n" +
-                "Connection: keep-alive\r\n" +
+                "Connection: close\r\n" +
                 "Access-Control-Allow-Origin: *\r\n\r\n"
         out.write(header.toByteArray(StandardCharsets.UTF_8))
+        out.flush()
+
+        // 1. Initial role declaration chunk (standard OpenAI SSE requirement)
+        val roleObj = JSONObject()
+            .put("id", mid)
+            .put("object", "chat.completion.chunk")
+            .put("created", created)
+            .put("model", model)
+            .put("choices", JSONArray().put(JSONObject()
+                .put("index", 0)
+                .put("delta", JSONObject().put("role", "assistant").put("content", ""))
+                .put("finish_reason", JSONObject.NULL)
+            ))
+        out.write("data: ${roleObj}\n\n".toByteArray(StandardCharsets.UTF_8))
         out.flush()
 
         // Stream in small natural token-like chunks

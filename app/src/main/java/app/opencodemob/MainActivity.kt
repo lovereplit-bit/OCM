@@ -199,7 +199,6 @@ class MainActivity : ComponentActivity() {
         setContentView(root)
         ModelDownloader.onProgress = { json -> emit("model_download_progress", json) }
         try { LocalBridgeServer.start(this) } catch (_: Exception) {}
-        try { ClawRouterServer.start(this) } catch (_: Exception) {}
         checkOpenAppTrigger()
 
         onBackPressedDispatcher.addCallback(this) {
@@ -1154,16 +1153,6 @@ class MainActivity : ComponentActivity() {
                 .toString()
         }
 
-        @JavascriptInterface fun startClawRouter(): Boolean {
-            return ClawRouterServer.start(this@MainActivity)
-        }
-
-        @JavascriptInterface fun getClawRouterStatus(): String {
-            return JSONObject()
-                .put("running", ClawRouterServer.isAlive())
-                .put("port", ClawRouterServer.activePort)
-                .toString()
-        }
 
         // --- OTA ---
         @JavascriptInterface fun checkUpdates() {

@@ -322,7 +322,6 @@ object Runtime {
             if (!configFile.exists()) {
                 val fresh = org.json.JSONObject()
                 syncLocalProvider(c, fresh)
-                syncClawRouterProvider(c, fresh)
                 configFile.writeText(fresh.toString(2))
                 return
             }
@@ -331,7 +330,6 @@ object Runtime {
             if (txt.isEmpty()) {
                 val fresh = org.json.JSONObject()
                 syncLocalProvider(c, fresh)
-                syncClawRouterProvider(c, fresh)
                 configFile.writeText(fresh.toString(2))
                 return
             }
@@ -341,7 +339,6 @@ object Runtime {
                 val obj = org.json.JSONObject(cleaned)
                 cleanBrokenProviderOverrides(obj)
                 syncLocalProvider(c, obj)
-                syncClawRouterProvider(c, obj)
                 configFile.writeText(obj.toString(2))
             } catch (_: Exception) {
                 // If parsing failed, try not to delete custom settings; keep file and attempt to parse object
@@ -349,7 +346,6 @@ object Runtime {
                 try { configFile.copyTo(bak, overwrite = true) } catch (_: Exception) {}
                 val fresh = org.json.JSONObject()
                 syncLocalProvider(c, fresh)
-                syncClawRouterProvider(c, fresh)
                 configFile.writeText(fresh.toString(2))
             }
         } catch (_: Exception) {}
@@ -358,6 +354,9 @@ object Runtime {
     private fun cleanBrokenProviderOverrides(rootObj: org.json.JSONObject) {
         try {
             val prov = rootObj.optJSONObject("provider") ?: return
+            // Purge ClawRouter completely
+            prov.remove("clawrouter")
+
             // If openrouter was overridden with empty models or broken @ai-sdk/openai, purge it so built-in provider works
             val openrouter = prov.optJSONObject("openrouter")
             if (openrouter != null) {
@@ -367,77 +366,59 @@ object Runtime {
                     prov.remove("openrouter")
                 }
             }
-        } catch (_: Exception) {}
-    }
 
-    /** Synchronizes local ClawRouter provider (localhost:8402) in opencode.json for OpenCode v1 */
-    fun syncClawRouterProvider(c: Context, rootObj: org.json.JSONObject) {
-        try {
-            val prov = rootObj.optJSONObject("provider") ?: org.json.JSONObject().also { rootObj.put("provider", it) }
-            val claw = prov.optJSONObject("clawrouter") ?: org.json.JSONObject().also { prov.put("clawrouter", it) }
-            claw.put("name", "ClawRouter (Smart Localhost:8402)")
-            claw.put("npm", "@ai-sdk/openai-compatible")
-            claw.put("options", org.json.JSONObject()
-                .put("baseURL", "http://127.0.0.1:8402/v1")
-                .put("apiKey", "clawrouter-local")
-            )
-
-            val modelsObj = claw.optJSONObject("models") ?: org.json.JSONObject().also { claw.put("models", it) }
-            val catalog = listOf(
-                Pair("auto", "ClawRouter Auto (Умная маршрутизация)"),
-                Pair("free", "ClawRouter Free (Бесплатный роутер)"),
-                Pair("deepseek-v3", "DeepSeek V3 (ClawRouter)"),
-                Pair("llama-3.3-70b", "Llama 3.3 70B (ClawRouter)"),
-                Pair("qwen-2.5-coder-32b", "Qwen 2.5 Coder 32B (ClawRouter)"),
-                Pair("gemini-2.0-flash", "Gemini 2.0 Flash (ClawRouter)")
-            )
-            for ((id, name) in catalog) {
-                if (!modelsObj.has(id)) {
-                    modelsObj.put(id, org.json.JSONObject().put("name", name).put("free", true))
+            // Fix local provider from broken @ai-sdk/openai to @ai-sdk/openai-compatible
+            val localProv = prov.optJSONObject("local")
+            if (localProv != null) {
+                if (localProv.optString("npm") == "@ai-sdk/openai") {
+                    localProv.put("npm", "@ai-sdk/openai-compatible")
                 }
             }
         } catch (_: Exception) {}
     }
 
-    /** Synchronizes local provider (GGUF & Hugging Face models) in opencode.json for OpenCode v1 */
+    /** Synchronizes local provider (GGUF & Hugging Face models) in opencode.json for OpenCode v1.
+     * ONLY registers models that actually exist in the models directory to avoid ghost models.
+     */
     fun syncLocalProvider(c: Context, rootObj: org.json.JSONObject) {
         try {
             val prov = rootObj.optJSONObject("provider") ?: org.json.JSONObject().also { rootObj.put("provider", it) }
+            prov.remove("clawrouter")
+
+            val mDir = modelsDir(c)
+            val files = mDir.listFiles()?.filter { file ->
+                file.isFile && !file.name.endsWith(".part") &&
+                (file.name.endsWith(".gguf") || file.name.endsWith(".safetensors") || file.name.endsWith(".bin"))
+            } ?: emptyList()
+
+            // If no local models are downloaded, remove empty/ghost local provider
+            if (files.isEmpty()) {
+                prov.remove("local")
+                return
+            }
+
             val localProv = prov.optJSONObject("local") ?: org.json.JSONObject().also { prov.put("local", it) }
             localProv.put("name", "Локальные модели (GGUF)")
-            localProv.put("npm", "@ai-sdk/openai")
+            localProv.put("npm", "@ai-sdk/openai-compatible")
             localProv.put("options", org.json.JSONObject()
                 .put("baseURL", "http://127.0.0.1:8088/v1")
                 .put("apiKey", "local")
             )
 
-            val modelsObj = localProv.optJSONObject("models") ?: org.json.JSONObject().also { localProv.put("models", it) }
-
-            // Base catalog models
-            if (!modelsObj.has("walkyrie")) {
-                modelsObj.put("walkyrie", org.json.JSONObject().put("name", "Walkyrie (Локально, Text-to-Image)").put("attachment", true).put("free", true))
+            val modelsObj = org.json.JSONObject()
+            for (file in files) {
+                val catItem = ModelDownloader.CATALOG.find { it.filename == file.name }
+                val id = catItem?.id ?: file.name.substringBeforeLast('.').lowercase().replace("[^a-z0-9_-]".toRegex(), "-")
+                val displayName = catItem?.name?.let { if (it.contains("Локально")) it else "$it (Локально)" }
+                    ?: "${file.name.substringBeforeLast('.')} (Локально)"
+                val isImg = (catItem?.type == "image") || file.name.contains("safetensors", true) || id.contains("walkyrie")
+                modelsObj.put(id, org.json.JSONObject()
+                    .put("name", displayName)
+                    .put("free", true)
+                    .put("attachment", isImg)
+                )
             }
-            if (!modelsObj.has("sakura-iris-3b")) {
-                modelsObj.put("sakura-iris-3b", org.json.JSONObject().put("name", "Sakura-Iris-3B (Локально)").put("free", true))
-            }
-            if (!modelsObj.has("nanosaur-2")) {
-                modelsObj.put("nanosaur-2", org.json.JSONObject().put("name", "Nanosaur 2 (Локально, Vision)").put("attachment", true).put("free", true))
-            }
-
-            // Dynamically register any downloaded GGUF/model files
-            val mDir = modelsDir(c)
-            mDir.listFiles()?.filter { file -> file.isFile && (file.name.endsWith(".gguf") || file.name.endsWith(".safetensors") || file.name.endsWith(".bin")) }
-                ?.forEach { file ->
-                    val id = file.name.substringBeforeLast('.').lowercase().replace("[^a-z0-9_-]".toRegex(), "-")
-                    if (!modelsObj.has(id)) {
-                        val isImg = file.name.contains("image", true) || file.name.contains("safetensors", true) || id.contains("walkyrie")
-                        modelsObj.put(id, org.json.JSONObject()
-                            .put("name", "${file.name.substringBeforeLast('.')} (Локально)")
-                            .put("free", true)
-                            .put("attachment", isImg)
-                        )
-                    }
-                }
+            localProv.put("models", modelsObj)
         } catch (_: Exception) {}
     }
 
@@ -454,7 +435,7 @@ object Runtime {
             val prov = obj.optJSONObject("provider") ?: org.json.JSONObject().also { obj.put("provider", it) }
             val localProv = prov.optJSONObject("local") ?: org.json.JSONObject().also { prov.put("local", it) }
             localProv.put("name", "Локальные модели (GGUF)")
-            localProv.put("npm", "@ai-sdk/openai")
+            localProv.put("npm", "@ai-sdk/openai-compatible")
             localProv.put("options", org.json.JSONObject()
                 .put("baseURL", "http://127.0.0.1:8088/v1")
                 .put("apiKey", "local")
@@ -486,6 +467,9 @@ object Runtime {
             val localProv = prov.optJSONObject("local") ?: return
             val modelsObj = localProv.optJSONObject("models") ?: return
             modelsObj.remove(id)
+            if (modelsObj.length() == 0) {
+                prov.remove("local")
+            }
             cfgFile.writeText(obj.toString(2))
         } catch (_: Exception) {}
     }
@@ -765,7 +749,6 @@ For example:
         ensureDefaults(c, uid)
         updateDns(c)
         try { LocalBridgeServer.start(c) } catch (_: Exception) {}
-        try { ClawRouterServer.start(c) } catch (_: Exception) {}
         val lib = c.applicationInfo.nativeLibraryDir
         val root = rootfs(c)
         val home = home(c, uid)

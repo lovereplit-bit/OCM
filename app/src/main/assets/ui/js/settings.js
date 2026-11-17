@@ -40,8 +40,7 @@ O.openSettings=()=>{
     O.listRow('cpu',O.tr('Active Model','Текущая модель'),S.model?S.model.providerID+'/'+S.model.modelID:O.tr('Not selected','Не выбрана'),O.icon('chevR'),()=>O.openModels()),
     O.listRow('download',O.tr('Local AI Models (Hugging Face)','Локальные ИИ модели (Hugging Face)'),O.tr('Download GGUF & image models (500MB - 4GB)','Скачивание моделей 500МБ–4ГБ, работа офлайн'),O.icon('chevR'),()=>O.openLocalModels(s)),
     O.listRow('key',O.tr('Connect Providers','Подключить провайдеров'),'OpenCode Zen, OpenAI, Anthropic, Gemini, DeepSeek...',O.icon('chevR'),()=>O.openConnect()),
-    O.listRow('search',O.tr('Custom API Provider','Свой API провайдер'),'OpenAI-compatible, Groq, OpenRouter...',O.icon('chevR'),()=>O.openCustomProvider(s)),
-    O.listRow('bot','ClawRouter (Localhost:8402)',O.tr('Smart routing & free frontier models','Умный роутер и бесплатные модели'),O.icon('chevR'),()=>O.openClawRouter(s))
+    O.listRow('search',O.tr('Custom API Provider','Свой API провайдер'),'OpenAI-compatible, Groq, OpenRouter...',O.icon('chevR'),()=>O.openCustomProvider(s))
   );
   body.append(modelsCard);
 
@@ -1793,86 +1792,8 @@ function openLocalModels(parentSheet) {
   body.append(infoBanner, customBtn, tabsContainer, listEl);
 }
 
-// ---- ClawRouter (BlockRunAI Local Router on localhost:8402) ----
-function openClawRouter(parentSheet) {
-  const body = h('div');
-  const s = O.sheet('ClawRouter (Localhost:8402)', body, { hud: true, full: true });
-
-  try { if (O.native.startClawRouter) O.native.startClawRouter(); } catch (_) {}
-  const st = (O.native.getClawRouterStatus ? O.native.getClawRouterStatus() : null) || { running: true, port: 8402 };
-
-  const infoCard = h('div', { class: 'settings-card', style: { padding: '14px 16px', marginBottom: '14px' } },
-    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } },
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-        O.icon('bot'),
-        h('b', null, 'ClawRouter Smart Gateway')
-      ),
-      h('span', { class: 'badge-model badge-free' }, st.running ? 'АКТИВЕН' : 'ЗАПУСК...')
-    ),
-    h('div', { class: 'mut s', style: { lineHeight: '1.6' } },
-      'Адрес: http://127.0.0.1:' + (st.port || 8402) + '/v1\nПротокол: BlockRunAI agent-native / x402\nМаршрутизация: суб-миллисекундная (<1мс) выборка оптимальной модели'
-    )
-  );
-
-  const modelsList = h('div', { class: 'group-card', style: { marginBottom: '14px' } });
-  const models = [
-    { id: 'auto', name: 'ClawRouter Auto', desc: 'Умный выбор оптимальной и быстрой модели' },
-    { id: 'free', name: 'ClawRouter Free', desc: 'Бесплатный маршрутизатор запросов' },
-    { id: 'deepseek-v3', name: 'DeepSeek V3', desc: 'Флагманская модель для кода и рассуждений' },
-    { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', desc: 'Open-weight модель от Meta' },
-    { id: 'qwen-2.5-coder-32b', name: 'Qwen 2.5 Coder 32B', desc: 'Специализированная модель для разработки' },
-    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', desc: 'Сверхбыстрая мультимодальная модель' }
-  ];
-
-  models.forEach(m => {
-    const isCur = S.model && S.model.providerID === 'clawrouter' && S.model.modelID === m.id;
-    modelsList.append(
-      h('button', {
-        class: 'model-row' + (isCur ? ' on' : ''),
-        onclick: () => {
-          O.setModel('clawrouter', m.id);
-          s.close();
-          if (parentSheet && parentSheet.close) parentSheet.close();
-          O.toast('Выбрана модель: ' + m.name, 2000);
-        }
-      },
-        h('div', { class: 'model-row-left' },
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
-            h('span', { class: 'model-row-title' }, m.name),
-            h('span', { class: 'badge-model badge-free' }, 'Бесплатно')
-          ),
-          h('span', { class: 'model-row-sub' }, m.desc)
-        ),
-        isCur ? O.icon('check', 'model-check') : null
-      )
-    );
-  });
-
-  const actions = h('div', { style: { display: 'flex', gap: '8px' } },
-    h('button', {
-      class: 'btn pri grow',
-      onclick: () => {
-        O.setModel('clawrouter', 'auto');
-        s.close();
-        if (parentSheet && parentSheet.close) parentSheet.close();
-        O.toast('Включён авто-роутер ClawRouter', 2000);
-      }
-    }, O.icon('sparkle'), 'Выбрать ClawRouter Auto'),
-    h('button', {
-      class: 'btn',
-      onclick: () => {
-        if (O.native.startClawRouter) O.native.startClawRouter();
-        O.toast('ClawRouter перезапущен на localhost:8402', 1500);
-      }
-    }, O.icon('refresh'), 'Перезапуск')
-  );
-
-  body.append(infoCard, h('div', { class: 'settings-section-title' }, 'Бесплатные модели ClawRouter'), modelsList, actions);
-}
-
 O.openLocalModels = openLocalModels;
 O.openIpRotator = openIpRotator;
-O.openClawRouter = openClawRouter;
 
 })();
 

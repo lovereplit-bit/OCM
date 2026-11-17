@@ -34,7 +34,6 @@ class OpenCodeService : Service() {
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
         )
         try { LocalBridgeServer.start(this) } catch (_: Exception) {}
-        try { ClawRouterServer.start(this) } catch (_: Exception) {}
         val uid = intent?.getStringExtra("uid") ?: Prefs.get(this, "uid")
         if (uid.isEmpty()) { stopSelf(); return START_NOT_STICKY }
         if (worker?.isAlive != true) worker = thread { runLoop(uid) }

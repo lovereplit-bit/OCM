@@ -50,7 +50,6 @@ window.OC={
  openApp(t){return true},preparePreview(p){return ''},startVoiceInput(l){},
  downloadModel(id,url,f,n){return JSON.stringify({ok:true})},cancelModelDownload(id){return JSON.stringify({ok:true})},deleteModel(id,f){return JSON.stringify({ok:true})},getLocalModels(){return '[]'},
  startLocalBridge(){return true},getLocalBridgeStatus(){return JSON.stringify({running:true,port:8088})},
- startClawRouter(){return true},getClawRouterStatus(){return JSON.stringify({running:true,port:8402})},
  checkUpdates(){setTimeout(()=>OCEvent('update',{core:'v1.18.6'}),5)},applyAppUpdate(){},applyCoreUpdate(){}
 };
 window.__onPrompt=b=>{const sid='ses_1';const P=(part)=>__push({type:'message.part.updated',properties:{part:Object.assign({sessionID:sid},part)}});

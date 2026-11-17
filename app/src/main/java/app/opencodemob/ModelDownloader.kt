@@ -52,34 +52,45 @@ object ModelDownloader {
             id = "walkyrie",
             name = "Walkyrie (Text to Image)",
             type = "image",
-            size = "2.8 ГБ",
-            sizeBytes = 2_800_000_000L,
-            filename = "walkyrie-v1-t2i.safetensors",
-            url = "https://huggingface.co/stablediffusionapi/walkyrie/resolve/main/walkyrie_v1.safetensors",
-            repo = "stablediffusionapi/walkyrie",
-            description = "Высокодетализированная Text-to-Image модель генерации артов и иллюстраций (около 2.8 ГБ)."
+            size = "2.79 ГБ",
+            sizeBytes = 2_790_000_000L,
+            filename = "walkyrie_FP8e4m3fn.safetensors",
+            url = "https://huggingface.co/kpsss34/Walkyrie-1.3B-v1.0/resolve/main/walkyrie_FP8e4m3fn.safetensors?download=true",
+            repo = "kpsss34/Walkyrie-1.3B-v1.0",
+            description = "Высокодетализированная Text-to-Image модель генерации артов и иллюстраций (2.79 ГБ)."
         ),
         CatalogItem(
             id = "sakura-iris-3b",
             name = "Sakura-Iris-3B",
-            type = "llm",
-            size = "3.14 ГБ",
-            sizeBytes = 3_140_000_000L,
-            filename = "sakura-iris-3b-q4_k_m.gguf",
-            url = "https://huggingface.co/sakura-iris/Sakura-Iris-3B-GGUF/resolve/main/sakura-iris-3b-q4_k_m.gguf",
-            repo = "sakura-iris/Sakura-Iris-3B-GGUF",
-            description = "3B модель высокой точности для текста, перевода и программирования (минимальный размер 3.14 ГБ)."
+            type = "image",
+            size = "3.37 ГБ",
+            sizeBytes = 3_370_000_000L,
+            filename = "Sakura-Iris-3B-Q4_K_M-3.14GiB.gguf",
+            url = "https://huggingface.co/webmp3/Sakura-Iris-3B-GGUF/resolve/main/Sakura-Iris-3B-Q4_K_M-3.14GiB.gguf?download=true",
+            repo = "webmp3/Sakura-Iris-3B-GGUF",
+            description = "3B модель генерации визуальных композиций и артов без внешних API (3.37 ГБ)."
         ),
         CatalogItem(
             id = "nanosaur-2",
             name = "Nanosaur 2",
-            type = "vlm",
-            size = "1.3 ГБ (с энкодером ~2.0 ГБ)",
-            sizeBytes = 2_000_000_000L,
-            filename = "nanosaur2-1.3b-q4_k_m.gguf",
-            url = "https://huggingface.co/nanosaur/nanosaur2-vl-gguf/resolve/main/nanosaur2-1.3b-q4_k_m.gguf",
-            repo = "nanosaur/nanosaur2-vl-gguf",
-            description = "Мультимодальная модель для распознавания изображений и управления кодом (1.3 ГБ + энкодер)."
+            type = "image",
+            size = "1.33 ГБ",
+            sizeBytes = 1_330_000_000L,
+            filename = "nanosaur2_diffusion_model.safetensors",
+            url = "https://huggingface.co/well9472/Nanosaur2-670M/resolve/main/nanosaur2_diffusion_model.safetensors?download=true",
+            repo = "well9472/Nanosaur2-670M",
+            description = "Компактная DiT модель для быстрого создания иллюстраций (1.33 ГБ)."
+        ),
+        CatalogItem(
+            id = "valkyrie-7b",
+            name = "Valkyrie-V1-7B",
+            type = "llm",
+            size = "3.52 ГБ",
+            sizeBytes = 3_520_000_000L,
+            filename = "valkyrie-v1.Q3_K_M.gguf",
+            url = "https://huggingface.co/TheBloke/Valkyrie-V1-GGUF/resolve/main/valkyrie-v1.Q3_K_M.gguf?download=true",
+            repo = "TheBloke/Valkyrie-V1-GGUF",
+            description = "Классическая языковая модель Valkyrie v1 (7B параметров, квантование Q3_K_M, 3.52 ГБ)."
         ),
         CatalogItem(
             id = "qwen2.5-coder-0.5b",
@@ -206,7 +217,7 @@ object ModelDownloader {
 
         val request = Request.Builder()
             .url(cleanUrl)
-            .header("User-Agent", "OpenCodeMobile/2.0.1 (Android; ARM64)")
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 OpenCodeMobile/2.0.2")
             .build()
 
         val call = client.newCall(request)
@@ -426,6 +437,9 @@ object ModelDownloader {
         }
         if (!u.startsWith("http://") && !u.startsWith("https://")) {
             u = "https://$u"
+        }
+        if (u.contains("huggingface.co") && u.contains("/resolve/") && !u.contains("download=true")) {
+            u = if (u.contains("?")) "$u&download=true" else "$u?download=true"
         }
         return u
     }
