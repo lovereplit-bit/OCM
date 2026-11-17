@@ -285,45 +285,116 @@ object Runtime {
         return pb.start()
     }
 
+    private fun cleanJson(raw: String): String {
+        return raw.replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), "")
+            .replace(Regex("//.*"), "")
+            .replace(Regex(",\\s*([\\u007D\\]])"), "$1")
+            .trim()
+    }
+
     fun sanitizeConfig(c: Context, uid: String, forceReset: Boolean = false) {
         try {
             val home = home(c, uid)
             val cfgDir = File(home, ".config/opencode").apply { mkdirs() }
             val configFile = File(cfgDir, "opencode.json")
-            val files = listOf(configFile, File(cfgDir, "opencode.jsonc"))
-            for (f in files) {
-                if (!f.exists()) continue
-                if (forceReset) {
-                    val bak = File(cfgDir, f.name + ".bak-" + System.currentTimeMillis())
-                    try { f.renameTo(bak) } catch (_: Exception) {}
-                    val fresh = org.json.JSONObject()
-                    syncLocalProvider(c, fresh)
-                    f.writeText(fresh.toString(2))
-                    continue
+            val jsoncFile = File(cfgDir, "opencode.jsonc")
+
+            // If opencode.jsonc exists, migrate its contents to opencode.json and remove jsonc to eliminate split-brain
+            if (jsoncFile.exists()) {
+                if (!configFile.exists() || configFile.length() == 0L) {
+                    try { jsoncFile.copyTo(configFile, overwrite = true) } catch (_: Exception) {}
                 }
-                val txt = f.readText().trim()
-                if (txt.isEmpty()) {
-                    val fresh = org.json.JSONObject()
-                    syncLocalProvider(c, fresh)
-                    f.writeText(fresh.toString(2))
-                    continue
-                }
-                try {
-                    val obj = org.json.JSONObject(txt)
-                    syncLocalProvider(c, obj)
-                    f.writeText(obj.toString(2))
-                } catch (_: Exception) {
-                    val bak = File(cfgDir, f.name + ".corrupt-" + System.currentTimeMillis())
-                    try { f.renameTo(bak) } catch (_: Exception) {}
-                    val fresh = org.json.JSONObject()
-                    syncLocalProvider(c, fresh)
-                    f.writeText(fresh.toString(2))
-                }
+                try { jsoncFile.delete() } catch (_: Exception) {}
             }
+
+            if (forceReset) {
+                if (configFile.exists()) {
+                    val bak = File(cfgDir, "opencode.json.bak-" + System.currentTimeMillis())
+                    try { configFile.renameTo(bak) } catch (_: Exception) {}
+                }
+                val fresh = org.json.JSONObject()
+                syncLocalProvider(c, fresh)
+                syncClawRouterProvider(c, fresh)
+                configFile.writeText(fresh.toString(2))
+                return
+            }
+
             if (!configFile.exists()) {
                 val fresh = org.json.JSONObject()
                 syncLocalProvider(c, fresh)
+                syncClawRouterProvider(c, fresh)
                 configFile.writeText(fresh.toString(2))
+                return
+            }
+
+            val txt = configFile.readText().trim()
+            if (txt.isEmpty()) {
+                val fresh = org.json.JSONObject()
+                syncLocalProvider(c, fresh)
+                syncClawRouterProvider(c, fresh)
+                configFile.writeText(fresh.toString(2))
+                return
+            }
+
+            try {
+                val cleaned = cleanJson(txt)
+                val obj = org.json.JSONObject(cleaned)
+                cleanBrokenProviderOverrides(obj)
+                syncLocalProvider(c, obj)
+                syncClawRouterProvider(c, obj)
+                configFile.writeText(obj.toString(2))
+            } catch (_: Exception) {
+                // If parsing failed, try not to delete custom settings; keep file and attempt to parse object
+                val bak = File(cfgDir, "opencode.json.corrupt-" + System.currentTimeMillis())
+                try { configFile.copyTo(bak, overwrite = true) } catch (_: Exception) {}
+                val fresh = org.json.JSONObject()
+                syncLocalProvider(c, fresh)
+                syncClawRouterProvider(c, fresh)
+                configFile.writeText(fresh.toString(2))
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun cleanBrokenProviderOverrides(rootObj: org.json.JSONObject) {
+        try {
+            val prov = rootObj.optJSONObject("provider") ?: return
+            // If openrouter was overridden with empty models or broken @ai-sdk/openai, purge it so built-in provider works
+            val openrouter = prov.optJSONObject("openrouter")
+            if (openrouter != null) {
+                val mo = openrouter.optJSONObject("models")
+                val npm = openrouter.optString("npm")
+                if (npm == "@ai-sdk/openai" && (mo == null || mo.length() == 0)) {
+                    prov.remove("openrouter")
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    /** Synchronizes local ClawRouter provider (localhost:8402) in opencode.json for OpenCode v1 */
+    fun syncClawRouterProvider(c: Context, rootObj: org.json.JSONObject) {
+        try {
+            val prov = rootObj.optJSONObject("provider") ?: org.json.JSONObject().also { rootObj.put("provider", it) }
+            val claw = prov.optJSONObject("clawrouter") ?: org.json.JSONObject().also { prov.put("clawrouter", it) }
+            claw.put("name", "ClawRouter (Smart Localhost:8402)")
+            claw.put("npm", "@ai-sdk/openai-compatible")
+            claw.put("options", org.json.JSONObject()
+                .put("baseURL", "http://127.0.0.1:8402/v1")
+                .put("apiKey", "clawrouter-local")
+            )
+
+            val modelsObj = claw.optJSONObject("models") ?: org.json.JSONObject().also { claw.put("models", it) }
+            val catalog = listOf(
+                Pair("auto", "ClawRouter Auto (Умная маршрутизация)"),
+                Pair("free", "ClawRouter Free (Бесплатный роутер)"),
+                Pair("deepseek-v3", "DeepSeek V3 (ClawRouter)"),
+                Pair("llama-3.3-70b", "Llama 3.3 70B (ClawRouter)"),
+                Pair("qwen-2.5-coder-32b", "Qwen 2.5 Coder 32B (ClawRouter)"),
+                Pair("gemini-2.0-flash", "Gemini 2.0 Flash (ClawRouter)")
+            )
+            for ((id, name) in catalog) {
+                if (!modelsObj.has(id)) {
+                    modelsObj.put(id, org.json.JSONObject().put("name", name).put("free", true))
+                }
             }
         } catch (_: Exception) {}
     }
@@ -665,9 +736,36 @@ For example:
         } catch (_: Exception) {}
     }
 
+    fun updateDns(c: Context) {
+        try {
+            val servers = mutableListOf<String>()
+            val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            val net = cm?.activeNetwork
+            if (net != null) {
+                val lp = cm.getLinkProperties(net)
+                lp?.dnsServers?.forEach { addr ->
+                    val ip = addr.hostAddress
+                    if (!ip.isNullOrBlank() && !servers.contains(ip)) servers.add(ip)
+                }
+            }
+            if (servers.isEmpty()) {
+                servers.addAll(listOf("1.1.1.1", "8.8.8.8", "8.8.4.4", "9.9.9.9"))
+            } else {
+                servers.addAll(listOf("1.1.1.1", "8.8.8.8"))
+            }
+            val resolvContent = servers.distinct().joinToString("\n") { "nameserver $it" } + "\noptions timeout:2 attempts:3\n"
+            val root = rootfs(c)
+            val resolvFile = File(root, "etc/resolv.conf")
+            resolvFile.parentFile?.mkdirs()
+            resolvFile.writeText(resolvContent)
+        } catch (_: Exception) {}
+    }
+
     fun startServer(c: Context, uid: String, port: Int, password: String, noSeccomp: Boolean): Process {
         ensureDefaults(c, uid)
+        updateDns(c)
         try { LocalBridgeServer.start(c) } catch (_: Exception) {}
+        try { ClawRouterServer.start(c) } catch (_: Exception) {}
         val lib = c.applicationInfo.nativeLibraryDir
         val root = rootfs(c)
         val home = home(c, uid)

@@ -48,6 +48,9 @@ window.OC={
  cfgRead:()=>window.__cfg||'{\n // comment\n "plugin":["a"],\n "mcp":{"ctx7":{"type":"remote","url":"https://m.example/mcp","enabled":true}}\n}',cfgWrite(t){window.__cfg=t;return JSON.stringify({ok:true})},readLog:()=>'log line',
  pickFile(k,d){window.__picked=[k,d]},copy(t){window.__copied=t},pasteText:()=>'pasted',share(t){window.__shared=t},openLink(u){window.__opened=u},
  openApp(t){return true},preparePreview(p){return ''},startVoiceInput(l){},
+ downloadModel(id,url,f,n){return JSON.stringify({ok:true})},cancelModelDownload(id){return JSON.stringify({ok:true})},deleteModel(id,f){return JSON.stringify({ok:true})},getLocalModels(){return '[]'},
+ startLocalBridge(){return true},getLocalBridgeStatus(){return JSON.stringify({running:true,port:8088})},
+ startClawRouter(){return true},getClawRouterStatus(){return JSON.stringify({running:true,port:8402})},
  checkUpdates(){setTimeout(()=>OCEvent('update',{core:'v1.18.6'}),5)},applyAppUpdate(){},applyCoreUpdate(){}
 };
 window.__onPrompt=b=>{const sid='ses_1';const P=(part)=>__push({type:'message.part.updated',properties:{part:Object.assign({sessionID:sid},part)}});

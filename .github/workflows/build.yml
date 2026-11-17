@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  VERSION_NAME: "2.0.1"
+  VERSION_NAME: "2.0.2"
 
 jobs:
   build:
@@ -84,17 +84,16 @@ jobs:
           gradle :app:assembleRelease --no-daemon -PappVersionName="$VERSION_NAME" -PappVersionCode="$CODE"
           cp app/build/outputs/apk/release/app-release.apk "OpenCode-${VERSION_NAME}-${CODE}.apk"
           {
-            echo "OpenCode Mobile ${VERSION_NAME} — Релиз v2.0.1"
+            echo "OpenCode Mobile ${VERSION_NAME} — Релиз v2.0.2"
             echo
             echo "Core: opencode $(grep opencode_core runtime-info.txt | cut -d= -f2) (1.x line) + Linux rootfs proot"
             echo
             echo "Что нового:"
-            echo "- 🚀 Высокая производительность и стабильность: чистое ядро OpenCode без избыточных зависимостей"
-            echo "- ⚡ 120Hz HUD: сверхплавный мобильный интерфейс с поддержкой высокой частоты кадров"
-            echo "- 🌐 Встроенный Веб-Предпросмотр: запуск сайтов и HTML/CSS/JS проектов прямо в приложении"
-            echo "- 📱 Интеграция с Android: запуск системных и сторонних приложений напрямую агентом"
-            echo "- 📊 Автоматический подсчёт изменений: вывод строк +N -M в ответах ассистента"
-            echo "- 🛡️ Полная безопасность и изоляция окружения"
+            echo "- 🔧 Починены кастомные провайдеры (@ai-sdk/openai-compatible) и автоматический перезапуск OpenCode для применения моделей"
+            echo "- 🌐 Исправлена стабильность OpenRouter и Anthropic (динамический DNS в proot, защита конфига от очистки)"
+            echo "- 📁 Ввод произвольного пути и быстрые кнопки папок в разделе «Файлы» (Загрузки, Документы, DCIM, OpenCode, /root)"
+            echo "- ⚡ Интеграция локального smart-роутера ClawRouter (BlockRunAI) на localhost:8402 с каталогом бесплатных моделей"
+            echo "- 🚀 Высокая производительность и стабильность"
             echo
             echo "Telegram: https://t.me/OpenCodeMob"
           } > notes.md

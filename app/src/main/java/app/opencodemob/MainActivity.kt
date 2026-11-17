@@ -199,6 +199,7 @@ class MainActivity : ComponentActivity() {
         setContentView(root)
         ModelDownloader.onProgress = { json -> emit("model_download_progress", json) }
         try { LocalBridgeServer.start(this) } catch (_: Exception) {}
+        try { ClawRouterServer.start(this) } catch (_: Exception) {}
         checkOpenAppTrigger()
 
         onBackPressedDispatcher.addCallback(this) {
@@ -532,9 +533,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun cfgFile(): File {
-        val dir = File(Runtime.home(this, uid()), ".config/opencode")
+        val dir = File(Runtime.home(this, uid()), ".config/opencode").apply { mkdirs() }
         val jsonc = File(dir, "opencode.jsonc")
-        return if (jsonc.exists()) jsonc else File(dir, "opencode.json")
+        val json = File(dir, "opencode.json")
+        if (jsonc.exists()) {
+            if (!json.exists()) {
+                try { jsonc.copyTo(json, overwrite = true) } catch (_: Exception) {}
+            }
+            try { jsonc.delete() } catch (_: Exception) {}
+        }
+        return json
     }
 
     // ---------- Google sign-in ----------
@@ -1143,6 +1151,17 @@ class MainActivity : ComponentActivity() {
             return JSONObject()
                 .put("running", LocalBridgeServer.isAlive())
                 .put("port", LocalBridgeServer.activePort)
+                .toString()
+        }
+
+        @JavascriptInterface fun startClawRouter(): Boolean {
+            return ClawRouterServer.start(this@MainActivity)
+        }
+
+        @JavascriptInterface fun getClawRouterStatus(): String {
+            return JSONObject()
+                .put("running", ClawRouterServer.isAlive())
+                .put("port", ClawRouterServer.activePort)
                 .toString()
         }
 

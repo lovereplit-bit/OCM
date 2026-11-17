@@ -217,33 +217,17 @@ O.openConnect=async()=>{
         const key=inp.value.trim();if(!key)return;
         try{
           await api('PUT','/auth/'+p.id,{type:'api',key});
-          if(p.id==='openrouter'||p.id==='groq'){
-            try{
-              const t=O.native.cfgRead();let obj={};try{if(t.trim())obj=O.parseJsonc(t)}catch{}
-              obj.provider=obj.provider||{};
-              if(p.id==='openrouter'){
-                obj.provider.openrouter=Object.assign({
-                  name:'OpenRouter',
-                  npm:'@ai-sdk/openai',
-                  options:{
-                    baseURL:'https://openrouter.ai/api/v1',
-                    apiKey:key,
-                    headers:{'HTTP-Referer':'https://opencode.mobile','X-Title':'OpenCode Mobile'}
-                  }
-                },obj.provider.openrouter||{});
-              }else if(p.id==='groq'){
-                obj.provider.groq=Object.assign({
-                  name:'Groq',
-                  npm:'@ai-sdk/openai',
-                  options:{
-                    baseURL:'https://api.groq.com/openai/v1',
-                    apiKey:key
-                  }
-                },obj.provider.groq||{});
+          // Clean up any historical broken custom override for built-in providers
+          try{
+            const t=O.native.cfgRead();let obj={};try{if(t.trim())obj=O.parseJsonc(t)}catch{}
+            if(obj.provider&&obj.provider[p.id]){
+              const cur=obj.provider[p.id];
+              if(cur.npm==='@ai-sdk/openai'&&(!cur.models||!Object.keys(cur.models).length)){
+                delete obj.provider[p.id];
+                O.native.cfgWrite(JSON.stringify(obj,null,2));
               }
-              O.native.cfgWrite(JSON.stringify(obj,null,2));
-            }catch(_){}
-          }
+            }
+          }catch(_){}
           sh.close();after();
         }catch(e){O.toast(e.message)}
       }},'Сохранить')))};
@@ -286,6 +270,7 @@ O.openCustomProvider=parentSheet=>{
   let foundModels=[];const sel=new Set();
 
   const presets=h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}},
+    h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='clawrouter';nameInp.value='ClawRouter (Local)';urlInp.value='http://127.0.0.1:8402/v1'}},'⚡ ClawRouter'),
     h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='groq';nameInp.value='Groq';urlInp.value='https://api.groq.com/openai/v1'}},'⚡ Groq'),
     h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='openrouter';nameInp.value='OpenRouter';urlInp.value='https://openrouter.ai/api/v1'}},'🌐 OpenRouter'),
     h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='ollama';nameInp.value='Ollama (Local)';urlInp.value='http://127.0.0.1:11434/v1'}},'🦙 Ollama'),
@@ -332,15 +317,21 @@ O.openCustomProvider=parentSheet=>{
     const mo={};if(sel.size>0){sel.forEach(mid=>{mo[mid]={name:mid}})}else mo['default']={name:'Default Model'};
     const t=O.native.cfgRead();let obj={};try{if(t.trim())obj=O.parseJsonc(t)}catch{}
     obj.provider=obj.provider||{};
-    const provOpts={baseURL:url,apiKey:key||'dummy'};
+    const isBuiltIn=['openrouter','groq','together','mistral','deepseek','anthropic','openai','ollama','xai','cerebras','fireworks'].includes(pid);
+    const provOpts={baseURL:url,apiKey:key||'sk-local'};
     if(pid==='openrouter'||url.includes('openrouter.ai')){
       provOpts.headers={'HTTP-Referer':'https://opencode.mobile','X-Title':'OpenCode Mobile'};
     }
-    obj.provider[pid]={name:pname,npm:'@ai-sdk/openai',options:provOpts,models:mo};
+    const provDef={name:pname,options:provOpts,models:mo};
+    if(!isBuiltIn){
+      provDef.npm='@ai-sdk/openai-compatible';
+    }
+    obj.provider[pid]=provDef;
     const w=O.native.cfgWrite(JSON.stringify(obj,null,2));
     if(!w.ok)return O.toast(w.err||'Ошибка записи');
     if(key)try{await api('PUT','/auth/'+pid,{type:'api',key})}catch(_){}
     try{await api('POST','/instance/dispose',null)}catch(_){}
+    if(window.OC&&OC.restartServer){try{OC.restartServer()}catch(_){}}
     await O.loadMeta();O.toast('Провайдер '+pname+' подключён ('+Object.keys(mo).length+' моделей)!',3000);
     sh.close();if(parentSheet&&parentSheet.close)parentSheet.close()}
   },O.icon('check'),'Сохранить и подключить');
