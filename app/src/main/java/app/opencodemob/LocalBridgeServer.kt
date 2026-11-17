@@ -181,7 +181,7 @@ object LocalBridgeServer {
         if (ctx != null) {
             try {
                 val dir = Runtime.modelsDir(ctx)
-                dir.listFiles { f -> f.isFile && (f.name.endsWith(".gguf") || f.name.endsWith(".safetensors") || f.name.endsWith(".bin")) }
+                dir.listFiles()?.filter { f -> f.isFile && (f.name.endsWith(".gguf") || f.name.endsWith(".safetensors") || f.name.endsWith(".bin")) }
                     ?.forEach { f ->
                         val baseId = f.name.substringBeforeLast('.').lowercase().replace("[^a-z0-9_-]".toRegex(), "-")
                         if (!defaults.any { it.first == baseId }) {

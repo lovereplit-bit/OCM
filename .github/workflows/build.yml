@@ -81,7 +81,13 @@ jobs:
           # Stay above every previously published versionCode (the 1.1.x upstream-client line
           # reached 29887625), so this build installs over anything shipped before it.
           CODE=$((29887625 + GITHUB_RUN_NUMBER))
-          gradle :app:assembleRelease --no-daemon -PappVersionName="$VERSION_NAME" -PappVersionCode="$CODE"
+          if ! gradle :app:assembleRelease --no-daemon --stacktrace -PappVersionName="$VERSION_NAME" -PappVersionCode="$CODE" 2>&1 | tee gradle-build.log; then
+            echo "### ❌ Gradle Build Failed" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 80 gradle-build.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
           cp app/build/outputs/apk/release/app-release.apk "OpenCode-${VERSION_NAME}-${CODE}.apk"
           {
             echo "OpenCode Mobile ${VERSION_NAME} — Релиз v2.0.2"

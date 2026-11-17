@@ -985,7 +985,7 @@ class MainActivity : ComponentActivity() {
                     stopService(Intent(this@MainActivity, OpenCodeService::class.java))
                     Runtime.rmrf(Runtime.rootfs(this@MainActivity))
                     Runtime.rmrf(File(filesDir, "rootfs.new"))
-                    filesDir.listFiles { f -> f.name.startsWith("rootfs.broken") }?.forEach { Runtime.rmrf(it) }
+                    filesDir.listFiles()?.filter { f -> f.name.startsWith("rootfs.broken") }?.forEach { Runtime.rmrf(it) }
                     Runtime.install(this@MainActivity) { emit("install", JSONObject().put("pct", it)) }
                     emit("install", JSONObject().put("done", true))
                 } catch (e: Throwable) {

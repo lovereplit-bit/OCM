@@ -112,7 +112,7 @@ object Runtime {
 
     /** Deletes rootfs.broken-* dirs left aside by previous installs (best effort, background). */
     fun cleanupBroken(c: Context) {
-        c.filesDir.listFiles { f -> f.name.startsWith("rootfs.broken") }?.forEach {
+        c.filesDir.listFiles()?.filter { f -> f.name.startsWith("rootfs.broken") }?.forEach {
             kotlin.concurrent.thread(isDaemon = true) { try { rmrf(it) } catch (_: Exception) {} }
         }
     }
@@ -426,7 +426,7 @@ object Runtime {
 
             // Dynamically register any downloaded GGUF/model files
             val mDir = modelsDir(c)
-            mDir.listFiles { file -> file.isFile && (file.name.endsWith(".gguf") || file.name.endsWith(".safetensors") || file.name.endsWith(".bin")) }
+            mDir.listFiles()?.filter { file -> file.isFile && (file.name.endsWith(".gguf") || file.name.endsWith(".safetensors") || file.name.endsWith(".bin")) }
                 ?.forEach { file ->
                     val id = file.name.substringBeforeLast('.').lowercase().replace("[^a-z0-9_-]".toRegex(), "-")
                     if (!modelsObj.has(id)) {
