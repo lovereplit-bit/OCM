@@ -48,7 +48,9 @@ function build(){
 
   const bottomBar=h('div',{id:'bottom-bar'},B.chat,B.memory);
 
-  app.append(top,T.banner,main,bottomBar);
+  const seasonalLayer=h('div',{id:'seasonal-hud',class:'seasonal-hud'});
+  app.append(seasonalLayer,top,T.banner,main,bottomBar);
+  if(O.applySeasonalHud)O.applySeasonalHud(seasonalLayer,S.opts);
 
   O.filesInit(P.files);
   O.chatInit(P.chat);
@@ -56,7 +58,7 @@ function build(){
   O.changesInit(SP.changes);
 
   addEventListener('resize',O.debounce(layout,100));
-  ['open','session','sessions','msg','vcs','dir','meta','diff'].forEach(e=>bus.on(e,O.debounce(updateTop,120)));
+  ['open','session','sessions','status','msg','vcs','dir','meta','diff'].forEach(e=>bus.on(e,O.debounce(updateTop,120)));
   bus.on('conn',updateBanner);
   bus.on('statuspanel',refreshStatus);
   layout();
@@ -78,10 +80,12 @@ function layout(){
   if(O.termShown)O.termShown();
 }
 
+O.getTab=()=>tab;
 O.setTab=t=>{
   tab=t;
   if(t==='term'||t==='changes')sideTab=t;
   layout();
+  if(t==='chat'&&S.sid&&O.markSessionRead)O.markSessionRead(S.sid);
   if(t==='files')O.refreshFiles(false);
   if(t==='changes')O.refreshChanges();
 };
@@ -106,7 +110,7 @@ O.openTokensModal=()=>{
   const tok=O.calcSessionTokens(S.sid);
   const card=h('div',{class:'settings-card'},
     h('div',{class:'settings-row'},
-      h('div',{class:'settings-row-icon amber'},O.icon('cpu')),
+      h('div',{class:'settings-row-icon'},O.icon('cpu')),
       h('div',{class:'settings-row-text'},
         h('b',null,O.tr('Total Tokens in Session','Всего токенов в сессии')),
         h('span',null,tok.total.toLocaleString()+' ('+O.fmtK(tok.total)+')'))),
@@ -121,12 +125,12 @@ O.openTokensModal=()=>{
         h('b',null,O.tr('Completion Tokens (Output)','Исходящие токены (Генерация)')),
         h('span',null,tok.output.toLocaleString()))),
     tok.reasoning?h('div',{class:'settings-row'},
-      h('div',{class:'settings-row-icon purple'},O.icon('bulb')),
+      h('div',{class:'settings-row-icon'},O.icon('bulb')),
       h('div',{class:'settings-row-text'},
         h('b',null,O.tr('Reasoning Tokens','Токены размышлений')),
         h('span',null,tok.reasoning.toLocaleString()))):null,
     tok.pct!=null?h('div',{class:'settings-row'},
-      h('div',{class:'settings-row-icon purple'},O.icon('memory')),
+      h('div',{class:'settings-row-icon'},O.icon('memory')),
       h('div',{class:'settings-row-text'},
         h('b',null,O.tr('Context Window Utilization','Заполненность контекста')),
         h('span',null,tok.pct+'%'+(tok.lim?' / '+O.fmtK(tok.lim)+' tok':'')))):null
@@ -149,13 +153,35 @@ function updateTop(){
   const v=Object.values(S.mcp||{});
   const hasErr=v.some(x=>x.status==='failed'||x.status==='needs_auth');
   if(T.status)T.status.classList.toggle('active',hasErr);
+  if(T.menu){
+    const anyBusy=(S.sessions||[]).some(x=>O.isSessionBusy&&O.isSessionBusy(x.id));
+    const anyUnread=(S.sessions||[]).some(x=>O.hasUnreadMessages&&O.hasUnreadMessages(x.id)>0);
+    T.menu.classList.toggle('has-busy',anyBusy);
+    T.menu.classList.toggle('has-unread',!anyBusy&&anyUnread);
+  }
 }
 
 function updateBanner(){
   if(!built)return;
-  const t=S.offline?(O.tr('Offline — showing cached chats','Офлайн — показаны кэшированные чаты')):(!S.up?(O.tr('Connecting to local runtime...','Подключение к локальному серверу...')):'');
-  T.banner.textContent=t;
-  T.banner.classList.toggle('hide',!t);
+  const offlineMode=O.isOfflineMode&&O.isOfflineMode();
+  const hasLocals=O.native.getLocalModels?O.native.getLocalModels().some(x=>x.downloaded):false;
+  T.banner.textContent='';
+  T.banner.classList.remove('offline-mode');
+  if(offlineMode&&S.up){
+    T.banner.classList.add('offline-mode');
+    T.banner.append(O.icon('wifiOff'),h('span',null,hasLocals
+      ?O.tr('Offline Mode · Local GGUF models active','Офлайн-режим · Локальные GGUF модели активны')
+      :O.tr('Offline Mode · Download a local model in Settings','Офлайн-режим · Скачайте локальную модель в Настройках')));
+    T.banner.classList.remove('hide');
+  }else if(S.offline&&!S.up){
+    T.banner.append(O.icon('wifiOff'),h('span',null,O.tr('Offline — showing cached chats','Офлайн — показаны кэшированные чаты')));
+    T.banner.classList.remove('hide');
+  }else if(!S.up){
+    T.banner.append(h('span',{class:'spin',style:{width:'12px',height:'12px'}}),h('span',null,O.tr('Connecting to local runtime...','Подключение к локальному серверу...')));
+    T.banner.classList.remove('hide');
+  }else{
+    T.banner.classList.add('hide');
+  }
 }
 
 async function refreshStatus(){

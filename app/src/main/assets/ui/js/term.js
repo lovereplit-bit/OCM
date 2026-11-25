@@ -52,7 +52,7 @@ function onWs(d){if(d.id!==wsid)return;
   if(d.t==='open'){setTimeout(doFit,50)}
   else if(d.t==='msg')term.write(d.d);
   else if(d.t==='bin'){const bin=atob(d.d),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);term.write(u)}
-  else if(d.t==='close'||d.t==='err'){term.write('\r\n\x1b[33m[сессия закрыта — нажмите ⟳, чтобы запустить новый shell]\x1b[0m\r\n');wsid=null}}
+  else if(d.t==='close'||d.t==='err'){term.write('\r\n\x1b[33m[сессия закрыта — нажмите кнопку обновления вверху, чтобы запустить новый shell]\x1b[0m\r\n');wsid=null}}
 async function restart(){if(sub==='agent'){rebuildLog();return}
   if(wsid){OC.wsClose(wsid);wsid=null}if(pty){api('DELETE','/pty/'+pty.id).catch(()=>{});pty=null}if(term)term.reset();startPty()}
 bus.on('dir',()=>{if(wsid){OC.wsClose(wsid);wsid=null}pty=null;if(term)term.reset()});

@@ -167,9 +167,10 @@ O.openPreview=function(relPath){
   const viewToggleBtn=h('button',{class:'ibtn s',title:O.tr('Switch Viewport (Mobile/Desktop)','Переключить масштаб (Мобильный/ПК)'),onclick:()=>{
     isMobile=!isMobile;
     frameWrap.classList.toggle('desktop-mode',!isMobile);
-    viewToggleBtn.textContent=isMobile?'📱':'💻';
+    viewToggleBtn.textContent='';
+    viewToggleBtn.append(O.icon(isMobile?'smartphone':'monitor'));
     O.toast(isMobile?O.tr('Mobile View (390px)','Мобильный вид (390px)'):O.tr('Desktop View (100%)','Широкий вид (100%)'),1000);
-  }},'📱');
+  }},O.icon('smartphone'));
   const refreshBtn=h('button',{class:'ibtn s',title:O.tr('Reload','Обновить'),onclick:()=>{
     try{
       if(O.native&&O.native.preparePreview)O.native.preparePreview(target);
@@ -199,7 +200,6 @@ O.getBuiltinWidgets=function(){
   // Widget 1: Runtime & Model Monitor
   const usage=O.contextUsage?O.contextUsage(S.sid):null;
   const curModel=S.model?((S.model.providerID||'')+'/'+(S.model.modelID||'')):O.tr('Not selected','Не выбрана');
-  const isBusy=S.status&&S.status[S.sid]&&S.status[S.sid].type!=='idle';
 
   const monitorBody=h('div',{class:'ocm-widget-body ocm-adaptive-widget'},
     h('div',{class:'hud-metric-row'},
@@ -208,7 +208,7 @@ O.getBuiltinWidgets=function(){
         h('b',{class:'hud-metric-val',style:{fontSize:'12px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',display:'block'}},curModel)),
       h('div',{class:'hud-metric'},
         h('div',{class:'hud-metric-lbl'},O.tr('Tokens','Контекст')),
-        h('b',{class:'hud-metric-val',style:{color:'#a78bfa'}},usage&&usage.tot?O.fmtK(usage.tot):'0 tok'))),
+        h('b',{class:'hud-metric-val',style:{color:'var(--acc)'}},usage&&usage.tot?O.fmtK(usage.tot):'0 tok'))),
     h('div',{class:'widget-actions-grid'},
       h('button',{class:'btn-widget-action',onclick:()=>O.dispatchAction('new_chat')},O.icon('plus'),O.tr('New Session','Новый чат')),
       h('button',{class:'btn-widget-action',onclick:()=>O.openModels()},O.icon('cpu'),O.tr('Model','Сменить')),
@@ -217,16 +217,15 @@ O.getBuiltinWidgets=function(){
   // Widget 2: Workspace & Git Hub
   const projName=S.dir?O.basename(S.dir):'Workspace';
   const branch=S.branch||'main';
-  const diffCount=(S.diffs&&S.diffs[S.sid]||[]).length;
 
   const workspaceBody=h('div',{class:'ocm-widget-body ocm-adaptive-widget'},
     h('div',{class:'hud-metric-row'},
       h('div',{class:'hud-metric',style:{gridColumn:'span 2'}},
         h('div',{class:'hud-metric-lbl'},O.tr('Project / Directory','Проект')),
-        h('b',{class:'hud-metric-val',style:{fontSize:'13px',color:'#f4f4f5'}},projName)),
+        h('b',{class:'hud-metric-val',style:{fontSize:'13px',color:'var(--fg)'}},projName)),
       h('div',{class:'hud-metric'},
         h('div',{class:'hud-metric-lbl'},'Git'),
-        h('b',{class:'hud-metric-val',style:{color:'#22c55e',fontSize:'12px'}},' '+branch))),
+        h('b',{class:'hud-metric-val',style:{color:'var(--ok)',fontSize:'12px',display:'inline-flex',alignItems:'center',gap:'4px',justifyContent:'center'}},O.icon('branch'),branch))),
     h('div',{class:'widget-actions-grid'},
       h('button',{class:'btn-widget-action',onclick:()=>O.dispatchAction('open_files')},O.icon('folder'),O.tr('Files','Файлы')),
       h('button',{class:'btn-widget-action',onclick:()=>O.dispatchAction('open_term')},O.icon('terminal'),O.tr('Terminal','Терминал')),
@@ -234,18 +233,18 @@ O.getBuiltinWidgets=function(){
 
   // Widget 3: Quick Developer Snippets
   const snips=[
-    ['🐛 Баги','Найди потенциальные баги, ошибки типов и утечки памяти в текущем проекте.'],
-    ['⚡ Рефактор','Проведи рефакторинг кода: оптимизируй архитектуру и удали дублирование.'],
-    ['🧪 Тесты','Напиши подробные автоматические тесты с проверкой граничных условий.'],
-    ['📝 Доки','Создай или обнови техническую документацию в README.md.']
+    {ic:'bug',label:O.tr('Bugs','Баги'),text:'Найди потенциальные баги, ошибки типов и утечки памяти в текущем проекте.'},
+    {ic:'zap',label:O.tr('Refactor','Рефактор'),text:'Проведи рефакторинг кода: оптимизируй архитектуру и удали дублирование.'},
+    {ic:'flask',label:O.tr('Tests','Тесты'),text:'Напиши подробные автоматические тесты с проверкой граничных условий.'},
+    {ic:'doc',label:O.tr('Docs','Доки'),text:'Создай или обнови техническую документацию в README.md.'}
   ];
   const snipBody=h('div',{class:'ocm-widget-body ocm-adaptive-widget'},
     h('div',{style:{display:'grid',gridTemplateColumns:'repeat(2, 1fr)',gap:'8px'}},
-      snips.map(([label,text])=>h('button',{
+      snips.map(sn=>h('button',{
         class:'btn-widget-action',
         style:{padding:'10px 8px',textAlign:'left',justifyContent:'flex-start'},
-        onclick:()=>O.dispatchAction('prompt',text)
-      },h('span',{style:{fontSize:'13px',fontWeight:'600'}},label)))));
+        onclick:()=>O.dispatchAction('prompt',sn.text)
+      },O.icon(sn.ic),h('span',{style:{fontSize:'13px',fontWeight:'600'}},sn.label)))));
 
   return [
     {id:'core_monitor',title:O.tr('Core & Model Monitor','Монитор рантайма и модели'),icon:'cpu',body:monitorBody},
@@ -260,8 +259,8 @@ O.openWidgetsModal=function(){
   const widgets=O.getBuiltinWidgets();
 
   widgets.forEach(w=>{
-    const previewContainer=h('div',{class:'widget-preview-box',style:{margin:'6px 0',borderRadius:'10px',border:'1px dashed rgba(255,255,255,0.15)',padding:'8px',background:'rgba(0,0,0,0.2)'}},
-      h('div',{style:{fontSize:'11px',color:'#71717a',marginBottom:'6px',display:'flex',alignItems:'center',gap:'4px'}},
+    const previewContainer=h('div',{class:'widget-preview-box',style:{margin:'6px 0',borderRadius:'10px',border:'1px dashed var(--line2)',padding:'8px',background:'var(--code)'}},
+      h('div',{style:{fontSize:'11px',color:'var(--mut)',marginBottom:'6px',display:'flex',alignItems:'center',gap:'4px'}},
         O.icon('eye'),h('span',null,O.tr('Preview','Превью виджета'))),
       w.body.cloneNode(true));
 
@@ -285,7 +284,7 @@ O.openWidgetsModal=function(){
 // Custom widget creator dialog
 O.openCustomWidgetCreator=function(){
   const ta=h('textarea',{class:'editor',style:{height:'160px'},placeholder:'<div class="ocm-widget" data-title="Мой кастомный виджет">\n  <p>Привет из OpenCode!</p>\n  <button data-action="new_chat">Новый чат</button>\n  <button data-action="open_app" data-target="telegram">Открыть Telegram</button>\n</div>'});
-  ta.value=`<div class="ocm-widget" data-title="Мой Инструмент">\n  <p style="color:#a1a1aa;margin-bottom:10px;">Быстрые действия на телефоне:</p>\n  <div style="display:flex;gap:8px;flex-wrap:wrap;">\n    <button class="btn sm pri" data-action="new_chat">💬 Новый чат</button>\n    <button class="btn sm" data-action="open_app" data-target="telegram">✈️ Telegram</button>\n    <button class="btn sm" data-action="preview">🌐 Предпросмотр</button>\n  </div>\n</div>`;
+  ta.value=`<div class="ocm-widget" data-title="Мой Инструмент">\n  <p style="color:var(--mut);margin-bottom:10px;">Быстрые действия на устройстве:</p>\n  <div style="display:flex;gap:8px;flex-wrap:wrap;">\n    <button class="btn sm pri" data-action="new_chat">Новый чат</button>\n    <button class="btn sm" data-action="open_app" data-target="telegram">Telegram</button>\n    <button class="btn sm" data-action="preview">Предпросмотр</button>\n  </div>\n</div>`;
   const previewBox=h('div',{class:'custom-widget-preview-area',style:{marginTop:'12px'}});
   const renderPrev=()=>{
     previewBox.innerHTML=ta.value;

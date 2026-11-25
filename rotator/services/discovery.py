@@ -106,22 +106,39 @@ def get_default_model() -> str:
     return DEFAULT_MODEL
 
 
+FALLBACK_MODELS: List[Dict[str, Any]] = [
+    {"id": "big-pickle", "object": "model", "name": "Big Pickle", "owned_by": "opencode", "type": "chat"},
+    {"id": "mimo-v2.6-flash-free", "object": "model", "name": "MiMo v2.6 Flash Free", "owned_by": "opencode", "type": "chat"},
+    {"id": "deepseek-v4.1-flash-free", "object": "model", "name": "DeepSeek v4.1 Flash Free", "owned_by": "opencode", "type": "chat"},
+    {"id": "glm-5.3-flash-free", "object": "model", "name": "GLM 5.3 Flash Free", "owned_by": "opencode", "type": "chat"},
+]
+
+
 def refresh_models_once() -> bool:
     global _discovered_models
     try:
         new_models = fetch_free_models(MODELS_URL, timeout=10)
     except Exception as exc:
+        with _discovery_lock:
+            if not _discovered_models:
+                _discovered_models = [dict(m) for m in FALLBACK_MODELS]
+                metrics["discovered_models_count"] = len(_discovered_models)
         log.warning(
-            "Auto-discovery failed (%s); keeping %d last-known models.",
+            "Auto-discovery failed (%s); keeping %d models.",
             exc,
             len(_discovered_models),
         )
         return False
 
     if not new_models:
+        with _discovery_lock:
+            if not _discovered_models:
+                _discovered_models = [dict(m) for m in FALLBACK_MODELS]
+                metrics["discovered_models_count"] = len(_discovered_models)
         log.warning(
-            "Auto-discovery returned 0 free models from %s; keeping existing list.",
+            "Auto-discovery returned 0 free models from %s; keeping %d models.",
             MODELS_URL,
+            len(_discovered_models),
         )
         return False
 

@@ -1,8 +1,8 @@
 (function(){
 const O=window.OCM;
-const pend=new Map();let seq=0;const L={};
+const pend=new Map(),extPend=new Map();let seq=0;const L={};
 O.on=(n,f)=>{(L[n]=L[n]||[]).push(f)};
-window.OCEvent=(n,d)=>{if(n==='http'){finishHttp(d);return}(L[n]||[]).forEach(f=>{try{f(d)}catch(e){console.error(n,e)}})};
+window.OCEvent=(n,d)=>{if(n==='http'){finishHttp(d);return}if(n==='exthttp'){finishExtHttp(d);return}(L[n]||[]).forEach(f=>{try{f(d)}catch(e){console.error(n,e)}})};
 O.dir='';
 // api(method, path, body, {dir:false|string, timeout, raw})
 O.api=(method,path,body,opt)=>new Promise((res,rej)=>{opt=opt||{};
@@ -18,6 +18,30 @@ async function finishHttp(d){const p=pend.get(d.id);if(!p)return;pend.delete(d.i
   let data=text;if(!p.raw&&text&&(d.ct||'').includes('json')){try{data=JSON.parse(text)}catch{}}
   if(d.status>=200&&d.status<300)p.res(data);
   else p.rej(Object.assign(new Error((data&&data.data&&data.data.message)||(data&&data.message)||(typeof data==='string'&&data.slice(0,200))||('HTTP '+d.status)),{status:d.status,data}))}
+function finishExtHttp(d){const p=extPend.get(d.id);if(!p)return;extPend.delete(d.id);
+  if(d.err&&!d.status){p.rej(Object.assign(new Error(d.err),{status:0,net:true}));return}
+  const text=d.body||'';let data=text;
+  if(text&&((d.ct||'').includes('json')||text.trim().startsWith('{')||text.trim().startsWith('['))){try{data=JSON.parse(text)}catch{}}
+  p.res({ok:Boolean(d.ok||(d.status>=200&&d.status<300)),status:d.status||0,ct:d.ct||'',text,data});
+}
+O.extFetch=(url,opt)=>{opt=opt||{};
+  const method=(opt.method||'GET').toUpperCase();
+  const headers=opt.headers||{};
+  const body=opt.body==null?'':(typeof opt.body==='string'?opt.body:JSON.stringify(opt.body));
+  const ms=opt.timeout||15000;
+  if(window.OC&&typeof OC.extHttp==='function'){
+    return new Promise((res,rej)=>{
+      const id='e'+(++seq)+'_'+Date.now().toString(36);
+      extPend.set(id,{res,rej});
+      try{OC.extHttp(id,method,url,JSON.stringify(headers),body)}catch(e){extPend.delete(id);rej(e);return}
+      setTimeout(()=>{if(extPend.has(id)){extPend.delete(id);rej(new Error('Таймаут запроса к '+url))}},ms);
+    });
+  }
+  const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),ms);
+  return fetch(url,{method,headers,body:(method==='POST'||method==='PUT'||method==='PATCH')?body:undefined,signal:ctrl.signal})
+    .then(async r=>{clearTimeout(t);const text=await r.text();let data=text;try{data=JSON.parse(text)}catch{};return{ok:r.ok,status:r.status,ct:r.headers.get('content-type')||'',text,data}})
+    .catch(e=>{clearTimeout(t);throw e});
+};
 // native helpers (sync, local)
 const j=s=>{try{return JSON.parse(s)}catch{return null}};
 O.native={
@@ -35,8 +59,11 @@ O.native={
   cancelModelDownload:id=>j(window.OC&&OC.cancelModelDownload?OC.cancelModelDownload(id):'{}')||{ok:false},
   deleteModel:(id,filename)=>j(window.OC&&OC.deleteModel?OC.deleteModel(id,filename):'{}')||{ok:false},
   getLocalModels:()=>j(window.OC&&OC.getLocalModels?OC.getLocalModels():'[]')||[],
+  syncLocalModels:()=>j(window.OC&&OC.syncLocalModels?OC.syncLocalModels():'[]')||[],
+  preloadLocalModel:id=>Boolean(window.OC&&OC.preloadLocalModel&&OC.preloadLocalModel(id)),
   startLocalBridge:()=>Boolean(window.OC&&OC.startLocalBridge&&OC.startLocalBridge()),
-  getLocalBridgeStatus:()=>j(window.OC&&OC.getLocalBridgeStatus?OC.getLocalBridgeStatus():'{}')||{running:false}
+  getLocalBridgeStatus:()=>j(window.OC&&OC.getLocalBridgeStatus?OC.getLocalBridgeStatus():'{}')||{running:false},
+  isOnline:()=>{try{return window.OC&&OC.isOnline?Boolean(OC.isOnline()):navigator.onLine!==false}catch{return navigator.onLine!==false}}
 };
 O.openUrl=u=>{if(/^https?:\/\//i.test(u)&&!/appassets\.androidplatform\.net/i.test(u))OC.openLink(u)};
 document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a[href]');if(!a)return;const u=a.getAttribute('href');e.preventDefault();if(/^https?:\/\//i.test(u))O.openUrl(u)});

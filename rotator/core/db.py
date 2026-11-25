@@ -64,10 +64,17 @@ def init_db() -> None:
             ip TEXT NOT NULL,
             country TEXT,
             city TEXT,
-            flag TEXT
+            flag TEXT,
+            reason TEXT
         )
         """
     )
+    try:
+        cols = [row[1] for row in db_fetchall("PRAGMA table_info(ip_history)")]
+        if "reason" not in cols:
+            db_execute("ALTER TABLE ip_history ADD COLUMN reason TEXT")
+    except Exception as exc:
+        log.warning("Could not verify reason column on ip_history: %s", exc)
     db_execute(
         """
         CREATE TABLE IF NOT EXISTS model_usage (
@@ -80,14 +87,24 @@ def init_db() -> None:
         )
         """
     )
+    db_execute(
+        """
+        CREATE TABLE IF NOT EXISTS active_flow_leases (
+            lease_id TEXT PRIMARY KEY,
+            model TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME
+        )
+        """
+    )
     log.info("Database initialized at %s", METRICS_DB_PATH)
 
 
-def record_ip(ip: str, country: str = "", city: str = "", flag: str = "") -> None:
+def record_ip(ip: str, country: str = "", city: str = "", flag: str = "", reason: str = "") -> None:
     try:
         db_execute(
-            "INSERT INTO ip_history (ip, country, city, flag) VALUES (?, ?, ?, ?)",
-            (ip, country, city, flag),
+            "INSERT INTO ip_history (ip, country, city, flag, reason) VALUES (?, ?, ?, ?, ?)",
+            (ip, country, city, flag, reason),
         )
     except Exception as exc:
         log.warning("Failed to record IP history: %s", exc)
@@ -96,7 +113,7 @@ def record_ip(ip: str, country: str = "", city: str = "", flag: str = "") -> Non
 def get_recent_ips(limit: int = 20) -> List[Dict[str, Any]]:
     try:
         rows = db_fetchall(
-            "SELECT timestamp, ip, country, city, flag FROM ip_history ORDER BY id DESC LIMIT ?",
+            "SELECT timestamp, ip, country, city, flag, COALESCE(reason, '') FROM ip_history ORDER BY id DESC LIMIT ?",
             (limit,),
         )
         return [
@@ -106,6 +123,7 @@ def get_recent_ips(limit: int = 20) -> List[Dict[str, Any]]:
                 "country": r[2],
                 "city": r[3],
                 "flag": r[4],
+                "reason": r[5] or "Rotated",
             }
             for r in rows
         ]

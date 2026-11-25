@@ -74,21 +74,6 @@ def load_proxy_list(force: bool = False) -> None:
         _proxy_index = 0
         if _proxy_pool:
             log.info(f"Loaded {len(_proxy_pool)} proxies into rotation pool.")
-        if False:
-            lines = []
-            for p in PROXY_LIST_ENV.split(","):
-                p = p.strip()
-                if p:
-                    if "://" not in p:
-                        p = f"http://{p}"
-                    lines.append(p)
-            _proxy_pool = list(dict.fromkeys(lines))
-            _proxy_index = 0
-            if _proxy_pool:
-                log.info(f"Loaded {len(_proxy_pool)} proxies into rotation pool.")
-        else:
-            _proxy_pool = []
-            _proxy_index = 0
 
 def get_next_proxy() -> Optional[Dict[str, str]]:
     """Get the next proxy from the pool in round-robin fashion."""
@@ -157,20 +142,32 @@ def has_active_flow_leases() -> bool:
 
 
 def get_public_ip() -> Optional[str]:
-    """Fetches current public IP using Chrome TLS impersonation."""
+    """Fetches current public IP using Chrome TLS impersonation with urllib fallback."""
     try:
         from curl_cffi import requests
         resp = requests.get("https://api.ipify.org?format=json", impersonate="chrome124", timeout=5)
         if resp.status_code == 200:
             return resp.json().get("ip")
     except Exception:
+        pass
+    try:
+        from curl_cffi import requests
+        resp = requests.get("https://ifconfig.me/ip", impersonate="chrome124", timeout=5)
+        if resp.status_code == 200:
+            return resp.text.strip()
+    except Exception:
+        pass
+    for url, is_json in (("https://api.ipify.org?format=json", True), ("https://ifconfig.me/ip", False)):
         try:
-            from curl_cffi import requests
-            resp = requests.get("https://ifconfig.me/ip", impersonate="chrome124", timeout=5)
-            if resp.status_code == 200:
-                return resp.text.strip()
+            req = Request(url, headers={"User-Agent": "OpenCode-Rotator/1.0"})
+            with urlopen(req, timeout=5) as resp:
+                raw = resp.read().decode("utf-8", errors="ignore").strip()
+                if is_json:
+                    return json.loads(raw).get("ip")
+                return raw or None
         except Exception:
-            return None
+            continue
+    return None
 
 
 def get_public_ip_via_proxy(proxy: Dict[str, str]) -> Optional[str]:
@@ -181,39 +178,54 @@ def get_public_ip_via_proxy(proxy: Dict[str, str]) -> Optional[str]:
         if resp.status_code == 200:
             return resp.json().get("ip")
     except Exception:
-        try:
-            from curl_cffi import requests
-            resp = requests.get("https://ifconfig.me/ip", impersonate="chrome124", timeout=10, proxies=proxy)
-            if resp.status_code == 200:
-                return resp.text.strip()
-        except Exception:
-            return None
-    return None
+        pass
+    try:
+        from curl_cffi import requests
+        resp = requests.get("https://ifconfig.me/ip", impersonate="chrome124", timeout=10, proxies=proxy)
+        if resp.status_code == 200:
+            return resp.text.strip()
+    except Exception:
+        pass
+    try:
+        from urllib.request import ProxyHandler, build_opener
+        opener = build_opener(ProxyHandler(proxy))
+        req = Request("https://api.ipify.org?format=json", headers={"User-Agent": "OpenCode-Rotator/1.0"})
+        with opener.open(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8", errors="ignore")).get("ip")
+    except Exception:
+        return None
 
 
 ip_history: List[Dict[str, Any]] = []
 
 def get_ip_location(ip: str) -> Dict[str, str]:
-    """Fetches country, flag emoji, and location details for a given IP."""
+    """Fetches country code and city details for a given IP."""
     if not ip:
-        return {"country": "Unknown", "countryCode": "UN", "flag": "🌐"}
+        return {"country": "Unknown", "countryCode": "UN", "city": "", "flag": "UN"}
+    data = None
     try:
         from curl_cffi import requests
         resp = requests.get(f"http://ip-api.com/json/{ip}", impersonate="chrome124", timeout=5)
         if resp.status_code == 200:
             data = resp.json()
-            country_code = data.get("countryCode", "UN")
-            # Generate flag emoji from country code
-            flag = "".join(chr(127397 + ord(c)) for c in country_code) if len(country_code) == 2 else "🌐"
-            return {
-                "country": data.get("country", "Unknown"),
-                "countryCode": country_code,
-                "city": data.get("city", ""),
-                "flag": flag
-            }
     except Exception:
         pass
-    return {"country": "Unknown", "countryCode": "UN", "flag": "🌐"}
+    if data is None:
+        try:
+            req = Request(f"http://ip-api.com/json/{ip}", headers={"User-Agent": "OpenCode-Rotator/1.0"})
+            with urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        except Exception:
+            data = None
+    if isinstance(data, dict):
+        country_code = str(data.get("countryCode", "UN") or "UN")
+        return {
+            "country": data.get("country", "Unknown"),
+            "countryCode": country_code,
+            "city": data.get("city", ""),
+            "flag": country_code,
+        }
+    return {"country": "Unknown", "countryCode": "UN", "city": "", "flag": "UN"}
 
 def is_admin() -> bool:
     if os.name != "nt":
@@ -252,11 +264,11 @@ def get_warp_bin() -> str:
 # -----------------------------------------------------------------------------
 # WARP Controller with IP Verification & Auto-Recycle Trigger
 # -----------------------------------------------------------------------------
-def rotate_warp(reason: str = "Triggered") -> bool:
+def rotate_warp(reason: str = "Triggered", force: bool = False) -> bool:
     global _current_ip, rotation_count
     with rotation_lock:
         with flow_lock:
-            if active_flows_count > 0 or has_active_flow_leases():
+            if not force and (active_flows_count > 0 or has_active_flow_leases()):
                 log.info("IP rotation skipped — an active streaming flow lease is in progress.")
                 return False
 
@@ -300,7 +312,7 @@ def rotate_warp(reason: str = "Triggered") -> bool:
                                 ip_history.append({
                                     "ip": new_ip,
                                     "country": loc.get("country", "Unknown"),
-                                    "flag": loc.get("flag", "🌐"),
+                                    "flag": loc.get("flag", "UN"),
                                     "timestamp": timestamp_str,
                                     "reason": reason
                                 })
@@ -308,13 +320,13 @@ def rotate_warp(reason: str = "Triggered") -> bool:
                                     ip_history.pop(0)
 
                                 try:
-                                    db_path = Path(os.environ.get("METRICS_DB_PATH", "/app/data/metrics.db"))
+                                    db_path = FLOW_LEASE_DB_PATH
                                     if db_path.exists():
                                         conn = sqlite3.connect(str(db_path))
                                         cursor = conn.cursor()
                                         cursor.execute(
-                                            "INSERT INTO ip_history (ip, country, flag, timestamp, reason) VALUES (?, ?, ?, ?, ?)",
-                                            (new_ip, loc.get("country", "Unknown"), loc.get("flag", "🌐"), timestamp_str, reason)
+                                            "INSERT INTO ip_history (ip, country, city, flag, timestamp, reason) VALUES (?, ?, ?, ?, ?, ?)",
+                                            (new_ip, loc.get("country", "Unknown"), loc.get("city", ""), loc.get("flag", "UN"), timestamp_str, reason)
                                         )
                                         conn.commit()
                                         conn.close()
@@ -368,7 +380,7 @@ def rotate_warp(reason: str = "Triggered") -> bool:
                     ip_history.append({
                         "ip": new_ip,
                         "country": loc.get("country", "Unknown"),
-                        "flag": loc.get("flag", "🌐"),
+                        "flag": loc.get("flag", "UN"),
                         "timestamp": timestamp_str,
                         "reason": f"{reason} (via proxy)"
                     })
@@ -396,7 +408,7 @@ def handle_rate_limit(attempt: int, initial_delay: int, max_retries: int) -> boo
     delay = initial_delay * (2 ** (attempt - 1))
     log.warning(f"HTTP 429 Rate Limit detected! Retry attempt {attempt}/{max_retries} — Backoff delay: {delay}s")
     time.sleep(delay)
-    return rotate_warp(reason=f"HTTP 429 - Attempt {attempt}")
+    return rotate_warp(reason=f"HTTP 429 - Attempt {attempt}", force=True)
 
 # -----------------------------------------------------------------------------
 # Background Monitors
@@ -452,7 +464,7 @@ def start_rotator_http_server():
 
         @rotator_app.post("/rotate")
         def http_rotate():
-            success = rotate_warp(reason="Remote HTTP Dashboard Trigger")
+            success = rotate_warp(reason="Remote HTTP Dashboard Trigger", force=True)
             return {"status": "success" if success else "failed", "verified_ip": _current_ip}
         
         @rotator_app.get("/status")

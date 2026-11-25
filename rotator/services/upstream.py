@@ -16,6 +16,7 @@ import re
 import time
 import uuid
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from urllib.request import Request as UrlRequest, urlopen
 
 from curl_cffi import CurlHttpVersion
 from curl_cffi.curl import CurlOpt
@@ -30,6 +31,7 @@ from core.config import (
     SAFE_UPSTREAM_HEADERS,
     STREAM_TIMEOUT,
     TLS12_CIPHERS,
+    WARP_ROTATOR_URL,
 )
 from core.db import record_usage
 from core.metrics import (
@@ -850,6 +852,26 @@ def upstream_status_response(response, model_name: str) -> JSONResponse:
     return JSONResponse(status_code=response.status_code, content=payload)
 
 
+def _trigger_rotation_for_retry(reason: str) -> bool:
+    for endpoint in (f"{WARP_ROTATOR_URL.rstrip('/')}/rotate", "http://127.0.0.1:8001/rotate"):
+        try:
+            req = UrlRequest(endpoint, data=b"", headers={"User-Agent": "OpenCode-Proxy/2.0"}, method="POST")
+            with urlopen(req, timeout=15) as resp:
+                if resp.status == 200:
+                    res = json.loads(resp.read().decode("utf-8", errors="ignore") or "{}")
+                    if res.get("status") == "success":
+                        return True
+        except Exception:
+            continue
+    try:
+        from rotator import rotate_warp
+        if rotate_warp(reason=reason, force=True):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 async def forward_upstream_request(
     endpoint: str,
     target_url: str,
@@ -877,54 +899,107 @@ async def forward_upstream_request(
     # Upstream free tier always requires streaming
     payload["stream"] = True
     headers = build_upstream_headers(raw_request, endpoint)
-    proxies = get_next_outbound_proxy()
 
-    def _execute_post():
-        sess = create_upstream_session(proxies=proxies)
+    response = None
+    session = None
+    first_line = None
+
+    for attempt in range(2):
+        proxies = get_next_outbound_proxy()
+
+        def _execute_post():
+            sess = create_upstream_session(proxies=proxies)
+            try:
+                resp = sess.post(
+                    target_url,
+                    json=payload,
+                    headers=headers,
+                    stream=True,
+                    timeout=STREAM_TIMEOUT,
+                )
+                return resp, sess
+            except Exception:
+                sess.close()
+                raise
+
         try:
-            resp = sess.post(
-                target_url,
-                json=payload,
-                headers=headers,
-                stream=True,
-                timeout=STREAM_TIMEOUT,
+            response, session = await asyncio.to_thread(_execute_post)
+        except Exception as exc:
+            metrics["failed_requests"] += 1
+            log.error("Failed connecting to upstream %s: %s", target_url, exc)
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": {
+                        "message": f"Failed connecting to upstream: {exc}",
+                        "type": "upstream_connect_error",
+                        "code": 502,
+                    }
+                },
             )
-            return resp, sess
-        except Exception:
-            sess.close()
-            raise
 
-    try:
-        response, session = await asyncio.to_thread(_execute_post)
-    except Exception as exc:
-        metrics["failed_requests"] += 1
-        log.error("Failed connecting to upstream %s: %s", target_url, exc)
-        return JSONResponse(
-            status_code=502,
-            content={
-                "error": {
-                    "message": f"Failed connecting to upstream: {exc}",
-                    "type": "upstream_connect_error",
-                    "code": 502,
-                }
-            },
-        )
+        if response.status_code == 429:
+            metrics["rate_limited_requests"] += 1
+            prom_requests_rate_limited.labels(model=model_name).inc()
+            if attempt == 0:
+                session.close()
+                log.warning("Upstream HTTP 429 for %s; rotating IP/proxy and retrying once", model_name)
+                await asyncio.to_thread(_trigger_rotation_for_retry, "Upstream 429 Auto-Rotate")
+                continue
+            category, retry_seconds, err_payload = classify_upstream_429(response)
+            session.close()
+            resp_headers = {"X-Rate-Limit-Reason": category}
+            if retry_seconds is not None:
+                resp_headers["Retry-After"] = str(retry_seconds)
+            return JSONResponse(status_code=429, content=err_payload, headers=resp_headers)
 
-    # Handle HTTP error statuses
-    if response.status_code == 429:
-        session.close()
-        metrics["rate_limited_requests"] += 1
-        prom_requests_rate_limited.labels(model=model_name).inc()
-        category, retry_seconds, err_payload = classify_upstream_429(response)
-        resp_headers = {"X-Rate-Limit-Reason": category}
-        if retry_seconds is not None:
-            resp_headers["Retry-After"] = str(retry_seconds)
-        return JSONResponse(status_code=429, content=err_payload, headers=resp_headers)
+        if response.status_code >= 400:
+            err_resp = upstream_status_response(response, model_name)
+            session.close()
+            metrics["failed_requests"] += 1
+            return err_resp
 
-    if response.status_code >= 400:
-        session.close()
-        metrics["failed_requests"] += 1
-        return upstream_status_response(response, model_name)
+        if client_wants_stream:
+            loop = asyncio.get_event_loop()
+            line_iter = response.iter_lines()
+
+            def peek_first_line():
+                try:
+                    for line in line_iter:
+                        if line:
+                            return line
+                    return None
+                except Exception as e:
+                    return e
+
+            first_line = await loop.run_in_executor(None, peek_first_line)
+            if isinstance(first_line, Exception):
+                session.close()
+                return JSONResponse(
+                    status_code=502,
+                    content={"error": {"message": f"Stream error: {first_line}", "code": 502}},
+                )
+
+            if first_line:
+                raw_text = first_line.decode("utf-8", errors="ignore").strip()
+                check_text = raw_text[5:].strip() if raw_text.startswith("data:") else raw_text
+                if check_text.startswith("{") and ("FreeUsageLimitError" in check_text or "RateLimitError" in check_text or "\"error\"" in check_text):
+                    session.close()
+                    if attempt == 0 and ("FreeUsageLimitError" in check_text or "RateLimitError" in check_text):
+                        metrics["rate_limited_requests"] += 1
+                        prom_requests_rate_limited.labels(model=model_name).inc()
+                        log.warning("Stream FreeUsageLimitError for %s; rotating IP/proxy and retrying once", model_name)
+                        await asyncio.to_thread(_trigger_rotation_for_retry, "Stream FreeUsageLimitError")
+                        continue
+                    try:
+                        err_json = json.loads(check_text)
+                        err_exc = error_to_exception(err_json)
+                        if err_exc:
+                            return upstream_error_response(err_exc)
+                    except Exception:
+                        pass
+                    return JSONResponse(status_code=429, content={"error": {"message": check_text}})
+        break
 
     # Success: record metrics
     metrics["successful_requests"] += 1
@@ -932,37 +1007,6 @@ async def forward_upstream_request(
 
     if client_wants_stream:
         loop = asyncio.get_event_loop()
-        line_iter = response.iter_lines()
-
-        def peek_first_line():
-            try:
-                for line in line_iter:
-                    if line:
-                        return line
-                return None
-            except Exception as e:
-                return e
-
-        first_line = await loop.run_in_executor(None, peek_first_line)
-        if isinstance(first_line, Exception):
-            session.close()
-            return JSONResponse(
-                status_code=502,
-                content={"error": {"message": f"Stream error: {first_line}", "code": 502}},
-            )
-
-        if first_line:
-            raw_text = first_line.decode("utf-8", errors="ignore").strip()
-            if raw_text.startswith("{") and ("FreeUsageLimitError" in raw_text or "error" in raw_text):
-                session.close()
-                try:
-                    err_json = json.loads(raw_text)
-                    err_exc = error_to_exception(err_json)
-                    if err_exc:
-                        return upstream_error_response(err_exc)
-                except Exception:
-                    pass
-                return JSONResponse(status_code=429, content={"error": {"message": raw_text}})
 
         async def stream_with_first():
             prom_active_flows.inc()

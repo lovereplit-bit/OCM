@@ -83,3 +83,26 @@ def get_next_outbound_proxy() -> Optional[Dict[str, str]]:
             pass
 
     return None
+
+
+def save_proxy_list(raw_lines: List[str]) -> List[str]:
+    """Persist normalized outbound proxies to PROXY_LIST_FILE and reload pool."""
+    cleaned = []
+    for item in raw_lines:
+        for part in str(item).replace(",", "\n").splitlines():
+            p = _normalize_proxy(part)
+            if p and not p.startswith("#"):
+                cleaned.append(p)
+    unique = list(dict.fromkeys(cleaned))
+    PROXY_LIST_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(PROXY_LIST_FILE, "w", encoding="utf-8") as f:
+        if unique:
+            f.write("\n".join(unique) + "\n")
+    load_proxy_list(force=True)
+    return list(_proxy_pool)
+
+
+def get_proxy_count() -> int:
+    load_proxy_list()
+    with _proxy_lock:
+        return len(_proxy_pool)

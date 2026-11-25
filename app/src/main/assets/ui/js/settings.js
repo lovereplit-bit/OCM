@@ -17,7 +17,7 @@ O.openSettings=()=>{
   body.append(h('div',{class:'settings-section-title'},O.tr('Profile & Account','Профиль и аккаунт')));
   const profCard=h('div',{class:'settings-card'});
   const profRow=h('div',{class:'settings-row'},
-    h('div',{class:'settings-row-icon purple'},O.icon('user')),
+    h('div',{class:'settings-row-icon'},O.icon('user')),
     h('div',{class:'settings-row-text'},
       h('b',null,st.name||'Гость'),
       h('span',null,st.guest?('Гостевой профиль · ник создан случайно'):(st.user?('Профиль: '+st.user):'Профиль не выбран')),
@@ -33,14 +33,26 @@ O.openSettings=()=>{
   profCard.append(profRow,accRow);
   body.append(profCard);
 
-  // 2. Models & Providers
+  // 2. Models & Providers & Offline Mode
   body.append(h('div',{class:'settings-section-title'},O.tr('Models & Providers','Модели и провайдеры')));
   const modelsCard=h('div',{class:'settings-card'});
+  const isOfflineOn=Boolean(O.store.get('offline_mode',false));
+  const netOnline=O.native.isOnline?O.native.isOnline():true;
+  const offlineRow=O.toggleRow(
+    'wifiOff',
+    O.tr('Offline Mode (Local Only)','Офлайн-режим (только локальные модели)'),
+    netOnline
+      ?O.tr('Use downloaded GGUF models without external API calls','Работать полностью локально без запросов в интернет')
+      :O.tr('No internet detected — local GGUF mode recommended','Интернет недоступен — включите локальные GGUF модели'),
+    isOfflineOn||!netOnline,
+    v=>{if(O.setOfflineMode)O.setOfflineMode(v)}
+  );
   modelsCard.append(
     O.listRow('cpu',O.tr('Active Model','Текущая модель'),S.model?S.model.providerID+'/'+S.model.modelID:O.tr('Not selected','Не выбрана'),O.icon('chevR'),()=>O.openModels()),
-    O.listRow('download',O.tr('Local AI Models (Hugging Face)','Локальные ИИ модели (Hugging Face)'),O.tr('Download GGUF & image models (500MB - 4GB)','Скачивание моделей 500МБ–4ГБ, работа офлайн'),O.icon('chevR'),()=>O.openLocalModels(s)),
+    O.listRow('download',O.tr('Local AI Models (Hugging Face)','Локальные ИИ модели (Hugging Face)'),O.tr('Download GGUF & image models (437MB - 3.5GB)','Скачивание моделей 437МБ–3.5ГБ, работа офлайн'),O.icon('chevR'),()=>O.openLocalModels(s)),
+    offlineRow,
     O.listRow('key',O.tr('Connect Providers','Подключить провайдеров'),'OpenCode Zen, OpenAI, Anthropic, Gemini, DeepSeek...',O.icon('chevR'),()=>O.openConnect()),
-    O.listRow('search',O.tr('Custom API Provider','Свой API провайдер'),'OpenAI-compatible, Groq, OpenRouter...',O.icon('chevR'),()=>O.openCustomProvider(s))
+    O.listRow('search',O.tr('Custom API Provider','Свой API провайдер'),'OpenAI-совм., Anthropic, Ollama, OpenRouter, Groq...',O.icon('chevR'),()=>O.openCustomProvider(s))
   );
   body.append(modelsCard);
 
@@ -55,8 +67,10 @@ O.openSettings=()=>{
     s.close();
     setTimeout(()=>location.reload(),400);
   });
-  const themeName={opencode:'OpenCode (Dark)',light:'Light',tokyonight:'Tokyo Night',gruvbox:'Gruvbox'}[S.opts.theme]||S.opts.theme;
-  const themeRow=O.listRow('palette',O.tr('Theme & Font Size','Тема и размер текста'),themeName+', '+S.opts.fs+'px',O.icon('chevR'),()=>O.openThemes());
+  const themeName={opencode:'OpenCode Dark',light:'Light',tokyonight:'Tokyo Night',gruvbox:'Gruvbox'}[S.opts.theme]||S.opts.theme;
+  const activeSeason=O.activeSeasonKey?O.activeSeasonKey(S.opts):'none';
+  const seasonTag=(O.SEASONAL_THEMES&&O.SEASONAL_THEMES.find(t=>t.id===activeSeason)?.name)||(activeSeason==='none'?'Обычный':activeSeason);
+  const themeRow=O.listRow('palette',O.tr('Themes, Accent & Seasonal HUD','Темы, акцент и сезонный HUD'),themeName+' · '+seasonTag+' · '+S.opts.fs+'px',O.icon('chevR'),()=>O.openThemes());
   const thinkRow=O.toggleRow('bulb',O.tr('Show Reasoning / Thinking','Показывать размышления'),O.tr('Display model thought process in responses','Блоки размышлений в ответах'),S.opts.thinking,v=>{S.opts.thinking=v;O.saveOpts();O.chat.renderAll()});
   const detailRow=O.toggleRow('code',O.tr('Expand Tool Details','Детали инструментов'),O.tr('Show commands, output and file diffs','Команды, вывод терминала и правки'),S.opts.details,v=>{S.opts.details=v;O.saveOpts();O.chat.renderAll()});
   appCard.append(langRow,themeRow,thinkRow,detailRow);
@@ -292,10 +306,103 @@ const SYSTEM_JB_IDS=new Set([
 const DEFAULT_JAILBREAKS=[];
 
 const DB_BACKENDS=[
-  'https://6aec5a8bfc3b911e6fd5037d.mockapi.io',
-  'https://ocm-community.clodperv1.workers.dev',
-  'https://ocm-zen-community-default-rtdb.firebaseio.com'
+  'https://6aec5a8bfc3b911e6fd5037d.mockapi.io'
 ];
+const STATE_BACKUP_PATHS=[
+  CFG+'/ocm-community-backup.json',
+  '/storage/emulated/0/OpenCode/ocm-state-backup.json'
+];
+O.backupCommunityState=()=>{
+  try{
+    const snap={
+      v:2,
+      ts:Date.now(),
+      custom_plugins:O.store.get('custom_plugins',[]),
+      enabled_plugins:O.store.get('enabled_plugins',[]),
+      deleted_plugins:O.store.get('deleted_plugin_ids',[]),
+      custom_jailbreaks:O.store.get('custom_jailbreaks',[]),
+      active_jailbreak_ids:O.store.get('active_jailbreak_ids',[]),
+      deleted_jailbreaks:O.store.get('deleted_jb_ids',[]),
+      author_token:getAuthorToken()
+    };
+    const json=JSON.stringify(snap,null,2);
+    STATE_BACKUP_PATHS.forEach(p=>{
+      try{O.native.fs('mkdir',O.dirname(p));O.native.writeText(p,json)}catch(_){}
+    });
+  }catch(_){}
+};
+O.restoreCommunityState=()=>{
+  try{
+    let curP=O.store.get('custom_plugins',[]);
+    let curJ=O.store.get('custom_jailbreaks',[]);
+    let enP=O.store.get('enabled_plugins',[]);
+    let actJ=O.store.get('active_jailbreak_ids',[]);
+    if(!Array.isArray(curP))curP=[];
+    if(!Array.isArray(curJ))curJ=[];
+    if(!Array.isArray(enP))enP=[];
+    if(!Array.isArray(actJ))actJ=[];
+
+    for(const p of STATE_BACKUP_PATHS){
+      const r=O.native.readText(p);
+      if(!r||!r.ok||!r.text)continue;
+      try{
+        const b=JSON.parse(r.text);
+        if(Array.isArray(b.custom_plugins)&&b.custom_plugins.length){
+          const mapP=new Map(curP.filter(x=>x&&x.id).map(x=>[String(x.id),x]));
+          b.custom_plugins.forEach(x=>{if(x&&x.id&&!mapP.has(String(x.id)))mapP.set(String(x.id),x)});
+          curP=Array.from(mapP.values());
+        }
+        if(Array.isArray(b.enabled_plugins)&&b.enabled_plugins.length&&!enP.length){
+          enP=[...new Set([...enP,...b.enabled_plugins])];
+        }
+        if(Array.isArray(b.custom_jailbreaks)&&b.custom_jailbreaks.length){
+          const mapJ=new Map(curJ.filter(x=>x&&x.id).map(x=>[String(x.id),x]));
+          b.custom_jailbreaks.forEach(x=>{if(x&&x.id&&!mapJ.has(String(x.id)))mapJ.set(String(x.id),x)});
+          curJ=Array.from(mapJ.values());
+        }
+        if(Array.isArray(b.active_jailbreak_ids)&&b.active_jailbreak_ids.length&&!actJ.length){
+          actJ=[...new Set([...actJ,...b.active_jailbreak_ids])];
+        }
+      }catch(_){}
+    }
+
+    // Reconstruct custom plugin entries from CFG/plugins/*.js if localStorage was wiped by an update
+    const diskDir=O.native.ls(CFG+'/plugins');
+    if(diskDir&&Array.isArray(diskDir.items)){
+      const mapP=new Map(curP.filter(x=>x&&x.id).map(x=>[String(x.id),x]));
+      diskDir.items.filter(it=>!it.dir&&/\.(js|ts)$/i.test(it.name)).forEach(it=>{
+        const stem=it.name.replace(/\.(js|ts)$/i,'');
+        const hasMatch=[...mapP.values()].some(p=>((p.id||p.name||'').replace(/[^a-zA-Z0-9_-]/g,'_')===stem)||String(p.id)===stem);
+        if(!hasMatch){
+          const rd=O.native.readText(CFG+'/plugins/'+it.name);
+          if(rd&&rd.ok&&rd.text!=null){
+            const pid='plug_disk_'+stem;
+            mapP.set(pid,{id:pid,name:stem,desc:'Восстановлен с диска после обновления',code:rd.text,author:'local',time:Date.now()});
+            if(!enP.includes(pid))enP.push(pid);
+          }
+        }
+      });
+      curP=Array.from(mapP.values());
+    }
+
+    O.store.set('custom_plugins',curP);
+    O.store.set('enabled_plugins',enP);
+    O.store.set('custom_jailbreaks',curJ);
+    O.store.set('active_jailbreak_ids',actJ);
+
+    // Ensure all enabled plugins exist on disk inside ~/.config/opencode/plugins
+    const enSet=new Set(enP.map(String));
+    O.native.fs('mkdir',CFG+'/plugins');
+    curP.forEach(p=>{
+      if(!p||!p.id)return;
+      if(enSet.has(String(p.id))){
+        const fileSafe=String(p.id||p.name).replace(/[^a-zA-Z0-9_-]/g,'_')+'.js';
+        O.native.writeText(CFG+'/plugins/'+fileSafe,p.code||'// plugin: '+p.name);
+      }
+    });
+  }catch(_){}
+};
+
 O.cloudDb={
   getBackends(){
     const list=[...DB_BACKENDS];
@@ -304,75 +411,54 @@ O.cloudDb={
     return list;
   },
   async fetchAll(col){
+    const r=await this.fetchAllMeta(col);
+    return r.items;
+  },
+  async fetchAllMeta(col){
     for(const u of this.getBackends()){
       try{
         const isFb=u.includes('firebaseio.com');
         const fetchUrl=isFb?`${u}/${col}.json`:`${u}/${col}`;
-        const ctrl=new AbortController();
-        const tid=setTimeout(()=>ctrl.abort(),4500);
-        const resp=await fetch(fetchUrl,{
-          method:'GET',
-          headers:{'Accept':'application/json'},
-          signal:ctrl.signal
-        });
-        clearTimeout(tid);
+        const resp=await O.extFetch(fetchUrl,{method:'GET',headers:{'Accept':'application/json'},timeout:7500});
         if(!resp.ok){
-          console.warn('[cloudDb] '+u+' returned '+resp.status+', trying fallback');
+          console.warn('[cloudDb] '+u+' returned '+resp.status);
           continue;
         }
-        const data=await resp.json();
+        const data=resp.data;
         if(!data)continue;
-        if(Array.isArray(data))return data;
-        return Object.entries(data).map(([id,val])=>Object.assign({id},val));
+        const items=Array.isArray(data)?data:Object.entries(data).map(([id,val])=>Object.assign({id},val));
+        return{ok:true,items};
       }catch(e){
         console.warn('[cloudDb] fetch error on '+u,e);
       }
     }
-    return[];
+    return{ok:false,items:[]};
   },
   async syncItem(col,item){
     for(const u of this.getBackends()){
       try{
         const isFb=u.includes('firebaseio.com');
-        const ctrl=new AbortController();
-        const tid=setTimeout(()=>ctrl.abort(),4500);
         if(isFb){
-          const resp=await fetch(`${u}/${col}/${item.id}.json`,{
-            method:'PUT',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify(item),
-            signal:ctrl.signal
-          });
-          clearTimeout(tid);
-          if(resp.ok)return item;
+          const resp=await O.extFetch(`${u}/${col}/${item.id}.json`,{method:'PUT',headers:{'Content-Type':'application/json'},body:item,timeout:7500});
+          if(resp.ok)return Object.assign({},item,{cloudSynced:true});
           continue;
         }
-        const resp=await fetch(`${u}/${col}`,{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify(item),
-          signal:ctrl.signal
-        });
-        clearTimeout(tid);
-        if(resp.ok){
-          const saved=await resp.json();
-          return Object.assign({},item,saved);
+        const resp=await O.extFetch(`${u}/${col}`,{method:'POST',headers:{'Content-Type':'application/json'},body:item,timeout:7500});
+        if(resp.ok&&resp.data&&typeof resp.data==='object'){
+          return Object.assign({},item,resp.data,{cloudSynced:true});
         }
       }catch(e){
         console.warn('[cloudDb] syncItem error on '+u,e);
       }
     }
-    return item;
+    return Object.assign({},item,{cloudSynced:false});
   },
   async removeItem(col,id){
     for(const u of this.getBackends()){
       try{
         const isFb=u.includes('firebaseio.com');
         const delUrl=isFb?`${u}/${col}/${id}.json`:`${u}/${col}/${id}`;
-        const ctrl=new AbortController();
-        const tid=setTimeout(()=>ctrl.abort(),4500);
-        await fetch(delUrl,{method:'DELETE',signal:ctrl.signal});
-        clearTimeout(tid);
+        await O.extFetch(delUrl,{method:'DELETE',timeout:6000});
       }catch(_){}
     }
   },
@@ -380,26 +466,12 @@ O.cloudDb={
     for(const u of this.getBackends()){
       try{
         const isFb=u.includes('firebaseio.com');
-        const ctrl=new AbortController();
-        const tid=setTimeout(()=>ctrl.abort(),4500);
         if(isFb){
-          const resp=await fetch(`${u}/${col}/${id}.json`,{
-            method:'PATCH',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({likes,dislikes}),
-            signal:ctrl.signal
-          });
-          clearTimeout(tid);
+          const resp=await O.extFetch(`${u}/${col}/${id}.json`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:{likes,dislikes},timeout:6000});
           if(resp.ok)return true;
           continue;
         }
-        const resp=await fetch(`${u}/${col}/${id}`,{
-          method:'PUT',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({likes,dislikes}),
-          signal:ctrl.signal
-        });
-        clearTimeout(tid);
+        const resp=await O.extFetch(`${u}/${col}/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:{likes,dislikes},timeout:6000});
         if(resp.ok)return true;
       }catch(e){
         console.warn('[cloudDb] updateLikes error on '+u,e);
@@ -499,7 +571,7 @@ O.updateReadmeForModel = (modelID) => {
     if (activeJbs && activeJbs.length) {
       const jbSections = activeJbs.map(jb => {
         const target = jb.model ? ` (Модель: ${jb.model})` : ' (Все модели)';
-        return `## ⚡ [JAILBREAK DIRECTIVE: ${jb.title}${target}]\n${(jb.prompt || '').trim()}`;
+        return `## [JAILBREAK DIRECTIVE: ${jb.title}${target}]\n${(jb.prompt || '').trim()}`;
       }).join('\n\n---\n\n');
 
       content = `# OpenCode System Directives & Instructions (Active: ${curMid || 'Universal'})\n\n${jbSections}\n\n---\n\n${BASE_SYSTEM_INSTRUCTIONS}`;
@@ -597,9 +669,9 @@ function openModelPickerSheet({title,current,includeAll,onSelect}){
       marginBottom:'12px',
       padding:'12px 14px',
       borderRadius:'12px',
-      background:'rgba(255,255,255,0.06)',
+      background:'var(--bg2)',
       border:'1px solid var(--line)',
-      color:'#fff',
+      color:'var(--fg)',
       fontSize:'14px',
       boxSizing:'border-box'
     }
@@ -669,14 +741,19 @@ function openJailbreaks(){
   const myToken=getAuthorToken();
 
   const syncCloud=async(silent)=>{
+    if((O.isOfflineMode&&O.isOfflineMode())||(O.native.isOnline&&!O.native.isOnline())){
+      if(!silent)O.toast(O.tr('Offline mode active — showing saved presets','Офлайн-режим — показаны сохранённые пресеты'),1800);
+      return;
+    }
     try{
-      const remote=await O.cloudDb.fetchAll('jailbreaks');
-      if(remote&&Array.isArray(remote)){
+      const res=await O.cloudDb.fetchAllMeta('jailbreaks');
+      if(res.ok&&Array.isArray(res.items)&&res.items.length>0){
+        const delSet=new Set((O.store.get('deleted_jb_ids',[])||[]).map(String));
         let local=O.store.get('custom_jailbreaks',[]);
         const map=new Map();
-        local.forEach(x=>{if(x&&x.id)map.set(String(x.id),x)});
-        remote.forEach(r=>{
-          if(r&&r.title&&r.prompt){
+        local.forEach(x=>{if(x&&x.id&&!delSet.has(String(x.id)))map.set(String(x.id),x)});
+        res.items.forEach(r=>{
+          if(r&&r.title&&r.prompt&&!delSet.has(String(r.id))){
             const rId=String(r.id);
             r.likes=Number(r.likes)||0;
             r.dislikes=Number(r.dislikes)||0;
@@ -699,13 +776,15 @@ function openJailbreaks(){
             }
           }
         });
-        const remoteIds=new Set(remote.map(r=>String(r.id)));
+        const remoteIds=new Set(res.items.map(r=>String(r.id)));
         for(const [lid,item] of map.entries()){
-          if(!remoteIds.has(lid)&&item.author!=='local'){
+          const isMine=item.author===myToken||item.author==='local';
+          if(/^\d+$/.test(lid)&&!remoteIds.has(lid)&&!isMine){
             map.delete(lid);
           }
         }
         O.store.set('custom_jailbreaks',Array.from(map.values()));
+        O.backupCommunityState();
         draw();
       }
     }catch(_){}
@@ -719,9 +798,9 @@ function openJailbreaks(){
       marginBottom:'14px',
       padding:'12px 14px',
       borderRadius:'12px',
-      background:'rgba(255,255,255,0.06)',
+      background:'var(--bg2)',
       border:'1px solid var(--line)',
-      color:'#fff',
+      color:'var(--fg)',
       fontSize:'14px',
       boxSizing:'border-box'
     }
@@ -750,6 +829,7 @@ function openJailbreaks(){
           style:{minWidth:'84px'},
           onclick:()=>{
             const nxt=O.toggleJailbreak(jb.id);
+            O.backupCommunityState();
             O.toast(nxt?O.tr('Jailbreak enabled: ','Джейлбрейк включён: ')+jb.title:O.tr('Jailbreak disabled','Джейлбрейк выключен'),1500);
             draw();
           }
@@ -757,8 +837,8 @@ function openJailbreaks(){
 
         const viewBtn=h('button',{class:'ibtn s',title:O.tr('View prompt text','Посмотреть текст'),onclick:()=>{
           const content=h('div',null,
-            h('div',{class:'mut s',style:{marginBottom:'8px',color:'#38bdf8'}},'Модель: '+(jb.model||'Все модели')+' • Сообщество: доступно всем'),
-            h('p',{style:{color:'#a1a1aa',marginBottom:'10px'}},jb.desc||''),
+            h('div',{class:'mut s',style:{marginBottom:'8px',color:'var(--acc)'}},'Модель: '+(jb.model||'Все модели')+' • Сообщество: доступно всем'),
+            h('p',{style:{color:'var(--mut)',marginBottom:'10px'}},jb.desc||''),
             h('pre',{class:'code-pre',style:{maxHeight:'320px',overflowY:'auto'}},jb.prompt));
           O.sheet(jb.title,content);
         }},O.icon('eye'));
@@ -766,16 +846,20 @@ function openJailbreaks(){
         const isMine=(jb.author===myToken||jb.author==='local');
         const delBtn=isMine?h('button',{class:'ibtn s',title:O.tr('Delete from community','Удалить из сообщества'),onclick:async()=>{
           if(!await O.confirm('Удалить джейлбрейк '+jb.title+' из сообщества?','Это удалит его для всех пользователей.','Удалить',true))return;
+          const delIds=new Set((O.store.get('deleted_jb_ids',[])||[]).map(String));
+          delIds.add(String(jb.id));
+          O.store.set('deleted_jb_ids',Array.from(delIds));
           let local=O.store.get('custom_jailbreaks',[]);
-          local=local.filter(x=>x.id!==jb.id);
+          local=local.filter(x=>String(x.id)!==String(jb.id));
           O.store.set('custom_jailbreaks',local);
           const actIds=O.getActiveJailbreakIds();
           if(actIds.has(jb.id)){
             actIds.delete(jb.id);
             O.store.set('active_jailbreak_ids',Array.from(actIds));
           }
+          O.backupCommunityState();
           O.cloudDb.removeItem('jailbreaks',jb.id);
-          O.toast('Удалено из сообщества',1200);
+          O.toast('Удалено',1200);
           draw();
         }},O.icon('trash')):null;
 
@@ -909,7 +993,7 @@ function openJailbreaks(){
             display:'flex',
             flexDirection:'column',
             gap:'8px',
-            border:isActive?'1px solid var(--accent)':'1px solid rgba(255,255,255,0.08)',
+            border:isActive?'1px solid var(--acc)':'1px solid var(--line)',
             boxSizing:'border-box',
             overflow:'hidden'
           }
@@ -917,12 +1001,12 @@ function openJailbreaks(){
           h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
             h('div',{class:'grow',style:{minWidth:0}},
               h('b',{
-                style:{color:'#fff',fontSize:'14px',display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'pointer',userSelect:'none',WebkitUserSelect:'none'},
+                style:{color:'var(--fg)',fontSize:'14px',display:'block',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'pointer',userSelect:'none',WebkitUserSelect:'none'},
                 onclick:onSecretClick
               },jb.title),
               h('div',{style:{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap',marginTop:'4px'}},
                 modelTag,
-                h('span',{class:'widget-custom-tag',style:{background:'rgba(56,189,248,0.15)',color:'#38bdf8'}},
+                h('span',{class:'widget-custom-tag',style:{background:'var(--acc-soft)',color:'var(--acc)',borderColor:'var(--acc-border)'}},
                   isMine?'Мой пресет':'Сообщество (для всех)'))),
             h('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginLeft:'8px'}},viewBtn,delBtn,toggleBtn)),
           h('div',{class:'mut s',style:{lineHeight:'1.4',wordBreak:'break-word'}},jb.desc||''),
@@ -956,7 +1040,7 @@ function openUploadJailbreakModal(onDone){
   const descInp=h('input',{placeholder:O.tr('Description','Краткое описание назначения')});
 
   let selectedModel='Все модели';
-  const modelValLabel=h('span',{style:{fontWeight:'600',color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},'Все модели');
+  const modelValLabel=h('span',{style:{fontWeight:'600',color:'var(--fg)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},'Все модели');
   const modelPickerBtn=h('button',{
     class:'btn wide',
     type:'button',
@@ -966,7 +1050,7 @@ function openUploadJailbreakModal(onDone){
       justifyContent:'space-between',
       padding:'12px 14px',
       borderRadius:'12px',
-      background:'rgba(255,255,255,0.06)',
+      background:'var(--bg2)',
       border:'1px solid var(--line)',
       textAlign:'left',
       width:'100%'
@@ -1069,14 +1153,20 @@ function openCustomPlugins(){
   };
 
   const syncCloudPlugins=async(silent)=>{
+    O.restoreCommunityState();
+    if((O.isOfflineMode&&O.isOfflineMode())||(O.native.isOnline&&!O.native.isOnline())){
+      if(!silent)O.toast(O.tr('Offline mode active — showing saved plugins','Офлайн-режим — показаны локальные плагины'),1800);
+      return;
+    }
     try{
-      const remote=await O.cloudDb.fetchAll('plugins');
-      if(remote&&Array.isArray(remote)){
+      const res=await O.cloudDb.fetchAllMeta('plugins');
+      if(res.ok&&Array.isArray(res.items)){
+        const delSet=new Set((O.store.get('deleted_plugin_ids',[])||[]).map(String));
         let local=O.store.get('custom_plugins',[]);
         const map=new Map();
-        local.forEach(x=>{if(x&&x.id)map.set(String(x.id),x)});
-        remote.forEach(r=>{
-          if(r&&r.name&&r.code){
+        local.forEach(x=>{if(x&&x.id&&!delSet.has(String(x.id)))map.set(String(x.id),x)});
+        res.items.forEach(r=>{
+          if(r&&r.name&&typeof r.code==='string'&&r.code.trim()&&!delSet.has(String(r.id))){
             const rId=String(r.id);
             if(map.has(rId)){
               map.set(rId,Object.assign({},map.get(rId),r));
@@ -1097,18 +1187,15 @@ function openCustomPlugins(){
             }
           }
         });
-        const remoteIds=new Set(remote.map(r=>String(r.id)));
-        for(const [lid,item] of map.entries()){
-          if(/^\d+$/.test(lid)&&!remoteIds.has(lid)){
-            map.delete(lid);
-          }
-        }
+        // Never wipe user's own local or authored plugins if remote returns subset/empty
         O.store.set('custom_plugins',Array.from(map.values()));
         syncEnabledPluginsToDisk();
+        O.backupCommunityState();
         draw();
       }
     }catch(_){}
   };
+  O.restoreCommunityState();
   syncCloudPlugins(true);
 
   const draw=()=>{
@@ -1135,29 +1222,36 @@ function openCustomPlugins(){
                 O.native.fs('delete',CFG+'/plugins/'+fileSafe);
               }
             }catch(_){}
+            O.backupCommunityState();
             O.toast(isEnabled?'Плагин выключен':'Плагин включён: '+p.name,1200);
             draw();
           }
         },isEnabled?O.tr('Enabled','Включён'):O.tr('Enable','Включить'));
 
         const isMine=(p.author===myToken||p.author==='local');
-        const delBtn=isMine?h('button',{class:'ibtn s',title:'Удалить из сообщества',onclick:async()=>{
-          if(!await O.confirm('Удалить плагин '+p.name+' из сообщества?','Это удалит его для всех пользователей.','Удалить',true))return;
+        const delBtn=isMine?h('button',{class:'ibtn s',title:'Удалить плагин',onclick:async()=>{
+          if(!await O.confirm('Удалить плагин '+p.name+'?','Плагин будет удалён с устройства и из каталога.','Удалить',true))return;
+          const delIds=new Set((O.store.get('deleted_plugin_ids',[])||[]).map(String));
+          delIds.add(String(p.id));
+          O.store.set('deleted_plugin_ids',Array.from(delIds));
           let local=O.store.get('custom_plugins',[]);
-          local=local.filter(x=>x.id!==p.id);
+          local=local.filter(x=>String(x.id)!==String(p.id));
           O.store.set('custom_plugins',local);
+          enabledIds.delete(p.id);
+          O.store.set('enabled_plugins',Array.from(enabledIds));
           const fileSafe=(p.id||p.name).replace(/[^a-zA-Z0-9_-]/g,'_')+'.js';
           try{O.native.fs('delete',CFG+'/plugins/'+fileSafe)}catch(_){}
+          O.backupCommunityState();
           O.cloudDb.removeItem('plugins',p.id);
           draw();
         }},O.icon('trash')):null;
 
-        const card=h('div',{class:'hud-dock-card',style:{padding:'12px',margin:'8px 0',display:'flex',flexDirection:'column',gap:'8px',border:isEnabled?'1px solid var(--accent)':'1px solid rgba(255,255,255,0.08)'}},
+        const card=h('div',{class:'hud-dock-card',style:{padding:'12px',margin:'8px 0',display:'flex',flexDirection:'column',gap:'8px',border:isEnabled?'1px solid var(--acc)':'1px solid var(--line)'}},
           h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
             h('div',null,
-              h('b',{style:{color:'#fff',fontSize:'14px'}},p.name),
+              h('b',{style:{color:'var(--fg)',fontSize:'14px'}},p.name),
               h('span',{class:'mut s',style:{marginLeft:'6px'}},'v'+(p.version||'1.0')),
-              h('span',{class:'widget-custom-tag',style:{marginLeft:'6px',background:'rgba(56,189,248,0.15)',color:'#38bdf8'}},
+              h('span',{class:'widget-custom-tag',style:{marginLeft:'6px',background:'var(--acc-soft)',color:'var(--acc)',borderColor:'var(--acc-border)'}},
                 isMine?'Мой плагин':'Сообщество (для всех)')),
             h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},delBtn,toggleBtn)),
           h('div',{class:'mut s'},p.desc||''));
@@ -1170,14 +1264,14 @@ function openCustomPlugins(){
     O.icon('plus'),O.tr('Upload Custom Plugin','Опубликовать свой плагин'));
 
   const syncRow=h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',padding:'6px 2px'}},
-    h('div',{class:'mut s'},'Облачный каталог сообщества: для всех пользователей'),
+    h('div',{class:'mut s'},'Облачный каталог сообщества и авто-бэкап'),
     h('div',{style:{display:'flex',gap:'8px'}},
       h('button',{class:'btn sm',type:'button',onclick:async()=>{O.toast('Синхронизация...');await syncCloudPlugins();O.toast('Синхронизировано',1200)}},O.icon('refresh'),'Обновить')
     )
   );
 
   body.append(
-    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Community plugins are shared with all users. All uploaded plugins are available across all devices.','Общий каталог плагинов сообщества: все загруженные плагины видны всем людям на любых устройствах.')),
+    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Community plugins are shared with all users and automatically backed up across app updates.','Плагины автоматически сохраняются на диск и восстанавливаются при обновлениях приложения.')),
     syncRow,
     list,
     addBtn);
@@ -1209,14 +1303,16 @@ function openUploadPluginModal(onDone){
   const saveBtn=h('button',{class:'btn pri wide',style:{marginTop:'12px'},onclick:async()=>{
     const name=nameInp.value.trim();
     if(!name)return O.toast('Введите название плагина');
+    const code=codeTa.value.trim();
+    if(!code)return O.toast('Вставьте код плагина или загрузите файл');
 
     saveBtn.disabled=true;
-    saveBtn.textContent='Публикация в сообществе...';
+    saveBtn.textContent='Сохранение плагина...';
 
     const newPlug={
       name,
       desc:descInp.value.trim(),
-      code:codeTa.value.trim(),
+      code,
       author:getAuthorToken(),
       time:Date.now()
     };
@@ -1226,7 +1322,7 @@ function openUploadPluginModal(onDone){
     if(!finalPlug.id)finalPlug.id='plug_'+Date.now().toString(36);
 
     let local=O.store.get('custom_plugins',[]);
-    local=local.filter(x=>x.id!==finalPlug.id);
+    local=local.filter(x=>String(x.id)!==String(finalPlug.id));
     local.unshift(finalPlug);
     O.store.set('custom_plugins',local);
 
@@ -1238,66 +1334,67 @@ function openUploadPluginModal(onDone){
       O.native.fs('mkdir',CFG+'/plugins');
       O.native.writeText(CFG+'/plugins/'+fileSafe,finalPlug.code||'// plugin: '+finalPlug.name);
     }catch(_){}
+    O.backupCommunityState();
 
-    O.toast('Плагин опубликован в сообществе для всех людей!',1500);
+    O.toast(finalPlug.cloudSynced?'Плагин сохранён и опубликован в каталоге!':'Плагин сохранён локально и активирован!',1800);
     if(modal)modal.close();
     if(onDone)onDone();
-  }},O.icon('check'),'Опубликовать для всех');
+  }},O.icon('check'),'Сохранить и включить');
 
-  modal=O.sheet('Опубликовать плагин в сообществе',h('div',null,
+  modal=O.sheet('Добавить свой плагин',h('div',null,
     pickFileBtn,fileInp,
     h('div',{class:'field'},h('label',null,'Название'),nameInp),
     h('div',{class:'field'},h('label',null,'Описание'),descInp),
-    h('div',{class:'field'},h('label',null,'Каталог сообщества'),
-      h('div',{style:{color:'#38bdf8',fontSize:'13px',fontWeight:'600',padding:'4px 0'}},'Для всех пользователей (в облачной базе)')
-    ),
-    h('div',{class:'field'},h('label',null,'Исходный код плагина'),codeTa),
+    h('div',{class:'field'},h('label',null,'Исходный код плагина (.js / .ts)'),codeTa),
     saveBtn),{hud:true,full:true});
 }
 
-// Background auto-sync for all community items on app start
+// Restore local/disk state immediately on startup, then non-destructively sync community catalog
+O.restoreCommunityState();
 O.syncAllCommunity=async()=>{
+  O.restoreCommunityState();
+  if((O.isOfflineMode&&O.isOfflineMode())||(O.native.isOnline&&!O.native.isOnline()))return;
   try{
-    const [jbs, plugs]=await Promise.all([
-      O.cloudDb.fetchAll('jailbreaks'),
-      O.cloudDb.fetchAll('plugins')
+    const myTok=getAuthorToken();
+    const [jbsRes, plugsRes]=await Promise.all([
+      O.cloudDb.fetchAllMeta('jailbreaks'),
+      O.cloudDb.fetchAllMeta('plugins')
     ]);
-    if(Array.isArray(jbs)){
+    if(jbsRes.ok&&Array.isArray(jbsRes.items)&&jbsRes.items.length>0){
+      const delJ=new Set((O.store.get('deleted_jb_ids',[])||[]).map(String));
       let localJ=O.store.get('custom_jailbreaks',[]);
       const mapJ=new Map();
-      localJ.forEach(x=>{if(x&&x.id)mapJ.set(String(x.id),x)});
-      jbs.forEach(r=>{
-        if(r&&r.title&&r.prompt){
+      localJ.forEach(x=>{if(x&&x.id&&!delJ.has(String(x.id)))mapJ.set(String(x.id),x)});
+      jbsRes.items.forEach(r=>{
+        if(r&&r.title&&r.prompt&&!delJ.has(String(r.id))){
           const k=String(r.id);
           r.likes=Number(r.likes)||0;
           r.dislikes=Number(r.dislikes)||0;
-          if(mapJ.has(k))mapJ.set(k,Object.assign({},mapJ.get(k),r));
-          else mapJ.set(k,r);
+          mapJ.set(k,mapJ.has(k)?Object.assign({},mapJ.get(k),r):r);
         }
       });
-      const rIds=new Set(jbs.map(r=>String(r.id)));
-      for(const [lid,item] of mapJ.entries()){
-        if(!rIds.has(lid)&&item.author!=='local')mapJ.delete(lid);
-      }
       O.store.set('custom_jailbreaks',Array.from(mapJ.values()));
     }
-    if(Array.isArray(plugs)){
+    if(plugsRes.ok&&Array.isArray(plugsRes.items)){
+      const delP=new Set((O.store.get('deleted_plugin_ids',[])||[]).map(String));
       let localP=O.store.get('custom_plugins',[]);
       const mapP=new Map();
-      localP.forEach(x=>{if(x&&x.id)mapP.set(String(x.id),x)});
-      plugs.forEach(r=>{
-        if(r&&r.name&&r.code){
+      localP.forEach(x=>{if(x&&x.id&&!delP.has(String(x.id)))mapP.set(String(x.id),x)});
+      plugsRes.items.forEach(r=>{
+        if(r&&r.name&&typeof r.code==='string'&&r.code.trim()&&!delP.has(String(r.id))){
           const k=String(r.id);
-          if(mapP.has(k))mapP.set(k,Object.assign({},mapP.get(k),r));
-          else mapP.set(k,r);
+          mapP.set(k,mapP.has(k)?Object.assign({},mapP.get(k),r):r);
         }
       });
-      const rIdsP=new Set(plugs.map(r=>String(r.id)));
-      for(const [lid,item] of mapP.entries()){
-        if(!rIdsP.has(lid)&&item.author!=='local')mapP.delete(lid);
+      // Re-publish user's unsynced local custom plugins if needed, and NEVER delete local plugins
+      for(const item of [...mapP.values()]){
+        if(!item.cloudSynced&&item.author===myTok&&item.code&&!plugsRes.items.some(r=>r.name===item.name&&r.author===item.author)){
+          try{await O.cloudDb.syncItem('plugins',item)}catch(_){}
+        }
       }
       O.store.set('custom_plugins',Array.from(mapP.values()));
     }
+    O.backupCommunityState();
   }catch(_){}
 };
 setTimeout(()=>{try{O.syncAllCommunity()}catch(_){}},1000);
@@ -1322,29 +1419,38 @@ O.configureIpRotatorProvider = async (enabled, customBaseUrl) => {
     O.store.set('rotator_enabled', false);
     return;
   }
+  const mkRotModel = (id, title) => ({
+    name: title || (id + ' (Free)'),
+    free: true,
+    attachment: false,
+    tool_call: true,
+    temperature: true,
+    cost: { input: 0, output: 0 },
+    limit: { context: 128000, output: 8192 }
+  });
   let mo = {
-    'big-pickle': { name: 'Big Pickle (Free - No Limits)' },
-    'claude-3-5-sonnet': { name: 'Claude 3.5 Sonnet (Free - No Limits)' },
-    'gpt-4o': { name: 'GPT-4o (Free - No Limits)' },
-    'gemini-2.0-flash': { name: 'Gemini 2.0 Flash (Free - No Limits)' }
+    'big-pickle': mkRotModel('big-pickle', 'Big Pickle (Free - Rotator)'),
+    'mimo-v2.6-flash-free': mkRotModel('mimo-v2.6-flash-free', 'MiMo v2.6 Flash (Free - Rotator)'),
+    'deepseek-v4.1-flash-free': mkRotModel('deepseek-v4.1-flash-free', 'DeepSeek v4.1 Flash (Free - Rotator)'),
+    'glm-5.3-flash-free': mkRotModel('glm-5.3-flash-free', 'GLM 5.3 Flash (Free - Rotator)')
   };
   try {
-    const resp = await fetch(baseUrl + '/models', { method: 'GET', headers: { 'Accept': 'application/json' } });
-    if (resp.ok) {
-      const data = await resp.json();
+    const resp = await O.extFetch(baseUrl + '/models', { method: 'GET', headers: { 'Accept': 'application/json' }, timeout: 8000 });
+    if (resp.ok && resp.data) {
+      const data = resp.data;
       const list = Array.isArray(data) ? data : (data.data || data.models || []);
       if (list.length) {
         mo = {};
         list.forEach(m => {
           const mid = typeof m === 'string' ? m : (m.id || m.name);
-          if (mid) mo[mid] = { name: mid + ' (Free)' };
+          if (mid) mo[mid] = mkRotModel(mid, (m.name || mid) + ' (Free)');
         });
       }
     }
   } catch (_) {}
   obj.provider[pid] = {
     name: 'OpenCode IP Rotator',
-    npm: '@ai-sdk/openai',
+    npm: '@ai-sdk/openai-compatible',
     options: { baseURL: baseUrl, apiKey: 'rotator' },
     models: mo
   };
@@ -1352,6 +1458,7 @@ O.configureIpRotatorProvider = async (enabled, customBaseUrl) => {
   if (!w.ok) throw new Error(w.err || 'Ошибка записи конфигурации');
   try { await api('PUT', '/auth/' + pid, { type: 'api', key: 'rotator' }); } catch (_) {}
   try { await api('POST', '/instance/dispose', null); } catch (_) {}
+  await new Promise(r => setTimeout(r, 250));
   await O.loadMeta();
   O.store.set('rotator_enabled', true);
   O.store.set('rotator_url', baseUrl);
@@ -1365,31 +1472,25 @@ O.configureIpRotatorProvider = async (enabled, customBaseUrl) => {
 O.rotateIpNow = async () => {
   const nodeUrl = O.store.get('rotator_node_url', 'http://127.0.0.1:8001').trim().replace(/\/+$/, '');
   const rotUrl = O.store.get('rotator_url', 'http://127.0.0.1:8000/v1').trim().replace(/\/+$/, '');
+  const hostUrl = rotUrl.replace(/\/v1$/, '');
   O.toast(O.tr('Requesting WARP IP rotation...', 'Запрашиваем смену IP через WARP...'), 2500);
   try {
     let ok = false, newIp = null;
-    try {
-      const resp = await fetch(nodeUrl + '/rotate', { method: 'POST' });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.status === 'success' || data.verified_ip) {
-          ok = true; newIp = data.verified_ip;
+    for (const ep of [hostUrl + '/rotate', nodeUrl + '/rotate']) {
+      try {
+        const resp = await O.extFetch(ep, { method: 'POST', timeout: 22000 });
+        if (resp.ok && resp.data && (resp.data.status === 'success' || resp.data.verified_ip)) {
+          ok = true;
+          newIp = resp.data.verified_ip || null;
+          break;
         }
-      }
-    } catch (_) {}
-    if (!ok) {
-      const altUrl = rotUrl.replace(/\/v1$/, '') + '/rotate';
-      const aResp = await fetch(altUrl, { method: 'POST' });
-      if (aResp.ok) {
-        const data = await aResp.json();
-        newIp = data.verified_ip; ok = true;
-      }
+      } catch (_) {}
     }
     if (ok) {
-      O.toast(O.tr('IP rotated successfully: ', 'IP успешно изменён: ') + (newIp || '⚡'), 3500);
-      return newIp;
+      O.toast(O.tr('IP rotated successfully: ', 'IP успешно изменён: ') + (newIp || 'OK'), 3500);
+      return newIp || 'OK';
     } else {
-      throw new Error('Конечная точка /rotate недоступна');
+      throw new Error(O.tr('Rotator /rotate endpoint unreachable', 'Конечная точка /rotate недоступна'));
     }
   } catch (e) {
     O.toast(O.tr('Rotation error: ', 'Ошибка смены IP: ') + e.message, 4000);
@@ -1412,7 +1513,7 @@ function openIpRotator() {
 
   const statusCard = h('div', { class: 'settings-card', style: { padding: '12px', margin: '12px 0' } });
   const statusLine = h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' } },
-    h('div', { style: { width: '10px', height: '10px', borderRadius: '50%', background: enabled ? '#10b981' : '#6b7280' } }),
+    h('div', { style: { width: '10px', height: '10px', borderRadius: '50%', background: enabled ? 'var(--ok)' : 'var(--mut)' } }),
     h('b', null, enabled ? O.tr('IP Rotator Active', 'IP Rotator включён') : O.tr('IP Rotator Disabled', 'IP Rotator отключён'))
   );
   const ipInfoLine = h('div', { class: 'mut s', style: { lineHeight: '1.5' } }, O.tr('Verified Public IP: Tap "Check Status"', 'Проверенный внешний IP: нажмите «Проверить статус»'));
@@ -1421,51 +1522,86 @@ function openIpRotator() {
   const checkStatus = async () => {
     ipInfoLine.textContent = O.tr('Checking server & IP...', 'Проверяем сервер и внешний IP...');
     const baseUrl = urlInp.value.trim().replace(/\/+$/, '');
+    const hostUrl = baseUrl.replace(/\/v1$/, '');
     const nodeUrl = nodeInp.value.trim().replace(/\/+$/, '');
     try {
-      let verifiedIp = null, country = '', flag = '🌐', modelsCount = 0;
+      let verifiedIp = null, country = '', code = '', modelsCount = 0, proxyCount = 0, srvOk = false;
       try {
-        const hResp = await fetch(baseUrl.replace(/\/v1$/, '') + '/health', { method: 'GET' });
-        if (hResp.ok) {
-          const hData = await hResp.json();
-          if (hData.verified_ip) verifiedIp = hData.verified_ip;
+        const hResp = await O.extFetch(hostUrl + '/health', { method: 'GET', timeout: 5000 });
+        if (hResp.ok && hResp.data) {
+          srvOk = true;
+          if (hResp.data.verified_ip) verifiedIp = hResp.data.verified_ip;
+          if (hResp.data.discovered_models_count) modelsCount = hResp.data.discovered_models_count;
+          if (hResp.data.proxy_pool_count) proxyCount = hResp.data.proxy_pool_count;
         }
       } catch (_) {}
       try {
-        const sResp = await fetch(nodeUrl + '/status', { method: 'GET' });
-        if (sResp.ok) {
-          const sData = await sResp.json();
-          if (sData.current_ip) verifiedIp = sData.current_ip;
-          if (sData.history && sData.history.length) {
-            const last = sData.history[sData.history.length - 1];
+        const mMet = await O.extFetch(hostUrl + '/metrics', { method: 'GET', headers: { 'Accept': 'application/json' }, timeout: 5000 });
+        if (mMet.ok && mMet.data) {
+          srvOk = true;
+          if (mMet.data.verified_public_ip && mMet.data.verified_public_ip !== 'Unknown') verifiedIp = mMet.data.verified_public_ip;
+          if (mMet.data.location) {
+            if (mMet.data.location.country) country = mMet.data.location.country;
+            if (mMet.data.location.countryCode) code = mMet.data.location.countryCode;
+          }
+          if (Array.isArray(mMet.data.discovered_models) && mMet.data.discovered_models.length) modelsCount = mMet.data.discovered_models.length;
+          if (typeof mMet.data.proxy_pool_count === 'number') proxyCount = mMet.data.proxy_pool_count;
+        }
+      } catch (_) {}
+      try {
+        const sResp = await O.extFetch(nodeUrl + '/status', { method: 'GET', timeout: 4000 });
+        if (sResp.ok && sResp.data) {
+          if (sResp.data.current_ip) verifiedIp = sResp.data.current_ip;
+          if (sResp.data.history && sResp.data.history.length) {
+            const last = sResp.data.history[sResp.data.history.length - 1];
             if (last.country) country = last.country;
-            if (last.flag) flag = last.flag;
+            if (last.flag && last.flag.length <= 4) code = last.flag;
           }
         }
       } catch (_) {}
       try {
-        const mResp = await fetch(baseUrl + '/models', { method: 'GET' });
-        if (mResp.ok) {
-          const mData = await mResp.json();
-          const list = Array.isArray(mData) ? mData : (mData.data || mData.models || []);
-          modelsCount = list.length;
+        const mResp = await O.extFetch(baseUrl + '/models', { method: 'GET', timeout: 5000 });
+        if (mResp.ok && mResp.data) {
+          srvOk = true;
+          const list = Array.isArray(mResp.data) ? mResp.data : (mResp.data.data || mResp.data.models || []);
+          if (list.length) modelsCount = list.length;
         }
       } catch (_) {}
-      if (!verifiedIp) {
+      if (!verifiedIp && (O.native.isOnline ? O.native.isOnline() : true)) {
         try {
-          const ipResp = await fetch('https://api.ipify.org?format=json');
-          if (ipResp.ok) { const ipD = await ipResp.json(); verifiedIp = ipD.ip; }
+          const ipResp = await O.extFetch('https://api.ipify.org?format=json', { method: 'GET', timeout: 5000 });
+          if (ipResp.ok && ipResp.data && ipResp.data.ip) verifiedIp = ipResp.data.ip;
         } catch (_) {}
       }
-      if (verifiedIp || modelsCount > 0) {
-        ipInfoLine.innerHTML = `<b style="color:var(--text)">` + flag + ` IP:</b> <span class="mono">` + (verifiedIp || 'В сети') + `</span> ` + (country ? ('(' + country + ')') : '') + `<br><span style="color:#10b981">✓ Сервер отвечает</span> · Моделей доступно: <b>` + (modelsCount || 4) + `</b> (включая big-pickle)`;
+
+      ipInfoLine.textContent = '';
+      if (srvOk || modelsCount > 0) {
+        ipInfoLine.append(
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--fg)', fontWeight: '600' } },
+            O.icon('globe'),
+            h('span', null, (code ? '[' + code + '] ' : '') + 'IP: '),
+            h('span', { class: 'mono' }, verifiedIp || 'Online'),
+            country ? h('span', { class: 'mut' }, ' (' + country + ')') : null
+          ),
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', color: 'var(--ok)' } },
+            O.icon('check'),
+            h('span', null, 'Сервер отвечает · Моделей: ' + (modelsCount || 4) + (proxyCount ? (' · Прокси в пуле: ' + proxyCount) : ''))
+          )
+        );
         O.toast(O.tr('Rotator server reachable!', 'Сервер ротатора доступен!'), 2000);
       } else {
-        ipInfoLine.innerHTML = '<span style="color:#ef4444">⚠️ Сервер не отвечает на ' + baseUrl + '</span><br>Убедитесь, что сервер запущен через <span class="mono">bash scripts/run-ip-rotator.sh start</span> или Docker.';
+        ipInfoLine.append(
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--err)', fontWeight: '600' } },
+            O.icon('alert'),
+            h('span', null, 'Сервер не отвечает на ' + baseUrl)
+          ),
+          h('div', { class: 'mut s', style: { marginTop: '4px' } }, 'Запустите сервер: bash scripts/run-ip-rotator.sh start или Docker.')
+        );
         O.toast(O.tr('Rotator server unreachable', 'Сервер ротатора не отвечает'), 3500);
       }
     } catch (e) {
-      ipInfoLine.innerHTML = '<span style="color:#ef4444">Ошибка: ' + e.message + '</span>';
+      ipInfoLine.textContent = '';
+      ipInfoLine.append(h('span', { class: 'err' }, 'Ошибка: ' + e.message));
       O.toast('Ошибка проверки: ' + e.message, 3500);
     }
   };
@@ -1477,12 +1613,29 @@ function openIpRotator() {
 
   const saveAndApply = async () => {
     const baseUrl = urlInp.value.trim().replace(/\/+$/, '');
+    const hostUrl = baseUrl.replace(/\/v1$/, '');
     const nodeUrl = nodeInp.value.trim().replace(/\/+$/, '');
     const proxiesTxt = proxiesInp.value.trim();
     O.store.set('rotator_url', baseUrl);
     O.store.set('rotator_node_url', nodeUrl);
     O.store.set('rotator_proxies', proxiesTxt);
     O.store.set('rotator_enabled', enabled);
+
+    // Push proxy pool to running rotator backend and local file if available
+    const proxyList = proxiesTxt.split('\n').map(x => x.trim()).filter(Boolean);
+    try {
+      await O.extFetch(hostUrl + '/proxies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: { proxies: proxyList },
+        timeout: 4000
+      });
+    } catch (_) {}
+    try {
+      if (S.dir) {
+        O.native.writeText(S.dir + '/rotator/data/proxies.txt', proxyList.join('\n') + (proxyList.length ? '\n' : ''));
+      }
+    } catch (_) {}
 
     try {
       await O.configureIpRotatorProvider(enabled, baseUrl);
@@ -1502,13 +1655,13 @@ function openIpRotator() {
     ),
     O.toggleRow('zap', O.tr('Enable IP Rotator for Guest', 'Использовать IP Rotator для гостя'), O.tr('Route free model inference through rotating proxy', 'Маршрутизировать запросы бесплатных моделей через ротатор'), enabled, v => {
       enabled = v;
-      statusLine.children[0].style.background = v ? '#10b981' : '#6b7280';
+      statusLine.children[0].style.background = v ? 'var(--ok)' : 'var(--mut)';
       statusLine.children[1].textContent = v ? O.tr('IP Rotator Active', 'IP Rotator включён') : O.tr('IP Rotator Disabled', 'IP Rotator отключён');
     }),
     statusCard,
     h('div', { style: { display: 'flex', gap: '8px', marginBottom: '12px' } },
       h('button', { class: 'btn grow', type: 'button', onclick: checkStatus }, O.icon('search'), O.tr('Check Status & IP', 'Проверить статус')),
-      h('button', { class: 'btn pri grow', type: 'button', style: { background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }, onclick: doRotate }, O.icon('refresh'), O.tr('Rotate IP Now', 'Сменить IP'))
+      h('button', { class: 'btn pri grow', type: 'button', onclick: doRotate }, O.icon('refresh'), O.tr('Rotate IP Now', 'Сменить IP'))
     ),
     h('div', { class: 'field' },
       h('label', null, O.tr('Proxy Server Base URL', 'URL прокси-сервера (Base URL)')),
@@ -1559,11 +1712,11 @@ function openLocalModels(parentSheet) {
         h('span', { class: 'status-dot-green' }),
         h('b', { style: { fontSize: '13px' } }, bridgeStatus.running ? O.tr('Local Bridge Active (127.0.0.1:8088)', 'Локальный мост активен (127.0.0.1:8088)') : O.tr('Bridge Starting...', 'Запуск моста...'))
       ),
-      h('span', { class: 'badge-model badge-local' }, O.tr('OpenCode v1 Line', 'Ветка OpenCode v1'))
+      h('span', { class: 'badge-model badge-local' }, O.tr('Offline GGUF · v1', 'GGUF Офлайн · v1'))
     ),
     h('div', { class: 'mut s', style: { lineHeight: '1.4' } },
-      O.tr('Download AI models directly from Hugging Face (500MB – 4GB). Models execute completely offline on your device and are available in the main chat hub with the [Local] tag.',
-           'Загрузка ИИ моделей напрямую с Hugging Face (500 МБ – 4 ГБ). Модели работают офлайн прямо на телефоне и отображаются в главном хабе моделей с припиской «(Локально)».')
+      O.tr('Download GGUF & image models from Hugging Face (437MB – 3.5GB). Models execute offline via built-in llama-server and appear in the model hub as (Local).',
+           'Загрузка ИИ моделей напрямую с Hugging Face (437 МБ – 3.5 ГБ). Модели работают полностью офлайн через встроенный llama-server и отображаются в хабе с отметкой «(Локально)».')
     )
   );
 
@@ -1577,11 +1730,11 @@ function openLocalModels(parentSheet) {
   // 3. Filter Tabs
   const tabsContainer = h('div', { class: 'filter-tabs-row' });
   const filters = [
-    { id: 'all', label: O.tr('All (500MB - 4GB)', 'Все (500МБ–4ГБ)') },
-    { id: 'image', label: O.tr('Text to Image', 'Text to Image (Walkyrie)') },
-    { id: 'llm', label: O.tr('Text / Code', 'Текст и Код (Sakura-Iris, Qwen)') },
-    { id: 'vlm', label: O.tr('Vision', 'Vision (Nanosaur 2)') },
-    { id: 'downloaded', label: O.tr('Downloaded Only', '✓ Только скачанные') }
+    { id: 'all', label: O.tr('All Models', 'Все модели') },
+    { id: 'image', label: O.tr('Text to Image', 'Text to Image') },
+    { id: 'llm', label: O.tr('Text / Code', 'Текст и Код') },
+    { id: 'vlm', label: O.tr('Vision (SmolVLM)', 'Vision (SmolVLM-500M)') },
+    { id: 'downloaded', label: O.tr('Downloaded', 'Скачанные') }
   ];
 
   function renderTabs() {
@@ -1618,26 +1771,23 @@ function openLocalModels(parentSheet) {
     items.forEach(m => {
       const card = h('div', { class: 'local-model-card' + (m.downloaded ? ' downloaded' : ''), id: 'model_card_' + m.id });
 
-      // Top title and size badge
-      const typeLabel = m.type === 'image' ? '🎨 Text-to-Image' : (m.type === 'vlm' ? '👁️ Vision-Language' : '🤖 Text & Code');
+      const typeIcon = m.type === 'image' ? 'image' : (m.type === 'vlm' ? 'eye' : 'cpu');
+      const typeLabel = m.type === 'image' ? 'Text-to-Image' : (m.type === 'vlm' ? 'Vision-Language' : 'Text & Code');
       const topRow = h('div', { class: 'local-model-card-top' },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' } },
           h('b', { style: { fontSize: '15px' } }, m.name),
-          h('span', { class: 'local-tag-pill' }, typeLabel)
+          h('span', { class: 'local-tag-pill', style: { display: 'inline-flex', alignItems: 'center', gap: '4px' } }, O.icon(typeIcon), typeLabel)
         ),
         h('span', { class: 'local-size-badge' }, m.size)
       );
 
-      // Description
       const desc = h('div', { class: 'local-model-desc' }, m.description || m.repo);
 
-      // Source info
       const srcRow = h('div', { class: 'mut s', style: { margin: '4px 0 8px', display: 'flex', gap: '8px', flexWrap: 'wrap' } },
         h('span', null, 'Источник: ' + (m.repo || 'Hugging Face GGUF')),
         m.filename ? h('span', { class: 'mono' }, m.filename) : null
       );
 
-      // Status & Progress element
       const statusWrap = h('div', { class: 'local-model-status-wrap' });
       const actionsRow = h('div', { class: 'local-model-actions' });
 
@@ -1651,7 +1801,7 @@ function openLocalModels(parentSheet) {
         statusWrap.append(pbar, ptxt);
 
         const cancelBtn = h('button', {
-          class: 'btn sm danger',
+          class: 'btn sm dng',
           onclick: () => {
             O.native.cancelModelDownload(m.id);
             O.toast(O.tr('Download cancelled', 'Загрузка отменена'), 1500);
@@ -1662,22 +1812,24 @@ function openLocalModels(parentSheet) {
       } else if (m.downloaded) {
         const badgeReady = h('div', { class: 'local-ready-badge' },
           O.icon('check', 'ok'),
-          h('span', null, O.tr('Downloaded · Available in chat hub with (Local)', 'Скачано · Доступно в главном хабе моделей с припиской (Локально)'))
+          h('span', null, O.tr('Downloaded · Available in chat hub as (Local)', 'Скачано · Доступно в хабе моделей как «(Локально)»'))
         );
         statusWrap.append(badgeReady);
 
         const selectBtn = h('button', {
           class: 'btn pri sm',
-          onclick: () => {
+          onclick: async () => {
+            try { if (O.native.syncLocalModels) O.native.syncLocalModels(); } catch (_) {}
+            try { if (O.native.preloadLocalModel) O.native.preloadLocalModel(m.id); } catch (_) {}
             O.setModel('local', m.id);
             O.toast(O.tr('Selected model: ', 'Выбрана модель: ') + m.name + ' (Локально)', 2000);
             s.close();
             if (parentSheet && parentSheet.close) parentSheet.close();
           }
-        }, O.icon('check'), O.tr('Select in Chat', '⚡ Выбрать в чате'));
+        }, O.icon('check'), O.tr('Select in Chat', 'Выбрать в чате'));
 
         const deleteBtn = h('button', {
-          class: 'btn sm danger',
+          class: 'btn sm dng',
           onclick: async () => {
             if (await O.confirm(O.tr('Delete model?', 'Удалить модель?'), m.name + ' (' + m.size + ')', O.tr('Delete', 'Удалить'), true)) {
               O.native.deleteModel(m.id, m.filename);
@@ -1695,11 +1847,15 @@ function openLocalModels(parentSheet) {
         const dlBtn = h('button', {
           class: 'btn pri sm',
           onclick: () => {
+            if (O.native.isOnline && !O.native.isOnline()) {
+              O.toast(O.tr('No internet connection for Hugging Face download', 'Нет подключения к интернету для загрузки модели'), 3000);
+              return;
+            }
             O.native.downloadModel(m.id, m.url, m.filename, m.name);
             O.toast(O.tr('Download started: ', 'Загрузка начата: ') + m.name, 2000);
             renderList();
           }
-        }, O.icon('download'), O.tr('Download from Hugging Face', '⬇ Скачать с Hugging Face'));
+        }, O.icon('download'), O.tr('Download from Hugging Face', 'Скачать с Hugging Face'));
 
         actionsRow.append(dlBtn);
       }
@@ -1721,10 +1877,11 @@ function openLocalModels(parentSheet) {
       renderList();
       if (data.status === 'completed') {
         O.toast(data.name + ' ' + O.tr('downloaded successfully!', 'успешно скачана и готова к работе!'), 3000);
+      } else if (data.status === 'error' && data.error) {
+        O.toast(O.tr('Download error: ', 'Ошибка загрузки: ') + data.error, 4000);
       }
       return;
     }
-    // Update progress bar smoothly
     let pbar = card.querySelector('.local-pbar-fill');
     let ptxt = card.querySelector('.local-pbar-text');
     if (pbar && ptxt) {
@@ -1752,17 +1909,22 @@ function openLocalModels(parentSheet) {
       onclick: () => {
         let u = urlInp.value.trim();
         if (!u) return O.toast(O.tr('Enter Hugging Face URL', 'Введите ссылку на модель Hugging Face'));
+        if (O.native.isOnline && !O.native.isOnline()) {
+          return O.toast(O.tr('No internet connection', 'Нет подключения к интернету'), 3000);
+        }
         if (u.includes('huggingface.co') && u.includes('/blob/')) {
           u = u.replace('/blob/', '/resolve/');
         }
         if (!u.startsWith('http://') && !u.startsWith('https://')) {
           u = 'https://' + u;
         }
-        const nm = nameInp.value.trim() || u.substringAfterLast('/').substringBefore('?');
+        const urlTail = (u.split('/').pop() || '').split('?')[0];
+        const nm = nameInp.value.trim() || urlTail || 'Custom-GGUF';
         let fn = fnInp.value.trim();
-        if (!fn) fn = u.substringAfterLast('/').substringBefore('?');
-        if (!fn || !fn.includes('.')) fn = (nm.toLowerCase().replace(/[^a-z0-9_-]/g, '_')) + '.gguf';
-        const id = 'custom-' + fn.substringBeforeLast('.').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        if (!fn) fn = urlTail;
+        if (!fn || !fn.includes('.')) fn = nm.toLowerCase().replace(/[^a-z0-9_-]/g, '_') + '.gguf';
+        const stem = fn.replace(/\.[^.]+$/, '');
+        const id = stem.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
 
         O.native.downloadModel(id, u, fn, nm);
         O.toast(O.tr('Download started: ', 'Загрузка начата: ') + nm, 2500);

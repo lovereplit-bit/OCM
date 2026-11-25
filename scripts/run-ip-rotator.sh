@@ -22,24 +22,26 @@ case "$ACTION" in
       echo "  - Dashboard: http://127.0.0.1:8000/dashboard"
     else
       echo "Docker not available, running natively with Python 3..."
-      if [ ! -d "venv" ]; then
+      if [ ! -d "venv" ] && [[ "$ROTATOR_DIR" != /storage/* && "$ROTATOR_DIR" != /sdcard/* ]]; then
         python3 -m venv --copies venv 2>/dev/null || true
       fi
       if [ -f "venv/bin/activate" ]; then
         # shellcheck source=/dev/null
         source venv/bin/activate
       fi
-      pip install -q -r requirements.txt 2>/dev/null || pip3 install -q -r requirements.txt 2>/dev/null || true
+      if ! python3 -c "import fastapi, uvicorn, curl_cffi" >/dev/null 2>&1; then
+        pip install -q -r requirements.txt 2>/dev/null || pip3 install -q -r requirements.txt 2>/dev/null || true
+      fi
       echo "Starting Proxy Server on port 8000..."
       nohup python3 server.py > server.log 2>&1 &
       PROXY_PID=$!
       echo "Proxy server started (PID: $PROXY_PID)."
-      if command -v warp-cli >/dev/null 2>&1; then
-        echo "Starting WARP Rotator on port 8001..."
+      if command -v warp-cli >/dev/null 2>&1 || [ -s "data/proxies.txt" ] || [ -s "proxies.txt" ]; then
+        echo "Starting Rotator Node on port 8001..."
         nohup python3 rotator.py > rotator.log 2>&1 &
-        echo "WARP rotator started (PID: $!)."
+        echo "Rotator node started (PID: $!)."
       else
-        echo "Note: warp-cli not found locally. Custom proxies in proxies.txt can still be used."
+        echo "Note: warp-cli not found locally; built-in proxy/rotation endpoints active at http://127.0.0.1:8000"
       fi
       echo "OpenCode IP Rotator is active at http://127.0.0.1:8000/v1"
     fi
@@ -55,7 +57,7 @@ case "$ACTION" in
     ;;
   rotate)
     echo "=== Requesting IP Rotation ==="
-    curl -s -X POST http://127.0.0.1:8001/rotate || curl -s -X POST http://127.0.0.1:8000/rotate || echo "Rotator node unreachable at port 8001/8000"
+    curl -s -X POST http://127.0.0.1:8000/rotate || curl -s -X POST http://127.0.0.1:8001/rotate || echo "Rotator unreachable at port 8000/8001"
     echo ""
     ;;
   status)

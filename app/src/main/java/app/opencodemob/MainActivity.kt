@@ -528,7 +528,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun flags() = JSONObject().apply {
-        for (k in FLAG_KEYS) put(k, Prefs.flag(this@MainActivity, k, k != "noseccomp"))
+        for (k in FLAG_KEYS) put(k, Prefs.flag(this@MainActivity, k, k != "noseccomp" && k != "offline_mode"))
     }
 
     private fun cfgFile(): File {
@@ -854,7 +854,7 @@ class MainActivity : ComponentActivity() {
                 fileListHtml.append("""
                     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #27272a;">
                         <span style="font-family:monospace;color:#e4e4e7;">${f.name}</span>
-                        ${if (isH) "<a href=\"${f.name}\" style=\"color:#38bdf8;text-decoration:none;font-weight:600;\">Открыть ▶</a>" else if (isImg) "<a href=\"${f.name}\" style=\"color:#a1a1aa;text-decoration:none;\">Изображение 🖼</a>" else "<span style=\"color:#71717a;\">${f.length() / 1024} KB</span>"}
+                        ${if (isH) "<a href=\"${f.name}\" style=\"color:#38bdf8;text-decoration:none;font-weight:600;\">Открыть</a>" else if (isImg) "<a href=\"${f.name}\" style=\"color:#a1a1aa;text-decoration:none;\">Изображение</a>" else "<span style=\"color:#71717a;\">${f.length() / 1024} KB</span>"}
                     </div>
                 """.trimIndent())
             }
@@ -869,7 +869,7 @@ class MainActivity : ComponentActivity() {
                         body { background: #0d0d0f; color: #f4f4f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; margin: 0; }
                         .card { max-width: 540px; margin: 20px auto; background: #141417; border: 1px solid #27272a; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
                         .hdr { padding: 16px; border-bottom: 1px solid #27272a; display: flex; align-items: center; gap: 10px; }
-                        h2 { margin: 0; font-size: 16px; color: #38bdf8; }
+                        h2 { margin: 0; font-size: 16px; color: #e4e4e7; display: flex; align-items: center; gap: 8px; }
                         p { color: #a1a1aa; font-size: 13px; margin: 6px 0 0; }
                     </style>
                 </head>
@@ -877,7 +877,10 @@ class MainActivity : ComponentActivity() {
                     <div class="card">
                         <div class="hdr">
                             <div>
-                                <h2>🌐 Встроенный Веб-Предпросмотр</h2>
+                                <h2>
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
+                                    Встроенный веб-предпросмотр
+                                </h2>
                                 <p>Проект: ${target.name}</p>
                             </div>
                         </div>
@@ -904,6 +907,8 @@ class MainActivity : ComponentActivity() {
             put("googleConfigured", BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotEmpty())
             put("installed", Runtime.isInstalled(this@MainActivity))
             put("core", Updater.installedCore(this@MainActivity))
+            put("online", Runtime.isOnline(this@MainActivity))
+            put("offlineMode", Prefs.flag(this@MainActivity, "offline_mode", false))
             put("perms", perms()); put("flags", flags()); put("ready", ServerState.ready)
         }.toString()
 
@@ -1066,6 +1071,9 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun http(id: String, method: String, path: String, body: String) {
             Net.request(this@MainActivity, id, method, path, body) { n, d -> emit(n, d) }
         }
+        @JavascriptInterface fun extHttp(id: String, method: String, url: String, headersJson: String, body: String) {
+            Net.extRequest(id, method, url, headersJson, body) { n, d -> emit(n, d) }
+        }
         @JavascriptInterface fun drop(id: String) { Net.drop(this@MainActivity, id) }
         @JavascriptInterface fun sseStart() { Net.sseStart { n, d -> emit(n, d) } }
         @JavascriptInterface fun sseStop() { Net.sseStop() }
@@ -1153,6 +1161,33 @@ class MainActivity : ComponentActivity() {
                 .toString()
         }
 
+        @JavascriptInterface fun syncLocalModels(): String {
+            val u = uid()
+            if (u.isNotEmpty()) Runtime.sanitizeConfig(this@MainActivity, u)
+            LocalBridgeServer.start(this@MainActivity)
+            Runtime.disposeRunningInstance()
+            return ModelDownloader.getLocalModels(this@MainActivity).toString()
+        }
+
+        @JavascriptInterface fun preloadLocalModel(modelId: String): Boolean {
+            LocalBridgeServer.start(this@MainActivity)
+            thread(isDaemon = true) {
+                try {
+                    val url = java.net.URL("http://127.0.0.1:${LocalBridgeServer.activePort}/preload?model=${java.net.URLEncoder.encode(modelId, "UTF-8")}")
+                    val con = url.openConnection() as java.net.HttpURLConnection
+                    con.connectTimeout = 2000
+                    con.readTimeout = 3000
+                    con.responseCode
+                    con.disconnect()
+                } catch (_: Exception) {}
+            }
+            return true
+        }
+
+        @JavascriptInterface fun isOnline(): Boolean {
+            return Runtime.isOnline(this@MainActivity)
+        }
+
 
         // --- OTA ---
         @JavascriptInterface fun checkUpdates() {
@@ -1196,6 +1231,6 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
-        val FLAG_KEYS = listOf("snd_done", "snd_action", "snd_quota", "noseccomp")
+        val FLAG_KEYS = listOf("snd_done", "snd_action", "snd_quota", "noseccomp", "offline_mode")
     }
 }

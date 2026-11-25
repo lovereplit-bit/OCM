@@ -248,7 +248,7 @@ object Runtime {
     private fun prootBase(c: Context, uid: String): MutableList<String> {
         val lib = c.applicationInfo.nativeLibraryDir
         val home = home(c, uid)
-        val ptmp = File(c.filesDir, "proot-tmp").apply { mkdirs() }
+        val mDir = modelsDir(c)
         val a = mutableListOf(
             "$lib/libproot.so", "--kill-on-exit", "--link2symlink", "--sysvipc", "-0",
             "-r", rootfs(c).path, "-w", "/root",
@@ -259,11 +259,71 @@ object Runtime {
             "-b", "/proc/self/fd/1:/dev/stdout",
             "-b", "/proc/self/fd/2:/dev/stderr",
             "-b", "${home.path}:/root",
+            "-b", "${mDir.path}:/opt/models",
         )
         if (File("/storage/emulated/0").exists()) {
             a += listOf("-b", "/storage/emulated/0:/storage/emulated/0", "-b", "/storage/emulated/0:/sdcard")
         }
         return a
+    }
+
+    /** Launches llama-server inside proot for local GGUF model inference. */
+    fun startLlamaProcess(c: Context, uid: String, args: List<String>): Process {
+        val lib = c.applicationInfo.nativeLibraryDir
+        val ptmp = File(c.filesDir, "proot-tmp").apply { mkdirs() }
+        val noSeccomp = Prefs.flag(c, "noseccomp", false)
+        val a = prootBase(c, uid) + listOf("/usr/bin/env", "LD_LIBRARY_PATH=/opt/llama", "/opt/llama/llama-server") + args
+        val pb = ProcessBuilder(a).redirectErrorStream(true).directory(c.filesDir)
+        pb.environment().apply {
+            clear()
+            put("LD_LIBRARY_PATH", lib)
+            put("PROOT_LOADER", "$lib/libproot-loader.so")
+            put("PROOT_TMP_DIR", ptmp.path)
+            if (noSeccomp) put("PROOT_NO_SECCOMP", "1")
+            put("HOME", "/root"); put("USER", "root"); put("SHELL", "/bin/bash")
+            put("LANG", "C.UTF-8"); put("TERM", "dumb"); put("TMPDIR", "/tmp")
+            put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+        }
+        return pb.start()
+    }
+
+    /** Checks if the device currently has an active internet-capable network. */
+    fun isOnline(c: Context): Boolean {
+        return try {
+            val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return false
+            val net = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(net) ?: return false
+            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Disposes the running OpenCode server instance so updated opencode.json models load immediately. */
+    fun disposeRunningInstance() {
+        if (!ServerState.ready || ServerState.port <= 0) return
+        kotlin.concurrent.thread(isDaemon = true) {
+            try {
+                val con = URL("http://127.0.0.1:${ServerState.port}/instance/dispose").openConnection() as HttpURLConnection
+                con.requestMethod = "POST"
+                con.connectTimeout = 2500
+                con.readTimeout = 4000
+                con.setRequestProperty("Authorization", basic(ServerState.password))
+                con.setRequestProperty("Content-Type", "application/json")
+                con.doOutput = true
+                con.outputStream.use { it.write("{}".toByteArray()) }
+                con.responseCode
+                con.disconnect()
+
+                // Warm up provider registry right away so SessionPrompt.getModel sees new models
+                val warm = URL("http://127.0.0.1:${ServerState.port}/config/providers").openConnection() as HttpURLConnection
+                warm.connectTimeout = 2500
+                warm.readTimeout = 5000
+                warm.setRequestProperty("Authorization", basic(ServerState.password))
+                warm.responseCode
+                warm.disconnect()
+            } catch (_: Exception) {}
+        }
     }
 
     /** Runs a short-lived command inside the proot env with merged piped output (for `opencode console login/logout`). */
@@ -314,7 +374,6 @@ object Runtime {
                 }
                 val fresh = org.json.JSONObject()
                 syncLocalProvider(c, fresh)
-                syncClawRouterProvider(c, fresh)
                 configFile.writeText(fresh.toString(2))
                 return
             }
@@ -341,7 +400,6 @@ object Runtime {
                 syncLocalProvider(c, obj)
                 configFile.writeText(obj.toString(2))
             } catch (_: Exception) {
-                // If parsing failed, try not to delete custom settings; keep file and attempt to parse object
                 val bak = File(cfgDir, "opencode.json.corrupt-" + System.currentTimeMillis())
                 try { configFile.copyTo(bak, overwrite = true) } catch (_: Exception) {}
                 val fresh = org.json.JSONObject()
@@ -354,7 +412,6 @@ object Runtime {
     private fun cleanBrokenProviderOverrides(rootObj: org.json.JSONObject) {
         try {
             val prov = rootObj.optJSONObject("provider") ?: return
-            // Purge ClawRouter completely
             prov.remove("clawrouter")
 
             // If openrouter was overridden with empty models or broken @ai-sdk/openai, purge it so built-in provider works
@@ -367,14 +424,39 @@ object Runtime {
                 }
             }
 
-            // Fix local provider from broken @ai-sdk/openai to @ai-sdk/openai-compatible
-            val localProv = prov.optJSONObject("local")
-            if (localProv != null) {
-                if (localProv.optString("npm") == "@ai-sdk/openai") {
-                    localProv.put("npm", "@ai-sdk/openai-compatible")
+            // Fix local, rotator, and custom third-party relays from @ai-sdk/openai to @ai-sdk/openai-compatible
+            val it = prov.keys()
+            while (it.hasNext()) {
+                val pid = it.next()
+                val p = prov.optJSONObject(pid) ?: continue
+                val npm = p.optString("npm", "")
+                val opts = p.optJSONObject("options")
+                val baseUrl = opts?.optString("baseURL", "") ?: ""
+                if (pid == "local" || pid == "opencode-ip-rotator") {
+                    if (npm.isEmpty() || npm == "@ai-sdk/openai") {
+                        p.put("npm", "@ai-sdk/openai-compatible")
+                    }
+                } else if (baseUrl.isNotEmpty() && !baseUrl.contains("api.openai.com")) {
+                    if (npm == "@ai-sdk/openai" || (pid == "ollama" && npm.isEmpty())) {
+                        p.put("npm", "@ai-sdk/openai-compatible")
+                    }
                 }
             }
         } catch (_: Exception) {}
+    }
+
+    private fun buildLocalModelEntry(displayName: String, isImg: Boolean, isVlm: Boolean): org.json.JSONObject {
+        return org.json.JSONObject()
+            .put("name", displayName)
+            .put("free", true)
+            .put("attachment", isImg || isVlm)
+            .put("tool_call", !isImg)
+            .put("temperature", true)
+            .put("cost", org.json.JSONObject().put("input", 0).put("output", 0))
+            .put("limit", org.json.JSONObject()
+                .put("context", if (isImg) 4096 else 8192)
+                .put("output", 4096)
+            )
     }
 
     /** Synchronizes local provider (GGUF & Hugging Face models) in opencode.json for OpenCode v1.
@@ -387,11 +469,11 @@ object Runtime {
 
             val mDir = modelsDir(c)
             val files = mDir.listFiles()?.filter { file ->
-                file.isFile && !file.name.endsWith(".part") &&
-                (file.name.endsWith(".gguf") || file.name.endsWith(".safetensors") || file.name.endsWith(".bin"))
+                file.isFile && file.length() > 1024 && !file.name.endsWith(".part") &&
+                !file.name.startsWith("mmproj-", true) &&
+                (file.name.endsWith(".gguf", true) || file.name.endsWith(".safetensors", true) || file.name.endsWith(".bin", true))
             } ?: emptyList()
 
-            // If no local models are downloaded, remove empty/ghost local provider
             if (files.isEmpty()) {
                 prov.remove("local")
                 return
@@ -401,22 +483,19 @@ object Runtime {
             localProv.put("name", "Локальные модели (GGUF)")
             localProv.put("npm", "@ai-sdk/openai-compatible")
             localProv.put("options", org.json.JSONObject()
-                .put("baseURL", "http://127.0.0.1:8088/v1")
+                .put("baseURL", "http://127.0.0.1:${LocalBridgeServer.DEFAULT_PORT}/v1")
                 .put("apiKey", "local")
             )
 
             val modelsObj = org.json.JSONObject()
             for (file in files) {
                 val catItem = ModelDownloader.CATALOG.find { it.filename == file.name }
-                val id = catItem?.id ?: file.name.substringBeforeLast('.').lowercase().replace("[^a-z0-9_-]".toRegex(), "-")
-                val displayName = catItem?.name?.let { if (it.contains("Локально")) it else "$it (Локально)" }
+                val id = ModelDownloader.deriveModelId(file.name)
+                val displayName = catItem?.name?.let { if (it.contains("(Локально)")) it else "$it (Локально)" }
                     ?: "${file.name.substringBeforeLast('.')} (Локально)"
                 val isImg = (catItem?.type == "image") || file.name.contains("safetensors", true) || id.contains("walkyrie")
-                modelsObj.put(id, org.json.JSONObject()
-                    .put("name", displayName)
-                    .put("free", true)
-                    .put("attachment", isImg)
-                )
+                val isVlm = (catItem?.type == "vlm") || id.contains("smolvlm") || id.contains("vl")
+                modelsObj.put(id, buildLocalModelEntry(displayName, isImg, isVlm))
             }
             localProv.put("models", modelsObj)
         } catch (_: Exception) {}
@@ -429,26 +508,26 @@ object Runtime {
             val home = home(c, uid)
             val cfgFile = File(home, ".config/opencode/opencode.json")
             val obj = if (cfgFile.exists()) {
-                try { org.json.JSONObject(cfgFile.readText()) } catch (_: Exception) { org.json.JSONObject() }
+                try { org.json.JSONObject(cleanJson(cfgFile.readText())) } catch (_: Exception) { org.json.JSONObject() }
             } else org.json.JSONObject()
 
             val prov = obj.optJSONObject("provider") ?: org.json.JSONObject().also { obj.put("provider", it) }
+            prov.remove("clawrouter")
             val localProv = prov.optJSONObject("local") ?: org.json.JSONObject().also { prov.put("local", it) }
             localProv.put("name", "Локальные модели (GGUF)")
             localProv.put("npm", "@ai-sdk/openai-compatible")
             localProv.put("options", org.json.JSONObject()
-                .put("baseURL", "http://127.0.0.1:8088/v1")
+                .put("baseURL", "http://127.0.0.1:${LocalBridgeServer.DEFAULT_PORT}/v1")
                 .put("apiKey", "local")
             )
 
             val modelsObj = localProv.optJSONObject("models") ?: org.json.JSONObject().also { localProv.put("models", it) }
-            val isImg = id.contains("walkyrie") || filename.contains("safetensors") || id.contains("image")
+            val catItem = ModelDownloader.CATALOG.find { it.filename == filename || it.id == id }
+            val resolvedId = ModelDownloader.deriveModelId(filename)
+            val isImg = (catItem?.type == "image") || filename.contains("safetensors", true) || resolvedId.contains("walkyrie")
+            val isVlm = (catItem?.type == "vlm") || resolvedId.contains("smolvlm") || resolvedId.contains("vl")
             val displayName = if (name.contains("(Локально)")) name else "$name (Локально)"
-            modelsObj.put(id, org.json.JSONObject()
-                .put("name", displayName)
-                .put("free", true)
-                .put("attachment", isImg)
-            )
+            modelsObj.put(resolvedId, buildLocalModelEntry(displayName, isImg, isVlm))
 
             cfgFile.parentFile?.mkdirs()
             cfgFile.writeText(obj.toString(2))
@@ -462,12 +541,13 @@ object Runtime {
             val home = home(c, uid)
             val cfgFile = File(home, ".config/opencode/opencode.json")
             if (!cfgFile.exists()) return
-            val obj = try { org.json.JSONObject(cfgFile.readText()) } catch (_: Exception) { return }
-            val prov = obj.optJSONObject("provider") ?: return
-            val localProv = prov.optJSONObject("local") ?: return
-            val modelsObj = localProv.optJSONObject("models") ?: return
-            modelsObj.remove(id)
-            if (modelsObj.length() == 0) {
+            val obj = try { org.json.JSONObject(cleanJson(cfgFile.readText())) } catch (_: Exception) { return }
+            syncLocalProvider(c, obj)
+            val prov = obj.optJSONObject("provider")
+            val localProv = prov?.optJSONObject("local")
+            val modelsObj = localProv?.optJSONObject("models")
+            modelsObj?.remove(id)
+            if (modelsObj != null && modelsObj.length() == 0) {
                 prov.remove("local")
             }
             cfgFile.writeText(obj.toString(2))
@@ -482,22 +562,26 @@ object Runtime {
             val cfg = File(home, ".config/opencode").apply { mkdirs() }
             val dotOpencode = File(home, ".opencode").apply { mkdirs() }
 
-            // Purge poisoned/empty models cache from previous builds
+            val online = isOnline(c)
             val cacheDir = File(home, ".cache/opencode").apply { mkdirs() }
             val cacheModels = File(cacheDir, "models.json")
+            val rootCacheModels = File(root, "root/.cache/opencode/models.json")
             if (cacheModels.exists()) {
                 try {
                     val txt = cacheModels.readText()
-                    if (txt.length < 50000 || txt.contains("\"models\": {}") || !txt.contains("\"anthropic\"")) {
+                    val invalid = txt.contains("\"models\": {}") || (txt.length < 50000 && !txt.contains("\"anthropic\""))
+                    if (invalid && (online || rootCacheModels.exists())) {
                         cacheModels.delete()
                     }
                 } catch (_: Exception) {
                     cacheModels.delete()
                 }
             }
-            val rootCacheModels = File(root, "root/.cache/opencode/models.json")
             if (!cacheModels.exists() && rootCacheModels.exists()) {
                 try { rootCacheModels.copyTo(cacheModels, overwrite = true) } catch (_: Exception) {}
+            }
+            if (!cacheModels.exists() && !online) {
+                try { cacheModels.writeText("{}") } catch (_: Exception) {}
             }
 
             // Ensure tmp directories exist with proper access
@@ -587,7 +671,7 @@ object Runtime {
                 - Any package name, e.g. `org.telegram.messenger`
 
                 You can also output an interactive HUD button:
-                `<button data-action="open_app" data-target="telegram">📱 Открыть Telegram</button>`
+                `<button data-action="open_app" data-target="telegram">Открыть Telegram</button>`
             """.trimIndent() + "\n"
 
             try {
@@ -616,7 +700,7 @@ object Runtime {
                 Examples: `openpreview index.html`, `openpreview site/index.html`
 
                 Or output an interactive button:
-                `<button data-action="preview" data-path="index.html">🌐 Предпросмотр</button>`
+                `<button data-action="preview" data-path="index.html">Предпросмотр</button>`
             """.trimIndent() + "\n"
 
             try {
@@ -653,7 +737,7 @@ object Runtime {
 
             // Global System Prompt (AGENTS.md)
             val promptText = """
-# OpenCode Mobile Environment & Instructions (v2.0.1)
+# OpenCode Mobile Environment & Instructions (v2.0.2)
 
 You are running inside **OpenCode Mobile** directly on native Android (ARM64 / aarch64 architecture).
 You have full access to a complete Linux userspace environment, terminal tools, and native Android integrations.
@@ -700,21 +784,18 @@ For example:
             File(dotOpencode, "AGENTS.md").writeText(promptText)
 
             val readme = File(home, "README.md")
-            if (!readme.exists() || !readme.readText().contains("v2.0.1")) {
+            if (!readme.exists() || !readme.readText().contains("v2.0.2")) {
                 readme.writeText("""
-# 🚀 OpenCode Mobile v2.0.1
+# OpenCode Mobile v2.0.2
 
-Добро пожаловать в **OpenCode Mobile** — полноценную среду разработки и ИИ-ассистента на Android!
+Мобильная среда разработки и локальный ИИ-ассистент на Android (ARM64).
 
-### 🌟 Возможности
-- 🤖 **Топовые ИИ-модели**: Бесплатные и платные модели (Claude, GPT-4o, DeepSeek, Qwen).
-- 🐧 **Настоящий Linux**: Терминал, компиляторы, Python, Node.js, Git.
-- ⚡ **120Hz HUD**: Сверхплавный интерфейс с поддержкой высокой частоты обновления.
-- 🌐 **Встроенный Веб-Предпросмотр**: Запуск сайтов и HTML/CSS/JS проектов прямо в приложении.
-- 📱 **Интеграция с Android**: Открытие приложений агентом (`openapp telegram`).
-- 📊 **Подсчёт диффов**: Автоматический вывод `+N -M` в конце сообщений.
-
-Удачного кодинга! ✨
+### Возможности
+- **Модели**: Поддержка облачных и локальных офлайн-моделей (GGUF через llama-server).
+- **Linux-окружение**: Терминал, компиляторы, Python, Node.js, Git.
+- **Встроенный веб-предпросмотр**: Запуск сайтов и HTML/CSS/JS проектов прямо в приложении.
+- **Интеграция с Android**: Открытие приложений агентом (`openapp telegram`).
+- **Подсчёт диффов**: Автоматический вывод `+N -M` в конце сообщений.
                 """.trimIndent())
             }
         } catch (_: Exception) {}
@@ -753,21 +834,9 @@ For example:
         val root = rootfs(c)
         val home = home(c, uid)
         val ptmp = File(c.filesDir, "proot-tmp").apply { mkdirs() }
+        val offlineMode = Prefs.flag(c, "offline_mode", false) || !isOnline(c)
 
-        val a = mutableListOf(
-            "$lib/libproot.so", "--kill-on-exit", "--link2symlink", "--sysvipc", "-0",
-            "-r", root.path, "-w", "/root",
-            "-b", "/dev", "-b", "/proc", "-b", "/sys",
-            "-b", "/dev/urandom:/dev/random",
-            "-b", "/proc/self/fd:/dev/fd",
-            "-b", "/proc/self/fd/0:/dev/stdin",
-            "-b", "/proc/self/fd/1:/dev/stdout",
-            "-b", "/proc/self/fd/2:/dev/stderr",
-            "-b", "${home.path}:/root",
-        )
-        if (File("/storage/emulated/0").exists()) {
-            a += listOf("-b", "/storage/emulated/0:/storage/emulated/0", "-b", "/storage/emulated/0:/sdcard")
-        }
+        val a = prootBase(c, uid)
         a += listOf("/usr/local/bin/opencode", "serve", "--hostname", "127.0.0.1", "--port", port.toString())
 
         val pb = ProcessBuilder(a).redirectErrorStream(true).directory(c.filesDir)
@@ -784,6 +853,7 @@ For example:
             put("OPENCODE_SERVER_PASSWORD", password)
             put("OPENCODE_DISABLE_AUTOUPDATE", "1") // stay on 1.x: no `upgrade --major` behind our back
             put("OPENCODE_DISABLE_PRUNE", "1")
+            if (offlineMode) put("OPENCODE_DISABLE_MODELS_FETCH", "1")
             put("DISABLE_TELEMETRY", "1")
             put("DO_NOT_TRACK", "1")
         }

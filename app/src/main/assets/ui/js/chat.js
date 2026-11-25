@@ -266,7 +266,7 @@ async function openChild(sid){try{if(!O.child(sid)){const s=await api('GET','/se
 // ---- banners / dock ----
 function renderRevert(){const s=cur();revEl.textContent='';
   if(trail.length&&S.sid&&O.child(S.sid)){revEl.classList.remove('hide');revEl.append(h('div',{class:'card revert-banner',style:{display:'flex',alignItems:'center',gap:'10px'}},h('span',{class:'grow'},'Сессия субагента'),h('button',{class:'btn sm',onclick:()=>{const p=trail.pop();O.openSession(p)}},'Назад')));return}
-  if(s&&s.revert){revEl.classList.remove('hide');revEl.append(h('div',{class:'card revert-banner',style:{display:'flex',alignItems:'center',gap:'10px'}},h('span',{class:'revert-icon'},O.icon('undo')),h('span',{class:'grow',style:{color:'#ffffff'}},'Изменения отменены'),h('button',{class:'btn sm',onclick:doRedo},O.icon('redo'),'Вернуть')))}
+  if(s&&s.revert){revEl.classList.remove('hide');revEl.append(h('div',{class:'card revert-banner',style:{display:'flex',alignItems:'center',gap:'10px'}},h('span',{class:'revert-icon'},O.icon('undo')),h('span',{class:'grow',style:{color:'var(--fg)'}},'Изменения отменены'),h('button',{class:'btn sm',onclick:doRedo},O.icon('redo'),'Вернуть')))}
   else revEl.classList.add('hide')}
 function renderTodos(){const t=(S.todos[S.sid]||[]);todoEl.textContent='';
   if(!t.length||t.every(x=>x.status==='completed')){todoEl.classList.add('hide');return}
@@ -275,7 +275,8 @@ function renderTodos(){const t=(S.todos[S.sid]||[]);todoEl.textContent='';
   todoEl.append(h('div',{class:'card',style:{padding:'8px 12px'}},h('button',{style:{display:'flex',alignItems:'center',gap:'8px',width:'100%'},onclick:()=>list.classList.toggle('hide')},O.icon('list'),h('b',{class:'grow',style:{textAlign:'left'}},'Задачи '+done+'/'+t.length),O.icon('chevD')),list))}
 function renderStatus(){const s=S.status[S.sid];statusEl.textContent='';
   if(!s||s.type==='idle'){statusEl.classList.add('hide');return}
-  statusEl.classList.remove('hide');statusEl.append(h('span',{class:'spin'}),h('span',null,s.type==='retry'?('Повтор (попытка '+s.attempt+')'+(s.message?': '+s.message:'')):'Выполняется'))}
+  statusEl.classList.remove('hide');const mName=S.model&&S.model.modelID?(' · '+S.model.modelID):'';
+  statusEl.append(h('span',{class:'spin'}),h('span',null,s.type==='retry'?('Повтор (попытка '+s.attempt+')'+(s.message?': '+s.message:'')):('Генерация ответа'+mName)))}
 function renderDock(){dockEl.textContent='';
   const curPerms=S.perms.filter(p=>p.sessionID===S.sid);
   const curQuestions=S.questions.filter(q=>q.sessionID===S.sid);
@@ -294,12 +295,12 @@ function permCard(p){const btns=[];
   return h('div',{class:'hud-dock-card'},
     h('div',{class:'hud-dock-header'},
       h('div',{class:'hud-dock-header-left'},
-        h('div',{class:'badge-icon',style:{background:'rgba(245,158,11,0.15)',color:'#fbbf24'}},O.icon('shield')),
+        h('div',{class:'badge-icon',style:{background:'var(--acc-soft)',color:'var(--acc)'}},O.icon('shield')),
         h('b',null,O.tr('Permission Request','Запрос разрешения'))),
-      h('span',{class:'mut',style:{fontSize:'11.5px',background:'rgba(255,255,255,0.06)',padding:'3px 8px',borderRadius:'999px'}},p.title)),
+      h('span',{class:'mut',style:{fontSize:'11.5px',background:'var(--bg3)',padding:'3px 8px',borderRadius:'999px'}},p.title)),
     h('div',{class:'hud-dock-body'},
-      h('div',{style:{fontSize:'14px',fontWeight:'600',color:'#ffffff',marginBottom:'4px'}},p.title),
-      p.patterns.length?h('div',{class:'mono s mut',style:{background:'#141416',padding:'8px 10px',borderRadius:'10px',wordBreak:'break-all'}},p.patterns.join('\n')):null,
+      h('div',{style:{fontSize:'14px',fontWeight:'600',color:'var(--fg)',marginBottom:'4px'}},p.title),
+      p.patterns.length?h('div',{class:'mono s mut',style:{background:'var(--code)',padding:'8px 10px',borderRadius:'10px',wordBreak:'break-all'}},p.patterns.join('\n')):null,
       diff?h('details',{style:{marginTop:'6px'}},h('summary',{class:'s'},'Показать изменения'),O.unifiedEl(diff)):null),
     h('div',{class:'hud-dock-footer'},btns));
 }
@@ -365,7 +366,7 @@ function questionCard(q){const qs=q.questions||[];const sel=qs.map(()=>new Set()
       h('div',{class:'hud-dock-header-left'},
         h('div',{class:'badge-icon'},O.icon('help')),
         h('b',null,O.tr('OpenCode asks','OpenCode спрашивает'))),
-      h('span',{class:'mut',style:{fontSize:'11.5px',background:'rgba(255,255,255,0.06)',padding:'3px 8px',borderRadius:'999px'}},
+      h('span',{class:'mut',style:{fontSize:'11.5px',background:'var(--bg3)',padding:'3px 8px',borderRadius:'999px'}},
         qs.length>1?(qs.length+' '+O.tr('questions','вопроса')):(O.tr('Action needed','Требуется выбор')))),
     h('div',{class:'hud-dock-body'},body),
     h('div',{class:'hud-dock-footer'},
@@ -382,16 +383,16 @@ O.showQuotaAccountModal=msg=>{
     return;
   }
   quotaModalOpen=true;
-  const content=h('div',{style:{textAlign:'center',padding:'16px 8px 8px'}},
-    h('div',{style:{fontSize:'38px',marginBottom:'10px'}},'⚡'),
-    h('b',{style:{fontSize:'17px',display:'block',marginBottom:'8px'}},O.tr('Free Quota Limit Reached','Лимит бесплатной квоты исчерпан')),
+  const content=h('div',{style:{textAlign:'center',padding:'12px 8px 8px'}},
+    h('div',{class:'quota-hero-icon'},O.icon('zap')),
+    h('b',{style:{fontSize:'17px',display:'block',marginBottom:'8px',color:'var(--fg)'}},O.tr('Free Quota Limit Reached','Лимит бесплатной квоты исчерпан')),
     h('p',{class:'mut',style:{fontSize:'13.5px',lineHeight:'1.5',margin:'0 0 18px',textAlign:'center'}},
       O.tr(
         'You are currently using shared guest quota without an account. Sign in with Google or GitHub to receive your personal free OpenCode quota, or add your own provider API key.',
         'Вы используете общую квоту без авторизации, которая временно исчерпана.\n\nВойдите через Google или GitHub, чтобы получить персональную бесплатную квоту OpenCode, либо подключите собственный API ключ.'
       )
     ),
-    h('button',{class:'btn pri wide',style:{marginBottom:'10px',background:'linear-gradient(135deg,#2563eb,#7c3aed)',color:'#fff'},onclick:()=>{
+    h('button',{class:'btn pri wide',style:{marginBottom:'10px'},onclick:()=>{
       s.close();
       if(O.store.get('rotator_enabled',false)&&O.rotateIpNow){
         O.rotateIpNow();
@@ -399,7 +400,7 @@ O.showQuotaAccountModal=msg=>{
         O.openIpRotator();
       }
     }},O.icon('zap'),O.store.get('rotator_enabled',false)?O.tr('Rotate IP via Rotator & Retry','Сменить IP через Rotator и повторить'):O.tr('Bypass limit with OpenCode IP Rotator','Обойти лимит через OpenCode IP Rotator')),
-    h('button',{class:'btn pri wide',style:{marginBottom:'10px'},onclick:()=>{s.close();O.openAccount()}},O.icon('user'),O.tr('Sign in with Google / GitHub','Войти через Google / GitHub')),
+    h('button',{class:'btn wide',style:{marginBottom:'10px'},onclick:()=>{s.close();O.openAccount()}},O.icon('user'),O.tr('Sign in with Google / GitHub','Войти через Google / GitHub')),
     h('button',{class:'btn wide',style:{marginBottom:'10px'},onclick:()=>{s.close();O.openConnect()}},O.icon('key'),O.tr('Connect own API key','Подключить свой API ключ')),
     h('button',{class:'btn wide',onclick:()=>s.close()},O.tr('Later','Позже'))
   );
@@ -447,10 +448,20 @@ function updateChips(){
   else if(m)mName=m.modelID;
   const spanMo=modelChip.querySelector('span');
   if(spanMo)spanMo.textContent=mName;
-  const nokey=!m&&!S.offline&&S.up;
+  const nokey=!m&&S.up;
   nokeyEl.classList.toggle('hide',!nokey);
-  ta.disabled=!!S.offline&&!S.up;
-  ta.placeholder=ta.disabled?(O.tr('Offline — reading cached chats','Офлайн — чтение кэшированных чатов')):(O.tr('Chat with OpenCode...','Чат с OpenCode...'));
+  const isOffline=O.isOfflineMode&&O.isOfflineMode();
+  const hasLocals=O.native.getLocalModels?O.native.getLocalModels().some(x=>x.downloaded):false;
+  ta.disabled=!S.up&&!!S.offline;
+  if(ta.disabled){
+    ta.placeholder=O.tr('Offline — reading cached chats','Офлайн — чтение кэшированных чатов');
+  }else if(isOffline){
+    ta.placeholder=hasLocals
+      ?O.tr('Offline mode — local model ready...','Офлайн-режим — локальная модель готова...')
+      :O.tr('Offline mode — download a local model in Settings...','Офлайн-режим — скачайте локальную модель...');
+  }else{
+    ta.placeholder=O.tr('Chat with OpenCode...','Чат с OpenCode...');
+  }
   updateSend();
 }
 function updateSend(){
@@ -536,6 +547,29 @@ async function onSend(){
     if(sc){if(!S.model)return O.openConnect();clear();try{const sid=await sess();api('POST','/session/'+sid+'/command',{command:sc.name,arguments:cm[2]||'',agent:S.agent,model:modelStr()},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}}
 
   if(!S.model){O.toast('Подключите провайдера, чтобы выбрать модель');O.openConnect();return}
+  if((O.isOfflineMode&&O.isOfflineMode())&&S.model.providerID!=='local'){
+    const locals=(O.native.getLocalModels?O.native.getLocalModels():[]).filter(x=>x.downloaded);
+    if(locals.length){
+      O.setModel('local',locals[0].id);
+      O.toast(O.tr('Offline mode: switched to local model ','Офлайн: переключено на локальную модель ')+(locals[0].name||locals[0].id),2400);
+    }else{
+      O.toast(O.tr('No internet: download a local model in Settings for offline chat','Нет сети: скачайте локальную модель для работы офлайн'),3500);
+      if(O.openLocalModels)O.openLocalModels();
+      return;
+    }
+  }
+  if(S.model&&S.model.providerID==='local'){
+    try{
+      if(O.native.startLocalBridge)O.native.startLocalBridge();
+      if(O.native.syncLocalModels)O.native.syncLocalModels();
+      if(O.native.preloadLocalModel)O.native.preloadLocalModel(S.model.modelID);
+      if(!S.providers.some(p=>p.id==='local'&&p.models&&p.models[S.model.modelID])){
+        try{await api('POST','/instance/dispose',null)}catch(_){}
+        await new Promise(r=>setTimeout(r,200));
+        await O.loadMeta();
+      }
+    }catch(_){}
+  }
   if(text.startsWith('!')){const cmd=text.slice(1).trim();
     if(/^opencode(\s+tui)?\s*$/i.test(cmd)){O.toast('Приложение уже является интерфейсом OpenCode. TUI — во вкладке «Терминал» → Shell, агент — во вкладке «Чат»',6000);clear();return}
     clear();try{const sid=await sess();api('POST','/session/'+sid+'/shell',{agent:S.agent,model:S.model,command:cmd},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}

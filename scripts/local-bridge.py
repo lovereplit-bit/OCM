@@ -69,8 +69,8 @@ class LocalBridgeHandler(BaseHTTPRequestHandler):
     def handle_get_models(self):
         models = [
             {"id": "walkyrie", "object": "model", "owned_by": "local", "name": "Walkyrie (Локально, Text-to-Image)", "type": "image"},
-            {"id": "sakura-iris-3b", "object": "model", "owned_by": "local", "name": "Sakura-Iris-3B (Локально)", "type": "llm"},
-            {"id": "nanosaur-2", "object": "model", "owned_by": "local", "name": "Nanosaur 2 (Локально, Vision)", "type": "vlm"},
+            {"id": "sakura-iris-3b", "object": "model", "owned_by": "local", "name": "Sakura-Iris-3B (Локально)", "type": "image"},
+            {"id": "smolvlm-500m", "object": "model", "owned_by": "local", "name": "SmolVLM-500M-Instruct (Локально, Vision)", "type": "vlm"},
             {"id": "qwen2.5-coder-0.5b", "object": "model", "owned_by": "local", "name": "Qwen2.5-Coder-0.5B (Локально)", "type": "llm"},
             {"id": "qwen2.5-coder-1.5b", "object": "model", "owned_by": "local", "name": "Qwen2.5-Coder-1.5B (Локально)", "type": "llm"},
             {"id": "deepseek-r1-distill-qwen-1.5b", "object": "model", "owned_by": "local", "name": "DeepSeek-R1-1.5B (Локально)", "type": "llm"},
@@ -84,7 +84,7 @@ class LocalBridgeHandler(BaseHTTPRequestHandler):
         models_dir = getattr(self.server, "models_dir", DEFAULT_MODELS_DIR)
         if os.path.isdir(models_dir):
             for fname in os.listdir(models_dir):
-                if fname.endswith((".gguf", ".safetensors", ".bin")):
+                if fname.endswith((".gguf", ".safetensors", ".bin")) and not fname.lower().startswith("mmproj-"):
                     base = os.path.splitext(fname)[0].lower()
                     if not any(m["id"] == base for m in models):
                         models.append({
@@ -108,7 +108,7 @@ class LocalBridgeHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": {"message": f"Invalid JSON: {e}"}}).encode("utf-8"))
             return
 
-        model = req.get("model", "sakura-iris-3b").lower()
+        model = req.get("model", "qwen2.5-coder-0.5b").lower()
         stream = req.get("stream", True)
         messages = req.get("messages", [])
 
@@ -121,66 +121,48 @@ class LocalBridgeHandler(BaseHTTPRequestHandler):
                 elif isinstance(c, list):
                     user_prompt = " ".join([p.get("text", "") for p in c if isinstance(p, dict) and p.get("type") == "text"])
 
-        is_walkyrie = "walkyrie" in model or "valkyrie" in model or ("image" in model and "нарисуй" in user_prompt.lower())
-        is_nanosaur = "nanosaur" in model
+        is_image = "walkyrie" in model or "sakura" in model
 
-        if is_walkyrie:
+        if is_image:
             ts = time.strftime("%Y%m%d_%H%M%S")
             gen_dir = "/storage/emulated/0/OpenCode/generated"
             os.makedirs(gen_dir, exist_ok=True)
-            out_file = os.path.join(gen_dir, f"walkyrie_{ts}.svg")
+            out_file = os.path.join(gen_dir, f"local_{ts}.svg")
 
-            # Generate SVG graphics canvas
-            clean_prompt = (user_prompt[:50] + "...") if len(user_prompt) > 50 else (user_prompt or "Creative Visual Artwork")
+            clean_prompt = (user_prompt[:50] + "...") if len(user_prompt) > 50 else (user_prompt or "Visual Composition")
             svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" width="768" height="768" viewBox="0 0 768 768">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1e1b4b"/>
-      <stop offset="50%" stop-color="#431407"/>
+      <stop offset="0%" stop-color="#0d0d0f"/>
+      <stop offset="50%" stop-color="#161822"/>
       <stop offset="100%" stop-color="#0f172a"/>
     </linearGradient>
   </defs>
   <rect width="768" height="768" fill="url(#bg)"/>
-  <circle cx="260" cy="280" r="160" fill="#a855f7" opacity="0.35"/>
-  <circle cx="520" cy="460" r="210" fill="#f97316" opacity="0.25"/>
-  <rect x="50" y="580" width="668" height="140" rx="16" fill="#0d0d12" opacity="0.85"/>
-  <text x="80" y="628" font-family="sans-serif" font-size="28" font-weight="bold" fill="#fab283">🎨 Walkyrie 2.8GB • Text-to-Image</text>
+  <circle cx="260" cy="280" r="160" fill="#38bdf8" opacity="0.22"/>
+  <circle cx="520" cy="460" r="210" fill="#e4e4e7" opacity="0.12"/>
+  <rect x="50" y="580" width="668" height="140" rx="16" fill="#141418" opacity="0.9"/>
+  <text x="80" y="628" font-family="sans-serif" font-size="26" font-weight="bold" fill="#38bdf8">{model} · Local Preview</text>
   <text x="80" y="668" font-family="sans-serif" font-size="20" fill="#ffffff">«{clean_prompt}»</text>
-  <text x="80" y="698" font-family="sans-serif" font-size="15" fill="#9ca3af">Local Generation • OpenCode Mobile</text>
+  <text x="80" y="698" font-family="sans-serif" font-size="15" fill="#a1a1aa">Local Generation · OpenCode Mobile</text>
 </svg>"""
             with open(out_file, "w", encoding="utf-8") as f:
                 f.write(svg_content)
 
             resp_text = (
-                f"🎨 **Walkyrie Text-to-Image (Локально)**\n\n"
-                f"Успешно сгенерировано изображение по запросу:\n"
-                f"> *«{user_prompt or 'Creative artwork'}»*\n\n"
-                f"![Walkyrie Image](file://{out_file})\n\n"
-                f"📁 **Файл сохранён:** `{out_file}`\n\n"
-                f'<button data-action="preview" data-path="generated/walkyrie_{ts}.svg">🖼️ Открыть изображение</button>\n\n'
+                f"**{model} (Локально)**\n\n"
+                f"Сформировано локальное изображение по запросу:\n"
+                f"> *«{user_prompt or 'Visual composition'}»*\n\n"
+                f"![Local Image](file://{out_file})\n\n"
+                f"**Файл сохранён:** `{out_file}`\n\n"
+                f'<button data-action="preview" data-path="generated/local_{ts}.svg">Открыть изображение</button>\n\n'
                 f"+0 -0"
             )
-        elif is_nanosaur:
-            resp_text = (
-                f"👁️ **Nanosaur 2 (Vision-Language · Локально)**\n\n"
-                f"Мультимодальная модель Nanosaur 2 (1.3B LLM + Vision Projector) обработала запрос:\n"
-                f"> *«{user_prompt}»*\n\n"
-                f"```python\n"
-                f"# Nanosaur 2 localized vision processing\n"
-                f"print('Nanosaur 2 analysis completed successfully.')\n"
-                f"```\n\n"
-                f"+5 -0"
-            )
         else:
-            name = "Sakura-Iris-3B" if "sakura" in model else model.title()
             resp_text = (
-                f"🤖 **{name} (Локально)**\n\n"
-                f"Ответ на запрос: *«{user_prompt}»*\n\n"
-                f"Локальная модель выполнила генерацию офлайн через локальный мост OpenCode v1.\n\n"
-                f"```bash\n"
-                f"echo \"Модель: {name} [Локально]\"\n"
-                f"```\n\n"
-                f"+3 -0"
+                f"**{model} (Python fallback)**\n\n"
+                f"Для полноценного офлайн-инференса GGUF используйте встроенный Android Runtime (`llama-server` на порту 8089).\n\n"
+                f"+0 -0"
             )
 
         mid = "chatcmpl-" + uuid.uuid4().hex[:16]
@@ -207,6 +189,7 @@ class LocalBridgeHandler(BaseHTTPRequestHandler):
                         "choices": [{"index": 0, "delta": {"content": delta}, "finish_reason": None}]
                     }
                     self.wfile.write(f"data: {json.dumps(data)}\n\n".encode("utf-8"))
+                    self.wfile.write(b"")
                     self.wfile.flush()
                     time.sleep(0.02)
 
@@ -238,13 +221,13 @@ class LocalBridgeHandler(BaseHTTPRequestHandler):
             req = json.loads(body)
         except Exception:
             req = {}
-        prompt = req.get("prompt", "Creative artwork")
+        prompt = req.get("prompt", "Visual composition")
         ts = time.strftime("%Y%m%d_%H%M%S")
         gen_dir = "/storage/emulated/0/OpenCode/generated"
         os.makedirs(gen_dir, exist_ok=True)
-        out_file = os.path.join(gen_dir, f"walkyrie_{ts}.svg")
+        out_file = os.path.join(gen_dir, f"local_{ts}.svg")
         with open(out_file, "w", encoding="utf-8") as f:
-            f.write(f'<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="#2d1b4e"/><text x="30" y="260" fill="#fff" font-size="20">Walkyrie: {prompt[:30]}</text></svg>')
+            f.write(f'<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="#0d0d0f"/><text x="30" y="260" fill="#e4e4e7" font-size="20">Local: {prompt[:30]}</text></svg>')
 
         self._set_cors(200)
         self.end_headers()

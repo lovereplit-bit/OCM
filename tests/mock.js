@@ -1,6 +1,6 @@
 (function(){
 const srv={sessions:[],msgs:{},calls:[]};window.__srv=srv;
-const DEF={version:'1.0.8',code:1,user:'dev@example.com',name:'Dev',guest:false,googleConfigured:true,installed:true,core:'v1.18.5',perms:{notifications:true,files:true,install:true,battery:false},flags:{snd_done:true,snd_action:true,snd_quota:false,noseccomp:false},ready:true};
+const DEF={version:'1.0.8',code:1,user:'dev@example.com',name:'Dev',guest:false,googleConfigured:true,installed:true,core:'v1.18.5',perms:{notifications:true,files:true,install:true,battery:false},flags:{snd_done:true,snd_action:true,snd_quota:false,noseccomp:false},ready:true,online:true,offlineMode:false};
 const route=(method,path,body)=>{const u=new URL('http://x'+path),p=u.pathname;srv.calls.push({method,p,q:u.search,body:body?JSON.parse(body):null});
  if(p==='/config/providers')return{providers:[{id:'opencode',name:'OpenCode Zen',models:{
    'big-pickle':{id:'big-pickle',name:'Big Pickle',limit:{context:200000},cost:{input:0,output:0},variants:{low:{},high:{}}},
@@ -43,12 +43,13 @@ window.OC={
  resetInstall(){window.__resetInstall=1;OCEvent('install',{pct:30});setTimeout(()=>OCEvent('install',{done:true}),20)},
  start(){setTimeout(()=>OCEvent('ready',{}),10)},restartServer(){window.__restarted=1},resetConfig(){window.__resetConfig=1},minimize(){},grant(k){window.__granted=k},setFlag(k,v){(window.__flags=window.__flags||{})[k]=v},testSound(){},notify(k,t,m){},
  http(id,m,p,b){setTimeout(()=>{try{OCEvent('http',{id,status:200,ct:'application/json',body:JSON.stringify(route(m,p,b))})}catch(e){OCEvent('http',{id,status:500,ct:'text/plain',body:String(e)})}},4)},
+ extHttp(id,m,u,h,b){setTimeout(()=>OCEvent('exthttp',{id,ok:false,status:0,ct:'',body:'',err:'mock offline'}),4)},
  drop(){},sseStart(){sse=true;setTimeout(()=>OCEvent('sse',{t:'open'}),5)},sseStop(){},wsOpen(id){setTimeout(()=>{OCEvent('ws',{id,t:'open'});OCEvent('ws',{id,t:'msg',d:'root@phone:~# '})},5)},wsSend(id,t){(window.__wsSent=window.__wsSent||[]).push(t)},wsClose(){},
  ls:p=>JSON.stringify({ok:true,path:p,items:[{name:'app',dir:true},{name:'notes.txt',dir:false}]}),fs:()=>JSON.stringify({ok:true}),readText:()=>JSON.stringify({ok:true,text:'abc'}),writeText:()=>JSON.stringify({ok:true}),
  cfgRead:()=>window.__cfg||'{\n // comment\n "plugin":["a"],\n "mcp":{"ctx7":{"type":"remote","url":"https://m.example/mcp","enabled":true}}\n}',cfgWrite(t){window.__cfg=t;return JSON.stringify({ok:true})},readLog:()=>'log line',
  pickFile(k,d){window.__picked=[k,d]},copy(t){window.__copied=t},pasteText:()=>'pasted',share(t){window.__shared=t},openLink(u){window.__opened=u},
  openApp(t){return true},preparePreview(p){return ''},startVoiceInput(l){},
- downloadModel(id,url,f,n){return JSON.stringify({ok:true})},cancelModelDownload(id){return JSON.stringify({ok:true})},deleteModel(id,f){return JSON.stringify({ok:true})},getLocalModels(){return '[]'},
+ downloadModel(id,url,f,n){return JSON.stringify({ok:true})},cancelModelDownload(id){return JSON.stringify({ok:true})},deleteModel(id,f){return JSON.stringify({ok:true})},getLocalModels(){return '[]'},syncLocalModels(){return '[]'},preloadLocalModel(){return true},isOnline(){return true},
  startLocalBridge(){return true},getLocalBridgeStatus(){return JSON.stringify({running:true,port:8088})},
  checkUpdates(){setTimeout(()=>OCEvent('update',{core:'v1.18.6'}),5)},applyAppUpdate(){},applyCoreUpdate(){}
 };

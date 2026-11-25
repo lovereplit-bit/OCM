@@ -4,7 +4,7 @@ const search=(ph,fn)=>h('input',{placeholder:ph,oninput:e=>fn(e.target.value.toL
 
 // ---- sessions drawer ----
 O.openSessions=()=>{
-  const list=h('div'),q=search(O.tr('Search sessions...','Поиск по сессиям...'),()=>draw());
+  const list=h('div'),summary=h('div',{class:'sess-summary-bar'}),q=search(O.tr('Search sessions...','Поиск по сессиям...'),()=>draw());
   const navItem=(ic,label,fn)=>h('button',{class:'drawer-nav-item',onclick:()=>{s.close();fn();}},O.icon(ic),h('span',null,label));
   const nav=h('div',{style:{marginBottom:'12px',borderBottom:'1px solid var(--line)',paddingBottom:'8px'}},
     navItem('chat',O.tr('Chat','Чат'),()=>O.setTab('chat')),
@@ -12,18 +12,70 @@ O.openSessions=()=>{
     navItem('terminal',O.tr('Terminal','Терминал'),()=>O.setTab('term')),
     navItem('branch',O.tr('Changes','Изменения'),()=>O.setTab('changes')),
     navItem('sliders',O.tr('Settings','Настройки'),()=>O.openSettings()));
-  const newBtn=h('button',{class:'btn pri wide',onclick:async()=>{s.close();try{await O.newSession()}catch(e){O.toast(e.message)}}},O.icon('plus'),O.tr('New session','Новая сессия'));
-  const s=O.sheet(O.tr('Navigation & Sessions','Навигация и сессии'),h('div',null,nav,newBtn,h('div',{style:{height:'12px'}}),q,list),{drawer:true});
-  function draw(){list.textContent='';const f=q.value.toLowerCase();
-    const items=S.sessions.filter(x=>O.sessionTitle(x).toLowerCase().includes(f));
-    if(!items.length)list.append(h('div',{class:'mut',style:{padding:'20px',textAlign:'center'}},O.tr('No sessions yet','Сессий пока нет')));
-    items.forEach(x=>{const st=S.status[x.id],b=st&&st.type!=='idle',sm=x.summary;
-      list.append(h('div',{class:'settings-row'+(x.id===S.sid?' on':'')},
-        h('button',{class:'settings-row-text',onclick:()=>{s.close();O.openSession(x.id)}},
-          h('b',null,O.sessionTitle(x)),
-          h('span',null,O.ago(x.time.updated)+(sm&&(sm.additions||sm.deletions)?'  +'+sm.additions+' -'+sm.deletions:''))),
-        b?h('span',{class:'spin',style:{flex:'none'}}):null,h('button',{class:'ibtn s',style:{flex:'none'},onclick:()=>sessActions(x)},O.icon('dots'))))})}
-  draw();bus.on('sessions',()=>{if(s.root.isConnected)draw()})};
+  const newBtn=h('button',{class:'btn pri wide',onclick:async()=>{s.close();if(O.setTab)O.setTab('chat');try{await O.newSession()}catch(e){O.toast(e.message)}}},O.icon('plus'),O.tr('New session','Новая сессия'));
+  const s=O.sheet(O.tr('Navigation & Sessions','Навигация и сессии'),h('div',null,nav,newBtn,h('div',{style:{height:'12px'}}),summary,q,list),{drawer:true});
+  let filterMode='all';
+  const busyCheck=id=>O.isSessionBusy?O.isSessionBusy(id):!!(S.status[id]&&S.status[id].type!=='idle');
+  const unreadCheck=id=>O.hasUnreadMessages?O.hasUnreadMessages(id):Number((S.unread&&S.unread[id])||0);
+  function draw(){
+    list.textContent='';summary.textContent='';
+    const all=S.sessions||[];
+    const busyCount=all.filter(x=>busyCheck(x.id)).length;
+    const unreadCount=all.filter(x=>unreadCheck(x.id)>0).length;
+    if(busyCount||unreadCount){
+      const chip=(id,lbl,cnt)=>h('button',{class:'sess-filter-chip'+(filterMode===id?' on':''),onclick:()=>{filterMode=filterMode===id?'all':id;draw()}},lbl+(cnt!=null?' · '+cnt:''));
+      summary.style.display='flex';
+      if(busyCount)summary.append(chip('busy',O.tr('Running','В работе'),busyCount));
+      if(unreadCount)summary.append(chip('unread',O.tr('Unread','Новые ответы'),unreadCount));
+    }else{
+      filterMode='all';
+      summary.style.display='none';
+    }
+    const f=q.value.toLowerCase();
+    const items=all.filter(x=>{
+      if(!O.sessionTitle(x).toLowerCase().includes(f))return false;
+      if(filterMode==='busy')return busyCheck(x.id);
+      if(filterMode==='unread')return unreadCheck(x.id)>0;
+      return true;
+    });
+    if(!items.length)list.append(h('div',{class:'mut',style:{padding:'20px',textAlign:'center'}},O.tr('No matching sessions','Подходящих сессий нет')));
+    items.forEach(x=>{
+      const isCur=x.id===S.sid,isBusy=busyCheck(x.id),unread=unreadCheck(x.id),sm=x.summary;
+      const cls='sess-row'+(isCur?' on':'')+(isBusy?' busy':'')+(unread>0?' unread':'');
+      const lead=isBusy
+        ?h('span',{class:'spin sess-spin',title:O.tr('Running','В работе')})
+        :(unread>0
+          ?h('span',{class:'sess-dot unread',title:O.tr('Unseen agent response','Есть непросмотренный ответ агента')})
+          :(isCur
+            ?h('span',{class:'sess-dot current',title:O.tr('Current session','Текущий чат')})
+            :h('span',{class:'sess-ic'},O.icon('chat'))));
+      const badges=[];
+      if(isCur)badges.push(h('span',{class:'sess-pill cur'},O.tr('Active','Текущий')));
+      if(isBusy)badges.push(h('span',{class:'sess-pill busy'},O.tr('Working','Работает')));
+      if(unread>0)badges.push(h('span',{class:'sess-pill unread'},unread>1?O.tr('New · '+unread,'Новое · '+unread):O.tr('New reply','Новый ответ')));
+      const diffTxt=sm&&(sm.additions||sm.deletions)?('  +'+sm.additions+' -'+sm.deletions):'';
+      const subTxt=isBusy
+        ?O.tr('Agent is working...','Агент выполняет задачу...')
+        :(unread>0
+          ?O.tr('Unseen agent response · ','Непросмотренный ответ · ')+O.ago(x.time.updated)
+          :(O.ago(x.time.updated)+diffTxt));
+      list.append(h('div',{class:cls},
+        h('button',{class:'sess-main',onclick:()=>{s.close();if(O.setTab)O.setTab('chat');O.openSession(x.id)}},
+          lead,
+          h('div',{class:'sess-info'},
+            h('div',{class:'sess-title-row'},h('b',null,O.sessionTitle(x))),
+            badges.length?h('div',{class:'sess-badges'},badges):null,
+            h('span',{class:'sess-sub'},subTxt))),
+        h('button',{class:'ibtn s',style:{flex:'none'},onclick:e=>{e.stopPropagation();sessActions(x)}},O.icon('dots'))));
+    });
+  }
+  draw();
+  if(!S.offline&&O.api){
+    O.api('GET','/session/status').then(st=>{if(st&&typeof st==='object'){S.status={};for(const k in st)S.status[k]=st[k];if(s.root.isConnected)draw()}}).catch(()=>{});
+  }
+  const redraw=()=>{if(s.root.isConnected)draw()};
+  bus.on('sessions',redraw);bus.on('status',redraw);bus.on('open',redraw);
+};
 function sessActions(x){O.actions(O.sessionTitle(x),[
   {label:O.tr('Rename','Переименовать'),icon:'edit',fn:async()=>{const v=await O.ask(O.tr('Rename session','Переименование сессии'),null,O.sessionTitle(x));if(v)try{await api('PATCH','/session/'+x.id,{title:v})}catch(e){O.toast(e.message)}}},
   {label:x.share?O.tr('Stop sharing','Отключить шаринг'):O.tr('Share','Поделиться'),icon:'share',fn:async()=>{try{if(x.share){await api('DELETE','/session/'+x.id+'/share')}else{const r=await api('POST','/session/'+x.id+'/share',{});if(r.share){O.native.copy(r.share.url);O.native.share(r.share.url)}}}catch(e){O.toast(e.message)}}},
@@ -105,7 +157,7 @@ O.openModels=()=>{
 
     let items=all;
     if(onlyFree){
-      items=items.filter(x=>O.isModelFree(x));
+      items=items.filter(x=>O.isModelFree(x)||x.isLocal||x.isCustom);
     }
     if(filterText){
       const f=filterText.toLowerCase();
@@ -128,6 +180,7 @@ O.openModels=()=>{
       const aLoc=a.isLocal||a.pid==='local';
       const bLoc=b.isLocal||b.pid==='local';
       if(aLoc!==bLoc)return aLoc?-1:1;
+      if(Boolean(a.isCustom)!==Boolean(b.isCustom))return a.isCustom?-1:1;
       return (a.name||a.mid).localeCompare(b.name||b.mid);
     });
 
@@ -136,23 +189,27 @@ O.openModels=()=>{
       const isSel=activeKey===(x.pid+'/'+x.mid);
       const isFree=O.isModelFree(x);
       const isLoc=Boolean(x.isLocal || x.pid==='local' || (x.name&&x.name.includes('(Локально)')));
-      const badge=h('span',{class:'badge-model '+(isLoc?'badge-local':(isFree?'badge-free':'badge-paid'))},
-        isLoc?O.tr('Local','Локально'):(isFree?O.tr('Free','Бесплатно'):O.tr('Paid','Платная'))
-      );
+      const isCust=Boolean(x.isCustom && !isLoc);
+      const badgeCls=isLoc?'badge-local':(isCust?'badge-custom':(isFree?'badge-free':'badge-paid'));
+      const badgeTxt=isLoc?O.tr('Local','Локально'):(isCust?'API':(isFree?O.tr('Free','Бесплатно'):O.tr('Paid','Платная')));
+      const badge=h('span',{class:'badge-model '+badgeCls},badgeTxt);
 
       const ctx=x.m&&x.m.limit&&x.m.limit.context,parts=[];
-      parts.push(isLoc?'Локальный мост (Hugging Face)':(x.pname||x.pid));
+      parts.push(isLoc?'Локальный мост (GGUF)':(x.pname||x.pid));
       if(ctx)parts.push(O.fmtK(ctx)+' context');
       if(x.m&&(x.m.modalities&&x.m.modalities.includes('image')||x.m.attachment!==false))parts.push('images / t2i');
       if(x.m&&(x.m.reasoning||x.m.variants))parts.push('reasoning');
       if(isLoc)parts.push('офлайн');
-      else if(!isFree&&x.m&&x.m.cost&&typeof x.m.cost.input==='number'&&x.m.cost.input>0){
+      else if(!isFree&&!isCust&&x.m&&x.m.cost&&typeof x.m.cost.input==='number'&&x.m.cost.input>0){
         parts.push('$'+x.m.cost.input+'/1M');
       }
       const sub=parts.join(' · ');
 
-      const row=h('button',{class:'model-row'+(isSel?' on':'')+(isLoc?' model-row-local':''),onclick:()=>{
+      const row=h('button',{class:'model-row'+(isSel?' on':'')+(isLoc?' model-row-local':'')+(isCust?' model-row-custom':''),onclick:()=>{
         O.setModel(x.pid,x.mid);
+        if(isLoc&&O.native&&O.native.preloadLocalModel){
+          try{O.native.preloadLocalModel(x.mid)}catch(_){}
+        }
         s.close();
         O.toast(O.tr('Selected: ','Выбрана: ')+(x.name||x.mid),1500);
       }},
@@ -260,94 +317,431 @@ O.openStatus=async()=>{
   defs.forEach((d,i)=>tabs.append(h('button',{class:i===0?'on':'',onclick:e=>{tabs.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===e.currentTarget));d[1]()}},d[0])));defs[0][1]()};
 
 // ---- custom provider & model probing ----
-O.openCustomProvider=parentSheet=>{
-  const idInp=h('input',{placeholder:'id (латиница), напр. localai или groq'});
-  const nameInp=h('input',{placeholder:'Отображаемое имя, напр. LocalAI'});
-  const urlInp=h('input',{class:'mono',placeholder:'https://api.openai.com/v1 или http://127.0.0.1:11434/v1'});
-  const keyInp=h('input',{type:'password',class:'mono',placeholder:'API-ключ (необязательно для Ollama/LM Studio)'});
-  const statusBox=h('div',{class:'mut s',style:{margin:'8px 0'}});
-  const modelList=h('div',{class:'hide',style:{maxHeight:'240px',overflowY:'auto',margin:'8px 0',border:'1px solid var(--line)',borderRadius:'8px',padding:'6px'}});
+const normalizeBaseUrl=(raw,proto)=>{
+  let u=String(raw||'').trim();
+  if(!u)return '';
+  if(!/^https?:\/\//i.test(u)){
+    const isLocalHost=/^(127\.0\.0\.1|localhost|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(u);
+    u=(isLocalHost?'http://':'https://')+u;
+  }
+  u=u.replace(/\/+$/,'');
+  u=u.replace(/\/(chat\/completions|completions|responses|messages|models)$/i,'');
+  if(proto==='@ai-sdk/anthropic'&&u.endsWith('/v1')===false&&/anthropic\.com$/i.test(u))u+='/v1';
+  return u.replace(/\/+$/,'');
+};
+
+O.openCustomProvider=(parentSheet,editPid)=>{
+  const readCfg=()=>{const t=O.native.cfgRead();let obj={};try{if(t&&t.trim())obj=O.parseJsonc(t)}catch{}obj.provider=obj.provider||{};return obj};
+  const cfgObj=readCfg();
+  const existingDef=editPid&&cfgObj.provider[editPid]?cfgObj.provider[editPid]:null;
+
+  const existingWrap=h('div');
+  const idInp=h('input',{placeholder:'id (латиница), напр. deepseek, ollama, myproxy',autocapitalize:'off',autocorrect:'off'});
+  const nameInp=h('input',{placeholder:'Отображаемое имя, напр. My Custom API'});
+  const urlInp=h('input',{class:'mono',placeholder:'https://api.example.com/v1 или http://127.0.0.1:11434/v1',autocapitalize:'off',autocorrect:'off'});
+  const keyInp=h('input',{type:'password',class:'mono',placeholder:'API-ключ (можно оставить пустым для Ollama/LM Studio)',autocapitalize:'off',autocorrect:'off'});
+  const manualInp=h('textarea',{class:'mono',rows:2,placeholder:'ID моделей через запятую или с новой строки (напр. gpt-4o, deepseek-chat)'});
+  const statusBox=h('div',{class:'mut s',style:{margin:'8px 0',lineHeight:'1.4'}});
+  const modelList=h('div',{class:'hide',style:{maxHeight:'220px',overflowY:'auto',margin:'8px 0',border:'1px solid var(--line)',borderRadius:'12px',padding:'6px',background:'var(--card)'}});
   let foundModels=[];const sel=new Set();
+  let curProto=(existingDef&&existingDef.npm)||'@ai-sdk/openai-compatible';
+  let markFree=true;
 
+  if(existingDef&&editPid){
+    idInp.value=editPid;
+    nameInp.value=existingDef.name||editPid;
+    urlInp.value=(existingDef.options&&existingDef.options.baseURL)||'';
+    keyInp.value=(existingDef.options&&existingDef.options.apiKey&&existingDef.options.apiKey!=='sk-local')?existingDef.options.apiKey:'';
+    const exModels=Object.keys(existingDef.models||{});
+    manualInp.value=exModels.join(', ');
+    exModels.forEach(m=>sel.add(m));
+  }
+
+  const drawExisting=()=>{
+    existingWrap.textContent='';
+    const cur=readCfg();
+    const entries=Object.entries(cur.provider||{}).filter(([id])=>id!=='local'&&id!=='opencode');
+    if(!entries.length)return;
+    existingWrap.append(h('div',{class:'settings-section-title',style:{marginTop:'4px'}},O.tr('Configured Custom Providers','Подключённые кастомные провайдеры')));
+    const card=h('div',{class:'group-card'});
+    entries.forEach(([pid,def])=>{
+      const mCount=Object.keys(def.models||{}).length;
+      const base=(def.options&&def.options.baseURL)||'built-in';
+      const npmLabel=def.npm||'@ai-sdk/openai-compatible';
+      card.append(h('div',{class:'settings-row'},
+        h('div',{class:'settings-row-icon'},O.icon('server')),
+        h('div',{class:'settings-row-text'},
+          h('b',null,(def.name||pid)+' ('+pid+')'),
+          h('span',{class:'mono'},base+' · '+mCount+' mod · '+npmLabel.replace('@ai-sdk/',''))),
+        h('button',{class:'ibtn s',title:O.tr('Edit','Изменить'),onclick:()=>{
+          idInp.value=pid;nameInp.value=def.name||pid;
+          urlInp.value=(def.options&&def.options.baseURL)||'';
+          keyInp.value=(def.options&&def.options.apiKey&&def.options.apiKey!=='sk-local'&&def.options.apiKey!=='ollama')?def.options.apiKey:'';
+          curProto=def.npm||'@ai-sdk/openai-compatible';
+          updateProtoSeg();
+          const ms=Object.keys(def.models||{});
+          manualInp.value=ms.join(', ');
+          sel.clear();ms.forEach(m=>sel.add(m));
+          O.toast('Загружено в форму: '+pid,1200);
+        }},O.icon('edit')),
+        h('button',{class:'ibtn s',title:O.tr('Delete','Удалить'),onclick:async()=>{
+          if(!await O.confirm(O.tr('Remove provider?','Удалить провайдера?'),pid,'Удалить',true))return;
+          const cc=readCfg();delete cc.provider[pid];
+          O.native.cfgWrite(JSON.stringify(cc,null,2));
+          try{await api('POST','/instance/dispose',null)}catch(_){}
+          await O.loadMeta();drawExisting();
+          O.toast('Удалено: '+pid,1500);
+        }},O.icon('trash'))
+      ));
+    });
+    existingWrap.append(card);
+  };
+  drawExisting();
+
+  const PRESETS=[
+    {id:'openrouter',name:'OpenRouter',url:'https://openrouter.ai/api/v1',proto:'@ai-sdk/openai-compatible',icon:'globe',models:''},
+    {id:'groq',name:'Groq',url:'https://api.groq.com/openai/v1',proto:'@ai-sdk/openai-compatible',icon:'zap',models:''},
+    {id:'deepseek',name:'DeepSeek',url:'https://api.deepseek.com/v1',proto:'@ai-sdk/openai-compatible',icon:'cpu',models:'deepseek-chat, deepseek-reasoner'},
+    {id:'ollama',name:'Ollama (Local)',url:'http://127.0.0.1:11434/v1',proto:'@ai-sdk/openai-compatible',icon:'server',models:''},
+    {id:'lmstudio',name:'LM Studio',url:'http://127.0.0.1:1234/v1',proto:'@ai-sdk/openai-compatible',icon:'monitor',models:''},
+    {id:'google-openai',name:'Gemini API',url:'https://generativelanguage.googleapis.com/v1beta/openai',proto:'@ai-sdk/openai-compatible',icon:'cube',models:'gemini-2.5-flash, gemini-2.5-pro'},
+    {id:'anthropic-custom',name:'Anthropic Relay',url:'https://api.anthropic.com/v1',proto:'@ai-sdk/anthropic',icon:'shield',models:'claude-sonnet-4-20250514'},
+    {id:'together',name:'Together AI',url:'https://api.together.xyz/v1',proto:'@ai-sdk/openai-compatible',icon:'code',models:''},
+    {id:'nvidia',name:'NVIDIA NIM',url:'https://integrate.api.nvidia.com/v1',proto:'@ai-sdk/openai-compatible',icon:'cpu',models:''}
+  ];
   const presets=h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}},
-    h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='groq';nameInp.value='Groq';urlInp.value='https://api.groq.com/openai/v1'}},'⚡ Groq'),
-    h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='openrouter';nameInp.value='OpenRouter';urlInp.value='https://openrouter.ai/api/v1'}},'🌐 OpenRouter'),
-    h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='ollama';nameInp.value='Ollama (Local)';urlInp.value='http://127.0.0.1:11434/v1'}},'🦙 Ollama'),
-    h('button',{class:'btn sm',type:'button',onclick:()=>{idInp.value='together';nameInp.value='Together AI';urlInp.value='https://api.together.xyz/v1'}},'Together'));
+    PRESETS.map(pr=>h('button',{class:'btn sm',type:'button',onclick:()=>{
+      idInp.value=pr.id;nameInp.value=pr.name;urlInp.value=pr.url;curProto=pr.proto;
+      if(pr.models&&!manualInp.value.trim())manualInp.value=pr.models;
+      updateProtoSeg();
+      statusBox.textContent='Пресет выбран: '+pr.name+'. Вставьте ключ и нажмите «Прозвонить API» или «Сохранить».';
+    }},O.icon(pr.icon),pr.name)));
 
-  const probeBtn=h('button',{class:'btn wide',style:{marginTop:'10px'},onclick:async()=>{
-    let url=urlInp.value.trim().replace(/\/+$/,'');if(!url)return O.toast('Введите Base URL');
-    if(!url.startsWith('http://')&&!url.startsWith('https://'))url='https://'+url;
-    urlInp.value=url;const key=keyInp.value.trim();
-    probeBtn.disabled=true;statusBox.textContent='Прозваниваю API...';
-    try{
-      let target=url.endsWith('/models')?url:(url+'/models');
-      const hd={'Accept':'application/json'};if(key)hd['Authorization']='Bearer '+key;
-      if(url.includes('openrouter.ai')||idInp.value==='openrouter'){
-        hd['HTTP-Referer']='https://opencode.mobile';
-        hd['X-Title']='OpenCode Mobile';
+  const PROTOS=[
+    ['@ai-sdk/openai-compatible','OpenAI-совм.'],
+    ['@ai-sdk/anthropic','Anthropic'],
+    ['@ai-sdk/google','Gemini'],
+    ['@ai-sdk/openai','OpenAI Resp.']
+  ];
+  const protoSeg=h('div',{class:'seg'});
+  const updateProtoSeg=()=>{protoSeg.querySelectorAll('button').forEach((b,i)=>b.classList.toggle('on',PROTOS[i][0]===curProto))};
+  PROTOS.forEach(([val,lbl])=>{
+    protoSeg.append(h('button',{type:'button',class:val===curProto?'on':'',onclick:()=>{curProto=val;updateProtoSeg()}},lbl));
+  });
+
+  const buildHeaders=(url,key)=>{
+    const hd={'Accept':'application/json','Content-Type':'application/json'};
+    if(key){
+      if(curProto==='@ai-sdk/anthropic'){
+        hd['x-api-key']=key;
+        hd['anthropic-version']='2023-06-01';
+        hd['Authorization']='Bearer '+key;
+      }else{
+        hd['Authorization']='Bearer '+key;
       }
-      const resp=await fetch(target,{method:'GET',headers:hd});
-      if(!resp.ok)throw new Error('HTTP '+resp.status);
-      const json=await resp.json();
-      const raw=Array.isArray(json)?json:(json.data||json.models||[]);
-      foundModels=raw.map(m=>typeof m==='string'?m:(m.id||m.name)).filter(Boolean);
-      if(!foundModels.length){statusBox.textContent='Ответ получен, но список моделей пуст.';modelList.classList.add('hide');return}
-      statusBox.textContent='Найдено '+foundModels.length+' моделей:';
-      modelList.textContent='';modelList.classList.remove('hide');sel.clear();
-      foundModels.forEach(mid=>{sel.add(mid);
-        const chk=h('input',{type:'checkbox',checked:true,style:{width:'auto',margin:'0 8px 0 0'}});
-        chk.onchange=()=>{if(chk.checked)sel.add(mid);else sel.delete(mid)};
-        modelList.append(h('label',{style:{display:'flex',alignItems:'center',padding:'5px 4px',fontSize:'13px',cursor:'pointer'}},chk,h('span',{class:'mono grow'},mid)))});
-      O.toast('Найдено моделей: '+foundModels.length,2000);
-    }catch(e){statusBox.textContent='Ошибка: '+e.message;O.toast('Ошибка прозвона: '+e.message,4000)}
-    finally{probeBtn.disabled=false}}
-  },O.icon('search'),'Прозвонить API (получить список моделей)');
+    }
+    if(url.includes('openrouter.ai')||idInp.value.trim()==='openrouter'){
+      hd['HTTP-Referer']='https://opencode.mobile';
+      hd['X-Title']='OpenCode Mobile';
+    }
+    return hd;
+  };
 
-  const saveBtn=h('button',{class:'btn pri wide',style:{marginTop:'10px'},onclick:async()=>{
+  const renderCheckboxes=()=>{
+    modelList.textContent='';
+    if(!foundModels.length){modelList.classList.add('hide');return}
+    modelList.classList.remove('hide');
+    foundModels.forEach(mid=>{
+      const chk=h('input',{type:'checkbox',checked:sel.has(mid),style:{width:'auto',margin:'0 8px 0 0'}});
+      chk.onchange=()=>{
+        if(chk.checked)sel.add(mid);else sel.delete(mid);
+        manualInp.value=[...sel].join(', ');
+      };
+      modelList.append(h('label',{style:{display:'flex',alignItems:'center',padding:'6px 4px',fontSize:'13px',cursor:'pointer'}},chk,h('span',{class:'mono grow'},mid)));
+    });
+  };
+
+  const probeBtn=h('button',{class:'btn grow',type:'button',onclick:async()=>{
+    let url=normalizeBaseUrl(urlInp.value,curProto);
+    if(!url)return O.toast('Введите Base URL');
+    urlInp.value=url;
+    const key=keyInp.value.trim();
+    const hd=buildHeaders(url,key);
+    probeBtn.disabled=true;statusBox.textContent='Прозваниваю API (CORS-bypass через OkHttp)...';
+    try{
+      const candidates=[];
+      if(url.endsWith('/models'))candidates.push({target:url,base:url.replace(/\/models$/,'')});
+      else{
+        candidates.push({target:url+'/models',base:url});
+        if(!/\/v\d|\/openai|\/api\/paas/i.test(url)){
+          candidates.push({target:url+'/v1/models',base:url+'/v1'});
+        }
+      }
+      if(idInp.value.includes('ollama')||url.includes(':11434')){
+        const origin=url.replace(/\/v1.*$/,'');
+        candidates.push({target:origin+'/api/tags',base:origin+'/v1',ollama:true});
+      }
+
+      let gotList=[],usedBase=url,lastErr='';
+      for(const c of candidates){
+        try{
+          const r=await O.extFetch(c.target,{method:'GET',headers:hd,timeout:12000});
+          if(!r.ok){lastErr='HTTP '+r.status+(r.data&&r.data.error&&r.data.error.message?(' — '+r.data.error.message):'');continue}
+          const json=r.data;
+          const raw=Array.isArray(json)?json:((json&&json.data)||(json&&json.models)||[]);
+          const parsed=raw.map(m=>typeof m==='string'?m:(m.id||m.model||m.name)).filter(Boolean);
+          if(parsed.length){
+            gotList=parsed;
+            usedBase=c.base;
+            break;
+          }else{
+            lastErr='Сервер ответил 200 OK, но список моделей пуст';
+            usedBase=c.base;
+          }
+        }catch(ex){lastErr=ex.message}
+      }
+      if(usedBase!==url)urlInp.value=usedBase;
+      foundModels=[...new Set(gotList)];
+      if(!foundModels.length){
+        statusBox.textContent=(lastErr?lastErr+'. ':'')+'Не удалось получить список автоматически — просто впишите ID модели вручную ниже (например gpt-4o или deepseek-chat).';
+        modelList.classList.add('hide');
+        return;
+      }
+      sel.clear();
+      foundModels.slice(0,80).forEach(mid=>sel.add(mid));
+      manualInp.value=[...sel].join(', ');
+      renderCheckboxes();
+      statusBox.textContent='Найдено '+foundModels.length+' моделей (выбрано '+sel.size+'). Endpoint: '+usedBase;
+      O.toast('Найдено моделей: '+foundModels.length,2000);
+    }catch(e){
+      statusBox.textContent='Ошибка: '+e.message;
+      O.toast('Ошибка прозвона: '+e.message,4000);
+    }finally{probeBtn.disabled=false}
+  }},O.icon('search'),O.tr('Probe Models','Прозвонить /models'));
+
+  const testBtn=h('button',{class:'btn grow',type:'button',onclick:async()=>{
+    let url=normalizeBaseUrl(urlInp.value,curProto);
+    if(!url)return O.toast('Введите Base URL');
+    urlInp.value=url;
+    const key=keyInp.value.trim();
+    const typed=manualInp.value.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
+    const modelId=(typed[0]||[...sel][0]||'').trim();
+    if(!modelId)return O.toast('Укажите хотя бы один ID модели или нажмите Прозвонить');
+    testBtn.disabled=true;statusBox.textContent='Тестируем ответ модели '+modelId+'...';
+    try{
+      const hd=buildHeaders(url,key);
+      let ep=url+'/chat/completions',payload={model:modelId,messages:[{role:'user',content:'Reply OK'}],max_tokens:8,stream:false};
+      if(curProto==='@ai-sdk/anthropic'){
+        ep=url.endsWith('/v1')?(url+'/messages'):(url+'/v1/messages');
+        payload={model:modelId,messages:[{role:'user',content:'Reply OK'}],max_tokens:16,stream:false};
+      }else if(curProto==='@ai-sdk/openai'){
+        ep=url+'/responses';
+        payload={model:modelId,input:'Reply OK',max_output_tokens:16};
+      }
+      const r=await O.extFetch(ep,{method:'POST',headers:hd,body:payload,timeout:18000});
+      if(r.ok){
+        statusBox.textContent='Тест пройден (HTTP '+r.status+'). API и ключ работают исправно с моделью '+modelId+'.';
+        O.toast('API отвечает корректно!',2000);
+      }else{
+        const errMsg=(r.data&&r.data.error&&r.data.error.message)||(typeof r.text==='string'?r.text.slice(0,180):'');
+        statusBox.textContent='Ошибка HTTP '+r.status+': '+errMsg;
+        O.toast('API вернул HTTP '+r.status,3500);
+      }
+    }catch(e){
+      statusBox.textContent='Ошибка теста: '+e.message;
+      O.toast('Ошибка соединения: '+e.message,3500);
+    }finally{testBtn.disabled=false}
+  }},O.icon('zap'),O.tr('Test Chat','Тест запроса'));
+
+  const freeToggle=O.toggleRow('shield',
+    O.tr('Show in "Free Models" view','Показывать с фильтром бесплатных'),
+    O.tr('Prevent custom API models from being hidden by the free filter','Чтобы модели вашего API не скрывались фильтром в чате'),
+    markFree,
+    v=>{markFree=v}
+  );
+
+  const saveBtn=h('button',{class:'btn pri wide',style:{marginTop:'12px'},onclick:async()=>{
     const pid=idInp.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'')||('custom-'+Date.now().toString(36));
     const pname=nameInp.value.trim()||pid;
-    let url=urlInp.value.trim().replace(/\/+$/,'');if(!url)return O.toast('Введите Base URL');
-    if(!url.startsWith('http://')&&!url.startsWith('https://'))url='https://'+url;
+    let url=normalizeBaseUrl(urlInp.value,curProto);
+    if(!url)return O.toast('Введите Base URL');
+    urlInp.value=url;
     const key=keyInp.value.trim();
-    if(pid==='groq'||url.includes('groq.com')){
-      if(!url.includes('/openai/v1'))url=url.replace(/\/+$/,'')+'/openai/v1';
+
+    const typedList=manualInp.value.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
+    const finalMids=typedList.length?typedList:[...sel];
+    if(!finalMids.length){
+      return O.toast('Укажите хотя бы одну модель (прозвоните API или впишите ID модели вручную)');
     }
-    const mo={};if(sel.size>0){sel.forEach(mid=>{mo[mid]={name:mid}})}else mo['default']={name:'Default Model'};
-    const t=O.native.cfgRead();let obj={};try{if(t.trim())obj=O.parseJsonc(t)}catch{}
-    obj.provider=obj.provider||{};
-    const isBuiltIn=['openrouter','groq','together','mistral','deepseek','anthropic','openai','ollama','xai','cerebras','fireworks'].includes(pid);
-    const provOpts={baseURL:url,apiKey:key||'sk-local'};
+
+    const mo={};
+    [...new Set(finalMids)].forEach(mid=>{
+      const entry={
+        name:mid,
+        attachment:true,
+        tool_call:true,
+        temperature:true,
+        limit:{context:128000,output:8192}
+      };
+      if(markFree){
+        entry.free=true;
+        entry.cost={input:0,output:0};
+      }
+      mo[mid]=entry;
+    });
+
+    const obj=readCfg();
+    const provOpts={baseURL:url,apiKey:key||(pid.includes('ollama')?'ollama':'sk-local')};
     if(pid==='openrouter'||url.includes('openrouter.ai')){
       provOpts.headers={'HTTP-Referer':'https://opencode.mobile','X-Title':'OpenCode Mobile'};
     }
-    const provDef={name:pname,options:provOpts,models:mo};
-    if(!isBuiltIn){
-      provDef.npm='@ai-sdk/openai-compatible';
-    }
-    obj.provider[pid]=provDef;
-    const w=O.native.cfgWrite(JSON.stringify(obj,null,2));
-    if(!w.ok)return O.toast(w.err||'Ошибка записи');
-    if(key)try{await api('PUT','/auth/'+pid,{type:'api',key})}catch(_){}
-    try{await api('POST','/instance/dispose',null)}catch(_){}
-    if(window.OC&&OC.restartServer){try{OC.restartServer()}catch(_){}}
-    await O.loadMeta();O.toast('Провайдер '+pname+' подключён ('+Object.keys(mo).length+' моделей)!',3000);
-    sh.close();if(parentSheet&&parentSheet.close)parentSheet.close()}
-  },O.icon('check'),'Сохранить и подключить');
+    obj.provider[pid]={name:pname,npm:curProto,options:provOpts,models:mo};
 
-  const sh=O.sheet('Свой провайдер / Прозвон моделей',h('div',null,
+    const w=O.native.cfgWrite(JSON.stringify(obj,null,2));
+    if(!w.ok)return O.toast(w.err||'Ошибка записи opencode.json');
+
+    saveBtn.disabled=true;
+    try{
+      if(key)try{await api('PUT','/auth/'+pid,{type:'api',key})}catch(_){}
+      try{await api('POST','/instance/dispose',null)}catch(_){}
+      await new Promise(r=>setTimeout(r,260));
+      await O.loadMeta();
+
+      const firstMid=Object.keys(mo)[0];
+      const loadedProv=S.providers.find(p=>p.id===pid&&p.models&&Object.keys(p.models).length>0);
+      if(loadedProv&&firstMid){
+        O.setModel(pid,firstMid);
+        O.toast('Провайдер '+pname+' подключён ('+Object.keys(mo).length+' моделей)!',3000);
+        sh.close();if(parentSheet&&parentSheet.close)parentSheet.close();
+      }else{
+        O.store.set('model.'+S.agent,{providerID:pid,modelID:firstMid});
+        if(S.sid)O.store.set('session.model.'+S.sid,{providerID:pid,modelID:firstMid});
+        if(window.OC&&OC.restartServer){
+          OC.restartServer();
+          O.toast('Сохранено! Перезапуск ядра для активации '+pname+'...',3500);
+        }else{
+          O.toast('Сохранено в opencode.json ('+pname+')',2500);
+        }
+        sh.close();if(parentSheet&&parentSheet.close)parentSheet.close();
+      }
+    }finally{saveBtn.disabled=false}
+  }},O.icon('check'),O.tr('Save & Connect Provider','Сохранить и подключить'));
+
+  const sh=O.sheet(O.tr('Custom API Provider','Свой API провайдер'),h('div',null,
+    existingWrap,
+    h('div',{class:'settings-section-title',style:{marginTop:'8px'}},O.tr('Quick Presets','Быстрые пресеты')),
     presets,
-    h('div',{class:'field'},h('label',null,'ID провайдера (латиница)'),idInp),
-    h('div',{class:'field'},h('label',null,'Отображаемое имя'),nameInp),
-    h('div',{class:'field'},h('label',null,'Base URL (OpenAI-совместимый)'),urlInp),
-    h('div',{class:'field'},h('label',null,'API-ключ (необязательно для локальных)'),keyInp),
-    probeBtn,statusBox,modelList,saveBtn),{full:true});
+    h('div',{class:'field'},h('label',null,O.tr('API Protocol / SDK','Формат API / Протокол')),protoSeg),
+    h('div',{class:'field'},h('label',null,O.tr('Provider ID','ID провайдера (латиница)')),idInp),
+    h('div',{class:'field'},h('label',null,O.tr('Display Name','Отображаемое имя')),nameInp),
+    h('div',{class:'field'},h('label',null,O.tr('Base URL','Base URL (без /chat/completions)')),urlInp),
+    h('div',{class:'field'},h('label',null,O.tr('API Key','API-ключ (опционально для локальных)')),keyInp),
+    h('div',{style:{display:'flex',gap:'8px',margin:'10px 0'}},probeBtn,testBtn),
+    statusBox,
+    modelList,
+    h('div',{class:'field'},h('label',null,O.tr('Models (auto or comma-separated IDs)','Модели (через запятую, если /models недоступен)')),manualInp),
+    h('div',{class:'group-card'},freeToggle),
+    saveBtn),{hud:true,full:true});
 };
 
-// ---- themes / help ----
-O.openThemes=()=>{const th=[['opencode','OpenCode','#0D0D0F','#fab283'],['light','Светлая','#fafaf8','#c2641c'],['tokyonight','Tokyo Night','#1a1b26','#7aa2f7'],['gruvbox','Gruvbox','#282828','#fabd2f']];
-  const s=O.sheet('Оформление',h('div',null,th.map(t=>O.listRow(h('span',{style:{width:'22px',height:'22px',borderRadius:'6px',background:t[2],border:'3px solid '+t[3],flex:'none'}}),t[1],'',S.opts.theme===t[0]?O.icon('check','ok'):null,()=>{S.opts.theme=t[0];O.saveOpts();s.close()})),
-    h('div',{class:'grp'},'Размер текста'),h('div',{class:'seg'},[13,14,15,16,18].map(n=>h('button',{class:S.opts.fs===n?'on':'',onclick:()=>{S.opts.fs=n;O.saveOpts();s.close()}},n)))))};
+// ---- themes / seasonal HUD / help ----
+O.openThemes=()=>{
+  const th=[
+    ['opencode','OpenCode Dark','#0d0d0f','#38bdf8'],
+    ['light','Светлая (Light)','#f8f8fa','#0284c7'],
+    ['tokyonight','Tokyo Night','#1a1b26','#7aa2f7'],
+    ['gruvbox','Gruvbox','#282828','#8ec07c']
+  ];
+  const accents=[
+    ['auto','Авто','#38bdf8'],
+    ['#38bdf8','Небесный','#38bdf8'],
+    ['#22d3ee','Ледяной','#22d3ee'],
+    ['#4ade80','Изумруд','#4ade80'],
+    ['#60a5fa','Кобальт','#60a5fa'],
+    ['#e11d48','Кармин','#e11d48'],
+    ['#e4e4e7','Платина','#e4e4e7']
+  ];
+
+  const box=h('div');
+  const draw=()=>{
+    box.textContent='';
+    const activeSeason=O.activeSeasonKey?O.activeSeasonKey(S.opts):'none';
+
+    box.append(h('div',{class:'grp',style:{marginTop:'4px'}},O.tr('Base Theme','Тема интерфейса')));
+    const themeCard=h('div',{class:'group-card'});
+    th.forEach(t=>themeCard.append(O.listRow(
+      h('span',{style:{width:'22px',height:'22px',borderRadius:'7px',background:t[2],border:'2.5px solid '+t[3],flex:'none'}}),
+      t[1],
+      t[0]==='opencode'?O.tr('Signature obsidian hub style','Фирменный стиль главного хаба'):'',
+      S.opts.theme===t[0]?O.icon('check','ok'):null,
+      ()=>{S.opts.theme=t[0];O.saveOpts();draw()}
+    )));
+    box.append(themeCard);
+
+    box.append(h('div',{class:'grp'},O.tr('Accent Color','Акцентный цвет')));
+    const accRow=h('div',{class:'accent-swatches'});
+    accents.forEach(([val,lbl,hex])=>{
+      const on=(S.opts.accent||'auto')===val;
+      accRow.append(h('button',{
+        type:'button',
+        class:'accent-swatch'+(on?' on':''),
+        title:lbl,
+        onclick:()=>{S.opts.accent=val;O.saveOpts();draw()}
+      },h('span',{class:'accent-dot',style:{background:hex}}),h('span',{class:'accent-lbl'},lbl)));
+    });
+    const customPicker=h('input',{
+      type:'color',
+      value:O.resolveAccentHex?O.resolveAccentHex():'#38bdf8',
+      style:{width:'40px',height:'32px',padding:'2px',borderRadius:'8px',cursor:'pointer',flex:'none'},
+      onchange:e=>{S.opts.accent=e.target.value;O.saveOpts();draw()}
+    });
+    const hexInp=h('input',{
+      class:'mono',
+      value:(S.opts.accent&&S.opts.accent!=='auto')?S.opts.accent:'',
+      placeholder:'#38bdf8',
+      style:{flex:1,minWidth:0,padding:'6px 10px',fontSize:'13px'},
+      onchange:e=>{
+        const v=e.target.value.trim();
+        if(/^#[0-9a-f]{6}$/i.test(v)){S.opts.accent=v.toLowerCase();O.saveOpts();draw()}
+        else if(!v){S.opts.accent='auto';O.saveOpts();draw()}
+      }
+    });
+    box.append(accRow,h('div',{class:'card',style:{display:'flex',alignItems:'center',gap:'8px',marginTop:'8px',padding:'10px 12px'}},
+      h('span',{class:'mut s'},O.tr('Custom Hex:','Свой цвет:')),customPicker,hexInp));
+
+    box.append(h('div',{class:'grp'},O.tr('Seasonal HUD (Calendar & Custom)','Сезонный HUD и праздники')));
+    const seasonCard=h('div',{class:'group-card'});
+    const sList=O.SEASONAL_THEMES||[];
+    sList.forEach(st=>{
+      const isCur=(S.opts.seasonalMode||'auto')===st.id;
+      const activeBadge=(st.id===activeSeason&&st.id!=='none'&&isCur)?' · '+O.tr('Active now','Активно сейчас'):'';
+      seasonCard.append(O.listRow(
+        st.icon||'calendar',
+        st.name,
+        st.desc+activeBadge,
+        isCur?O.icon('check','ok'):null,
+        ()=>{S.opts.seasonalMode=st.id;O.saveOpts();draw()}
+      ));
+    });
+    seasonCard.append(O.toggleRow(
+      'zap',
+      O.tr('Seasonal Animations','Плавные анимации HUD'),
+      O.tr('Floating snowflakes, petals, particles inside frame','Лёгкие фоновые частицы без нагрузки на интерфейс'),
+      S.opts.seasonalAnim!==false,
+      v=>{S.opts.seasonalAnim=v;O.saveOpts();draw()}
+    ));
+    box.append(seasonCard);
+
+    box.append(h('div',{class:'grp'},O.tr('Text Size','Размер текста')));
+    box.append(h('div',{class:'seg'},[13,14,15,16,18].map(n=>h('button',{
+      class:S.opts.fs===n?'on':'',
+      onclick:()=>{S.opts.fs=n;O.saveOpts();draw()}
+    },n+'px'))));
+  };
+  draw();
+  O.sheet(O.tr('Appearance & Seasonal HUD','Оформление и темы'),box,{hud:true,full:true});
+};
+
 O.openHelp=()=>O.sheet('Справка',h('div',null,h('div',{class:'grp'},'Команды'),O.builtins.map(b=>O.listRow(b.i,'/'+b.n,b.d,null,()=>{O.back();b.run()})),
   h('div',{class:'grp'},'Подсказки ввода'),h('div',{class:'note'},'@файл — упомянуть файл или папку.  !команда — выполнить команду оболочки в сессии.  Долгое нажатие на файл в дереве открывает действия.')));
 })();

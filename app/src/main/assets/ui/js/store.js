@@ -1,10 +1,95 @@
 (function(){
 const O=window.OCM,api=O.api;
 const bus=O.bus={h:{},on(n,f){(this.h[n]=this.h[n]||[]).push(f)},emit(n,...a){(this.h[n]||[]).forEach(f=>{try{f(...a)}catch(e){console.error(n,e)}})}};
-const S=O.S={dir:'',sessions:[],sid:null,status:{},perms:[],questions:[],todos:{},diffs:{},
+const S=O.S={dir:'',sessions:[],childSessions:{},sid:null,status:{},unread:O.store.get('session_unread',{}),perms:[],questions:[],todos:{},diffs:{},
   providers:[],agents:[],commands:[],cfg:{},agent:'build',model:null,variant:null,mcp:{},lsp:[],branch:'',
-  offline:false,up:false,gstatus:{},account:{email:null,checked:false},opts:Object.assign({thinking:true,details:true,theme:'opencode',fs:14},O.store.get('opts',{}))};
-O.saveOpts=()=>{O.store.set('opts',S.opts);document.documentElement.dataset.theme=S.opts.theme;document.documentElement.style.setProperty('--fs',S.opts.fs+'px')};
+  offline:false,up:false,gstatus:{},account:{email:null,checked:false},opts:Object.assign({thinking:true,details:true,theme:'opencode',accent:'auto',seasonalMode:'auto',seasonalAnim:true,fs:14},O.store.get('opts',{}))};
+const activeWork=new Set(),seenUnreadMsgs=new Map();
+const rootSid=sid=>{let cur=sid,seen=new Set();while(cur&&S.childSessions&&S.childSessions[cur]&&!seen.has(cur)){seen.add(cur);cur=S.childSessions[cur].parentID}return cur||sid};
+const isViewing=sid=>!!(sid&&sid===S.sid&&(!O.getTab||O.getTab()==='chat'||innerWidth>=820)&&!document.hidden);
+O.isSessionBusy=sid=>{const st=S.status&&S.status[sid];if(st&&st.type!=='idle')return true;return Object.values(S.childSessions||{}).some(c=>c.parentID===sid&&S.status&&S.status[c.id]&&S.status[c.id].type!=='idle')};
+O.hasUnreadMessages=sid=>Number((S.unread&&S.unread[sid])||0);
+O.markSessionUnread=(sid,msgId)=>{
+  const rsid=rootSid(sid);
+  if(!rsid||isViewing(rsid))return;
+  if(msgId){
+    let set=seenUnreadMsgs.get(rsid);
+    if(!set){set=new Set();seenUnreadMsgs.set(rsid,set)}
+    if(set.has(msgId))return;
+    set.add(msgId);
+  }else if(Number(S.unread[rsid]||0)>0){
+    bus.emit('sessions');
+    return;
+  }
+  S.unread[rsid]=Number(S.unread[rsid]||0)+1;
+  O.store.set('session_unread',S.unread);
+  bus.emit('sessions');
+};
+O.markSessionRead=sid=>{
+  const rsid=rootSid(sid);
+  if(!rsid)return;
+  seenUnreadMsgs.delete(rsid);
+  if(!S.unread||!S.unread[rsid])return;
+  delete S.unread[rsid];
+  O.store.set('session_unread',S.unread);
+  bus.emit('sessions');
+};
+const THEME_ACCENTS={opencode:'#38bdf8',light:'#0284c7',tokyonight:'#7aa2f7',gruvbox:'#8ec07c',nord:'#88c0d0',catppuccin:'#89b4fa',dracula:'#8be9fd'};
+const parseHex=hex=>{
+  const m=/^#([0-9a-f]{6})$/i.exec(String(hex||'').trim());
+  if(!m)return null;
+  const n=parseInt(m[1],16);
+  return{r:(n>>16)&255,g:(n>>8)&255,b:n&255,hex:'#'+m[1].toLowerCase()};
+};
+const mixHex=(c,target,amt)=>{
+  const mix=(a,b)=>Math.max(0,Math.min(255,Math.round(a+(b-a)*amt)));
+  const r=mix(c.r,target.r),g=mix(c.g,target.g),b=mix(c.b,target.b);
+  return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+};
+const relLum=c=>{
+  const ch=v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};
+  return 0.2126*ch(c.r)+0.7152*ch(c.g)+0.0722*ch(c.b);
+};
+O.resolveAccentHex=()=>{
+  const raw=S.opts&&S.opts.accent;
+  if(raw&&raw!=='auto'&&parseHex(raw))return parseHex(raw).hex;
+  return THEME_ACCENTS[(S.opts&&S.opts.theme)||'opencode']||'#38bdf8';
+};
+O.applyAppearance=()=>{
+  const theme=(S.opts&&S.opts.theme)||'opencode';
+  const isLight=theme==='light';
+  const root=document.documentElement;
+  root.dataset.theme=theme;
+  root.style.setProperty('--fs',((S.opts&&S.opts.fs)||14)+'px');
+  const raw=parseHex(O.resolveAccentHex())||{r:56,g:189,b:248,hex:'#38bdf8'};
+  const lum=relLum(raw);
+  // Ensure primary fill contrast and legible accent text on both light and obsidian dark themes
+  let textAcc=raw.hex;
+  if(isLight&&lum>0.42)textAcc=mixHex(raw,{r:15,g:23,b:42},0.48);
+  else if(!isLight&&lum<0.18)textAcc=mixHex(raw,{r:226,g:232,b:240},0.55);
+  const priFg=lum>0.36?'#0d0d0f':'#f4f4f5';
+  root.style.setProperty('--acc',textAcc);
+  root.style.setProperty('--accent',textAcc);
+  root.style.setProperty('--pri',raw.hex);
+  root.style.setProperty('--pri-fg',priFg);
+  root.style.setProperty('--acc-soft',`rgba(${raw.r},${raw.g},${raw.b},${isLight?0.12:0.14})`);
+  root.style.setProperty('--acc-border',`rgba(${raw.r},${raw.g},${raw.b},${isLight?0.34:0.32})`);
+  root.style.setProperty('--acc-ring',`rgba(${raw.r},${raw.g},${raw.b},0.28)`);
+  if(O.applySeasonalHud)O.applySeasonalHud(null,S.opts);
+};
+O.saveOpts=()=>{O.store.set('opts',S.opts);O.applyAppearance()};
+O.isOfflineMode=()=>Boolean(O.store.get('offline_mode',false)||(O.native.isOnline&&!O.native.isOnline())||S.offline);
+O.setOfflineMode=(on,quiet)=>{
+  const val=Boolean(on);
+  O.store.set('offline_mode',val);
+  try{if(window.OC&&OC.setFlag)OC.setFlag('offline_mode',val)}catch(_){}
+  O.pickDefaults();
+  bus.emit('conn');
+  bus.emit('meta');
+  if(!quiet)O.toast(val?(O.tr('Offline mode enabled — prioritizing local GGUF models','Офлайн-режим включён — приоритет локальных моделей')):(O.tr('Online mode restored','Сетевой режим восстановлен')),2200);
+};
+window.addEventListener('online',()=>bus.emit('conn'));
+window.addEventListener('offline',()=>bus.emit('conn'));
 
 // ---- IndexedDB key/value cache (offline reading) ----
 let dbp;const db=()=>dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('ocm',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}));
@@ -80,20 +165,24 @@ O.onServerEvent=raw=>{let o;try{o=JSON.parse(raw)}catch{return}
     if(i.parentID){(S.childSessions=S.childSessions||{})[i.id]=i;break}
     const k=S.sessions.findIndex(x=>x.id===i.id);if(k>=0)S.sessions[k]=i;else S.sessions.unshift(i);
     S.sessions.sort((a,b)=>b.time.updated-a.time.updated);bus.emit('sessions');if(i.id===S.sid)bus.emit('session');break}
-  case'session.deleted':S.sessions=S.sessions.filter(x=>x.id!==(p.info&&p.info.id));bus.emit('sessions');if(p.info&&p.info.id===S.sid){S.sid=null;bus.emit('open',null)}break;
+  case'session.deleted':{const did=p.info&&p.info.id;S.sessions=S.sessions.filter(x=>x.id!==did);if(did&&S.unread&&S.unread[did]){delete S.unread[did];O.store.set('session_unread',S.unread)}bus.emit('sessions');if(did===S.sid){S.sid=null;bus.emit('open',null)}break}
   case'session.status':
-    S.status[p.sessionID]=p.status;bus.emit('status',p.sessionID);
+    S.status[p.sessionID]=p.status;
+    if(p.status&&p.status.type!=='idle')activeWork.add(p.sessionID);
+    bus.emit('status',p.sessionID);
     if(p.sessionID===S.sid&&p.status&&p.status.type!=='idle')O.startLiveSync(p.sessionID);
     break;
-  case'session.idle':
-    S.status[p.sessionID]={type:'idle'};bus.emit('status',p.sessionID);bus.emit('idle',p.sessionID);
+  case'session.idle':{
+    S.status[p.sessionID]={type:'idle'};
+    if(activeWork.has(p.sessionID)){activeWork.delete(p.sessionID);O.markSessionUnread(p.sessionID)}
+    bus.emit('status',p.sessionID);bus.emit('idle',p.sessionID);
     if(p.sessionID===S.sid){O.stopLiveSync();O.syncSessionMessages(p.sessionID)}
-    break;
+    break}
   case'session.error':bus.emit('serror',p);break;
   case'session.diff':S.diffs[p.sessionID]=p.diff||[];bus.emit('diff',p.sessionID);break;
-  case'message.updated':{const m=O.upsertMsg(p.info);bus.emit('msg',p.info.sessionID,m);saveMsgs(p.info.sessionID);break}
+  case'message.updated':{const m=O.upsertMsg(p.info);if(p.info&&p.info.role==='assistant')O.markSessionUnread(p.info.sessionID,p.info.id);bus.emit('msg',p.info.sessionID,m);saveMsgs(p.info.sessionID);break}
   case'message.removed':{const s=O.msgs(p.sessionID);s.list=s.list.filter(m=>m.info.id!==p.messageID);s.idx.delete(p.messageID);bus.emit('msg-removed',p.sessionID,p.messageID);break}
-  case'message.part.updated':{const m=O.upsertPart(p.part);bus.emit('part',p.part.sessionID,m,p.part);saveMsgs(p.part.sessionID);break}
+  case'message.part.updated':{const m=O.upsertPart(p.part);if(m&&m.info&&m.info.role==='assistant')O.markSessionUnread(p.part.sessionID,m.info.id);bus.emit('part',p.part.sessionID,m,p.part);saveMsgs(p.part.sessionID);break}
   case'message.part.delta':{
     const s=O.msgs(p.sessionID);let m=s.idx.get(p.messageID);
     if(!m)m=O.upsertMsg({id:p.messageID,sessionID:p.sessionID,role:'assistant',time:{created:Date.now()}});
@@ -110,6 +199,7 @@ O.onServerEvent=raw=>{let o;try{o=JSON.parse(raw)}catch{return}
       pt.type='reasoning';
       if(!pt.text||pt.text!==pt[f])pt.text=pt[f];
     }
+    if(m.info&&m.info.role==='assistant')O.markSessionUnread(p.sessionID,m.info.id);
     bus.emit('part',p.sessionID,m,pt);break}
   case'message.part.removed':{const m=O.msgs(p.sessionID).idx.get(p.messageID);if(m){m.parts=m.parts.filter(x=>x.id!==p.partID);bus.emit('part-removed',p.sessionID,m,p.partID)}break}
   case'permission.updated':case'permission.asked':{const q=normPerm(p);if(!S.perms.some(x=>x.id===q.id))S.perms.push(q);bus.emit('perm');break}
@@ -128,7 +218,7 @@ const normPerm=p=>({id:p.id,sessionID:p.sessionID,title:p.title||p.permission||p
 let upT=null;
 O.on('sse',d=>{if(d.t==='data')O.onServerEvent(d.d);else if(d.t==='open'){if(upT){clearTimeout(upT);upT=null}S.up=true;bus.emit('conn')}
   else if(d.t==='close'){S.up=false;if(!upT)upT=setTimeout(()=>{upT=null;if(!S.up)bus.emit('conn')},5000)}});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!S.up){try{OC.sseStart()}catch(e){}}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(!S.up){try{OC.sseStart()}catch(e){}}if(isViewing(S.sid))O.markSessionRead(S.sid)}});
 
 // ---- opencode account (Zen) status: known once checked, so hints never nag after a login ----
 O.checkAccount=async()=>{try{const r=await api('GET','/experimental/console/orgs',null,{timeout:10000});
@@ -147,6 +237,15 @@ O.loadMeta=async()=>{
   if(pr.status==='fulfilled')O.kv.set('projects',pr.value);
   if(br.status==='fulfilled')S.branch=br.value&&br.value.branch||'';
   O.pickDefaults();bus.emit('meta')};
+O.customProviderIds=()=>{
+  try{
+    const raw=O.native&&O.native.cfgRead?O.native.cfgRead():'';
+    if(!raw||!raw.trim())return new Set();
+    const obj=O.parseJsonc(raw);
+    const prov=obj&&obj.provider?obj.provider:{};
+    return new Set(Object.keys(prov).filter(k=>k!=='local'));
+  }catch(_){return new Set()}
+};
 O.isModelFree=x=>{
   if(!x)return false;
   if(x.isLocal || x.pid==='local')return true;
@@ -182,6 +281,7 @@ O.modelInfo=(pid,mid)=>{
 O.allModels=()=>{
   const locals=(O.native.getLocalModels?O.native.getLocalModels():[]).filter(x=>x.downloaded);
   const downloadedIds=new Set(locals.map(x=>x.id));
+  const customIds=O.customProviderIds();
 
   const list=S.providers.flatMap(p=>{
     if(p.id==='local'){
@@ -195,7 +295,8 @@ O.allModels=()=>{
         m
       }));
     }
-    return Object.values(p.models||{}).map(m=>({pid:p.id,pname:p.name,mid:m.id,name:m.name||m.id,m}));
+    const isCustom=customIds.has(p.id)&&p.id!=='opencode';
+    return Object.values(p.models||{}).map(m=>({pid:p.id,pname:p.name,mid:m.id,name:m.name||m.id,isCustom,m}));
   });
 
   try{
@@ -233,8 +334,16 @@ O.allModels=()=>{
 O.pickDefaults=()=>{
   const prim=O.primaryAgents();if(!prim.some(a=>a.name===S.agent))S.agent=(prim[0]&&prim[0].name)||'build';
   const ok=m=>m&&O.modelInfo(m.providerID,m.modelID);
+  const preferLocal=O.isOfflineMode();
   let m=null;
-  if(S.sid){
+  if(preferLocal){
+    const allLoc=O.allModels().filter(x=>x.isLocal||x.pid==='local');
+    if(allLoc.length){
+      const curOk=S.sid&&ok(O.store.get('session.model.'+S.sid))&&O.store.get('session.model.'+S.sid).providerID==='local';
+      m=curOk?O.store.get('session.model.'+S.sid):{providerID:'local',modelID:allLoc[0].mid};
+    }
+  }
+  if(!m&&S.sid){
     const sesSaved=O.store.get('session.model.'+S.sid);
     if(ok(sesSaved))m=sesSaved;
   }
@@ -250,7 +359,7 @@ O.pickDefaults=()=>{
     const onlyFree=O.store.get('onlyFreeModels',true);
     let d=null;
     if(onlyFree){
-      d=all.find(x=>O.isModelFree(x)&&S.defaults[x.pid]===x.mid)||all.find(x=>O.isModelFree(x));
+      d=all.find(x=>O.isModelFree(x)&&S.defaults[x.pid]===x.mid)||all.find(x=>O.isModelFree(x)||x.isCustom);
     }
     if(!d)d=all.find(x=>S.defaults[x.pid]===x.mid)||all[0];
     if(d)m={providerID:d.pid,modelID:d.mid};
@@ -286,7 +395,7 @@ O.setVariant=v=>{
 O.loadSessions=async()=>{
   try{const l=await api('GET','/session');S.sessions=l.filter(s=>!s.parentID).sort((a,b)=>b.time.updated-a.time.updated);S.offline=false;O.kv.set('sessions:'+S.dir,S.sessions)}
   catch(e){const c=await O.kv.get('sessions:'+S.dir);if(c)S.sessions=c;S.offline=true}
-  try{const st=await api('GET','/session/status');for(const k in st)S.status[k]=st[k]}catch{}
+  try{const st=await api('GET','/session/status');if(st&&typeof st==='object'){S.status={};for(const k in st)S.status[k]=st[k]}}catch{}
   bus.emit('sessions')};
 O.loadPending=async()=>{
   try{const p=await api('GET','/permission');S.perms=(p||[]).map(normPerm)}catch{}
@@ -294,6 +403,7 @@ O.loadPending=async()=>{
   bus.emit('perm')};
 O.openSession=async(sid,fresh)=>{
   S.sid=sid;O.store.set('sid.'+S.dir,sid);
+  if(sid)O.markSessionRead(sid);
   if(!sid){bus.emit('open',null);return}
   const ok=m=>m&&O.modelInfo(m.providerID,m.modelID);
   const sesSaved=O.store.get('session.model.'+sid);

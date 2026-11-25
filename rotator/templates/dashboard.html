@@ -46,7 +46,7 @@
             <div class="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm space-y-1">
                 <p class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Verified IP</p>
                 <div class="flex items-center space-x-2">
-                    <span id="flag" class="text-base">&#x1F310;</span>
+                    <span id="flag" class="inline-flex items-center text-slate-600"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
                     <span id="ip" class="text-base font-bold font-mono text-slate-900 tracking-tight">Loading...</span>
                 </div>
                 <p id="location" class="text-xs text-slate-500 font-medium truncate pt-0.5">Detecting location...</p>
@@ -162,13 +162,13 @@
 
         function renderIpTable() {
             const ipHistoryBody = document.getElementById('ip-history-body');
-            const reversedHistory = cachedIpHistory.slice().reverse();
+            const reversedHistory = cachedIpHistory.slice();
             const totalPages = Math.max(1, Math.ceil(reversedHistory.length / PAGE_SIZE));
             if (currentIpPage > totalPages) currentIpPage = totalPages;
             const start = (currentIpPage - 1) * PAGE_SIZE;
             const pageItems = reversedHistory.slice(start, start + PAGE_SIZE);
             if (pageItems.length > 0) {
-                ipHistoryBody.innerHTML = pageItems.map(h => `<tr class="hover:bg-slate-50/60 transition-colors"><td class="px-5 py-2.5 text-slate-400">${h.timestamp}</td><td class="px-5 py-2.5 font-bold text-slate-900">${h.ip}</td><td class="px-5 py-2.5 font-sans">${h.flag} ${h.country}</td><td class="px-5 py-2.5 text-right text-slate-400 font-sans">${h.reason}</td></tr>`).join('');
+                ipHistoryBody.innerHTML = pageItems.map(h => `<tr class="hover:bg-slate-50/60 transition-colors"><td class="px-5 py-2.5 text-slate-400">${h.timestamp || ''}</td><td class="px-5 py-2.5 font-bold text-slate-900">${h.ip || ''}</td><td class="px-5 py-2.5 font-sans">${h.flag || ''} ${h.country || ''}</td><td class="px-5 py-2.5 text-right text-slate-400 font-sans">${h.reason || 'Rotated'}</td></tr>`).join('');
             } else {
                 ipHistoryBody.innerHTML = '<tr><td colspan="4" class="px-5 py-6 text-center text-slate-400 italic font-sans text-xs">No rotation history recorded.</td></tr>';
             }
@@ -190,24 +190,30 @@
                     <tr><td class="px-5 py-2.5 font-sans">Failed Rotations</td><td class="px-5 py-2.5 text-right text-rose-600">${wq.failed_rotations}</td></tr>
                     <tr><td class="px-5 py-2.5 font-sans">Avg Latency (ms)</td><td class="px-5 py-2.5 text-right">${wq.avg_latency_ms.toFixed(1)}</td></tr>
                 `;
+            } else if (data) {
+                body.innerHTML = `
+                    <tr><td class="px-5 py-2.5 font-sans">Successful Requests</td><td class="px-5 py-2.5 text-right text-emerald-600">${data.successful_requests || 0}</td></tr>
+                    <tr><td class="px-5 py-2.5 font-sans">Proxy Pool Size</td><td class="px-5 py-2.5 text-right">${data.proxy_pool_count || 0}</td></tr>
+                    <tr><td class="px-5 py-2.5 font-sans">Uptime (s)</td><td class="px-5 py-2.5 text-right">${data.uptime_seconds || 0}</td></tr>
+                `;
             }
         }
 
         async function fetchMetrics() {
             try {
-                const res = await fetch('/metrics');
+                const res = await fetch('/dashboard/stats');
                 const data = await res.json();
-                document.getElementById('ip').innerText = data.verified_public_ip || 'Disconnected';
+                document.getElementById('ip').innerText = data.verified_ip || 'Disconnected';
                 if (data.location) {
                     document.getElementById('location').innerText = (data.location.country || '') + (data.location.city ? ' (' + data.location.city + ')' : '');
-                    if (data.location.flag) document.getElementById('flag').innerText = data.location.flag;
+                    if (data.location.countryCode) document.getElementById('flag').textContent = data.location.countryCode;
                 }
-                cachedIpHistory = data.ip_history || [];
+                cachedIpHistory = data.recent_ips || [];
                 renderIpTable();
-                document.getElementById('rotations').innerText = data.total_rotations;
-                document.getElementById('requests').innerText = data.metrics.total_requests;
-                document.getElementById('ratelimits').innerText = data.metrics.rate_limited_requests;
-                const models = data.discovered_models || [];
+                document.getElementById('rotations').innerText = data.rotation_count || 0;
+                document.getElementById('requests').innerText = data.total_requests || 0;
+                document.getElementById('ratelimits').innerText = data.rate_limited_requests || 0;
+                const models = data.models || [];
                 document.getElementById('model-count-badge').innerText = models.length + ' Models';
                 cachedUsageData = data.model_usage || {};
                 cachedModelKeys = Object.keys(cachedUsageData);
@@ -225,7 +231,7 @@
             btn.disabled = true;
             btn.innerHTML = '<svg class="animate-spin -ml-1 mr-1.5 h-3.5 w-3.5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Rotating...';
             try {
-                await fetch('/api/rotate', { method: 'POST' });
+                await fetch('/rotate', { method: 'POST' });
                 let attempts = 0;
                 const pollInterval = setInterval(async () => {
                     attempts++;

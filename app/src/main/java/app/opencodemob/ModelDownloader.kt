@@ -71,15 +71,15 @@ object ModelDownloader {
             description = "3B модель генерации визуальных композиций и артов без внешних API (3.37 ГБ)."
         ),
         CatalogItem(
-            id = "nanosaur-2",
-            name = "Nanosaur 2",
-            type = "image",
-            size = "1.33 ГБ",
-            sizeBytes = 1_330_000_000L,
-            filename = "nanosaur2_diffusion_model.safetensors",
-            url = "https://huggingface.co/well9472/Nanosaur2-670M/resolve/main/nanosaur2_diffusion_model.safetensors?download=true",
-            repo = "well9472/Nanosaur2-670M",
-            description = "Компактная DiT модель для быстрого создания иллюстраций (1.33 ГБ)."
+            id = "smolvlm-500m",
+            name = "SmolVLM-500M-Instruct",
+            type = "vlm",
+            size = "437 МБ",
+            sizeBytes = 436_806_912L,
+            filename = "SmolVLM-500M-Instruct-Q8_0.gguf",
+            url = "https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/SmolVLM-500M-Instruct-Q8_0.gguf?download=true",
+            repo = "ggml-org/SmolVLM-500M-Instruct-GGUF",
+            description = "Компактная мультимодальная VLM модель Hugging Face (Q8_0, 437 МБ)."
         ),
         CatalogItem(
             id = "valkyrie-7b",
@@ -194,22 +194,31 @@ object ModelDownloader {
         val description: String
     )
 
+    fun deriveModelId(filename: String): String {
+        val catItem = CATALOG.find { it.filename == filename }
+        if (catItem != null) return catItem.id
+        return filename.substringBeforeLast('.').lowercase().replace("[^a-z0-9_-]".toRegex(), "-")
+    }
+
     /** Starts downloading a model from Hugging Face or direct URL */
     fun startDownload(context: Context, id: String, url: String, filename: String, name: String): JSONObject {
         val cleanUrl = sanitizeHuggingFaceUrl(url)
         val cleanFilename = sanitizeFilename(filename, cleanUrl)
+        val resolvedId = deriveModelId(cleanFilename)
+        val taskId = if (id.isNotBlank()) id else resolvedId
         val targetDir = Runtime.modelsDir(context)
         val destFile = File(targetDir, cleanFilename)
         val partFile = File(targetDir, "$cleanFilename.part")
 
         if (destFile.exists() && destFile.length() > 1024) {
-            // Already downloaded, register immediately
-            Runtime.registerLocalModel(context, id, name, cleanFilename)
-            return JSONObject().put("ok", true).put("already", true).put("path", destFile.absolutePath)
+            Runtime.registerLocalModel(context, resolvedId, name, cleanFilename)
+            LocalBridgeServer.start(context)
+            Runtime.disposeRunningInstance()
+            return JSONObject().put("ok", true).put("already", true).put("id", resolvedId).put("path", destFile.absolutePath)
         }
 
-        if (tasks.containsKey(id)) {
-            val t = tasks[id]
+        if (tasks.containsKey(taskId)) {
+            val t = tasks[taskId]
             if (t != null && t.status == "downloading") {
                 return JSONObject().put("ok", true).put("status", "already_downloading")
             }
@@ -221,8 +230,8 @@ object ModelDownloader {
             .build()
 
         val call = client.newCall(request)
-        val task = DownloadTask(id, cleanUrl, cleanFilename, name, call)
-        tasks[id] = task
+        val task = DownloadTask(taskId, cleanUrl, cleanFilename, name, call)
+        tasks[taskId] = task
 
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
@@ -233,101 +242,107 @@ object ModelDownloader {
                 }
                 task.status = "error"
                 task.error = e.message ?: e.toString()
+                tasks.remove(taskId)
                 emit(task)
             }
 
             override fun onResponse(call: Call, response: Response) {
-                if (!response.isSuccessful) {
-                    task.status = "error"
-                    task.error = "HTTP ${response.code}: ${response.message}"
-                    emit(task)
-                    return
-                }
-
-                val body = response.body
-                if (body == null) {
-                    task.status = "error"
-                    task.error = "Empty response body"
-                    emit(task)
-                    return
-                }
-
-                val totalLen = body.contentLength()
-                task.totalBytes = if (totalLen > 0) totalLen else CATALOG.find { it.id == id }?.sizeBytes ?: 1_000_000_000L
-
-                var downloaded = 0L
-                var lastUpdate = SystemClock.elapsedRealtime()
-                var bytesSinceLastUpdate = 0L
-
-                try {
-                    body.byteStream().use { input ->
-                        FileOutputStream(partFile).use { output ->
-                            val buffer = ByteArray(64 * 1024)
-                            var read: Int
-                            while (input.read(buffer).also { read = it } != -1) {
-                                if (call.isCanceled()) {
-                                    task.status = "cancelled"
-                                    partFile.delete()
-                                    emit(task)
-                                    return
-                                }
-                                output.write(buffer, 0, read)
-                                downloaded += read
-                                bytesSinceLastUpdate += read
-                                task.downloadedBytes = downloaded
-
-                                val now = SystemClock.elapsedRealtime()
-                                val elapsed = now - lastUpdate
-                                if (elapsed >= 350) {
-                                    val speedBytesPerSec = (bytesSinceLastUpdate * 1000) / elapsed
-                                    task.speed = formatSpeed(speedBytesPerSec)
-                                    task.pct = if (task.totalBytes > 0) ((downloaded * 100) / task.totalBytes).toInt().coerceIn(0, 99) else 0
-                                    lastUpdate = now
-                                    bytesSinceLastUpdate = 0L
-                                    emit(task)
-                                }
-                            }
-                            output.flush()
-                        }
+                response.use { resp ->
+                    if (!resp.isSuccessful) {
+                        task.status = "error"
+                        task.error = "HTTP ${resp.code}: ${resp.message}"
+                        partFile.delete()
+                        tasks.remove(taskId)
+                        emit(task)
+                        return
                     }
 
-                    // Download complete: atomic rename
-                    if (partFile.exists()) {
-                        destFile.delete()
-                        if (partFile.renameTo(destFile)) {
-                            task.status = "completed"
-                            task.pct = 100
-                            task.speed = "0 MB/s"
-                            task.downloadedBytes = destFile.length()
-                            task.totalBytes = destFile.length()
-                            Runtime.registerLocalModel(context, id, name, cleanFilename)
-                            LocalBridgeServer.start(context)
-                            emit(task)
+                    val body = resp.body
+                    if (body == null) {
+                        task.status = "error"
+                        task.error = "Empty response body"
+                        tasks.remove(taskId)
+                        emit(task)
+                        return
+                    }
+
+                    val totalLen = body.contentLength()
+                    task.totalBytes = if (totalLen > 0) totalLen else CATALOG.find { it.id == resolvedId }?.sizeBytes ?: 1_000_000_000L
+
+                    var downloaded = 0L
+                    var lastUpdate = SystemClock.elapsedRealtime()
+                    var bytesSinceLastUpdate = 0L
+
+                    try {
+                        body.byteStream().use { input ->
+                            FileOutputStream(partFile).use { output ->
+                                val buffer = ByteArray(64 * 1024)
+                                var read: Int
+                                while (input.read(buffer).also { read = it } != -1) {
+                                    if (call.isCanceled()) {
+                                        task.status = "cancelled"
+                                        partFile.delete()
+                                        emit(task)
+                                        return
+                                    }
+                                    output.write(buffer, 0, read)
+                                    downloaded += read
+                                    bytesSinceLastUpdate += read
+                                    task.downloadedBytes = downloaded
+
+                                    val now = SystemClock.elapsedRealtime()
+                                    val elapsed = now - lastUpdate
+                                    if (elapsed >= 350) {
+                                        val speedBytesPerSec = (bytesSinceLastUpdate * 1000) / elapsed
+                                        task.speed = formatSpeed(speedBytesPerSec)
+                                        task.pct = if (task.totalBytes > 0) ((downloaded * 100) / task.totalBytes).toInt().coerceIn(0, 99) else 0
+                                        lastUpdate = now
+                                        bytesSinceLastUpdate = 0L
+                                        emit(task)
+                                    }
+                                }
+                                output.flush()
+                            }
+                        }
+
+                        if (partFile.exists()) {
+                            destFile.delete()
+                            if (partFile.renameTo(destFile)) {
+                                task.status = "completed"
+                                task.pct = 100
+                                task.speed = "0 MB/s"
+                                task.downloadedBytes = destFile.length()
+                                task.totalBytes = destFile.length()
+                                Runtime.registerLocalModel(context, resolvedId, name, cleanFilename)
+                                LocalBridgeServer.start(context)
+                                Runtime.disposeRunningInstance()
+                                emit(task)
+                            } else {
+                                task.status = "error"
+                                task.error = "Failed to rename temporary file"
+                                emit(task)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        if (call.isCanceled()) {
+                            task.status = "cancelled"
+                            partFile.delete()
                         } else {
                             task.status = "error"
-                            task.error = "Failed to rename temporary file"
-                            emit(task)
+                            task.error = e.message ?: e.toString()
                         }
-                    }
-                } catch (e: Exception) {
-                    if (call.isCanceled()) {
-                        task.status = "cancelled"
-                        partFile.delete()
-                    } else {
-                        task.status = "error"
-                        task.error = e.message ?: e.toString()
-                    }
-                    emit(task)
-                } finally {
-                    if (task.status != "completed") {
-                        tasks.remove(id)
+                        emit(task)
+                    } finally {
+                        if (task.status != "completed") {
+                            tasks.remove(taskId)
+                        }
                     }
                 }
             }
         })
 
         emit(task)
-        return JSONObject().put("ok", true).put("status", "started")
+        return JSONObject().put("ok", true).put("status", "started").put("id", resolvedId)
     }
 
     /** Cancels an active download */
@@ -345,12 +360,17 @@ object ModelDownloader {
     /** Deletes a downloaded model */
     fun deleteModel(context: Context, id: String, filename: String): JSONObject {
         cancelDownload(context, id)
+        LocalBridgeServer.stopIfModel(filename)
         val targetDir = Runtime.modelsDir(context)
         val f = File(targetDir, filename)
         val ok = f.delete()
         File(targetDir, "$filename.part").delete()
-        Runtime.unregisterLocalModel(context, id)
+        val resolvedId = deriveModelId(filename)
+        Runtime.unregisterLocalModel(context, resolvedId)
+        if (id != resolvedId) Runtime.unregisterLocalModel(context, id)
+        Runtime.disposeRunningInstance()
         tasks.remove(id)
+        tasks.remove(resolvedId)
         return JSONObject().put("ok", ok)
     }
 
@@ -390,8 +410,11 @@ object ModelDownloader {
         // 2. Custom downloaded GGUF/model files
         val knownFilenames = CATALOG.map { it.filename }.toSet()
         for (f in files) {
-            if (f.isFile && !f.name.endsWith(".part") && !knownFilenames.contains(f.name)) {
-                val id = f.name.substringBeforeLast('.').lowercase().replace("[^a-z0-9_-]".toRegex(), "-")
+            if (f.isFile && f.length() > 1024 && !f.name.endsWith(".part") &&
+                !f.name.startsWith("mmproj-", true) && !knownFilenames.contains(f.name) &&
+                (f.name.endsWith(".gguf", true) || f.name.endsWith(".safetensors", true) || f.name.endsWith(".bin", true))
+            ) {
+                val id = deriveModelId(f.name)
                 val isImage = f.name.contains("image", true) || f.name.contains("safetensors", true)
                 res.put(JSONObject()
                     .put("id", id)

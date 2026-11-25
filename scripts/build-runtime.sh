@@ -72,16 +72,49 @@ curl -fsSL "https://github.com/anomalyco/opencode/releases/download/$TAG/opencod
 test -f "$WORK/oc/opencode"
 echo "$TAG" > "$WORK/oc/version"
 
+echo "== 2b/3 llama.cpp (llama-server arm64 for local GGUF models) =="
+LLAMA_TAG="${LLAMA_TAG:-}"
+if [ -z "$LLAMA_TAG" ]; then
+  AUTH=()
+  [ -n "${GH_TOKEN:-}" ] && AUTH=(-H "Authorization: Bearer $GH_TOKEN")
+  LLAMA_TAG="$(curl -fsSL "${AUTH[@]}" "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=15" | python3 -c '
+import json, sys
+for r in json.load(sys.stdin):
+    if not r.get("prerelease") and not r.get("draft"):
+        for a in r.get("assets", []):
+            if a.get("name", "").endswith("-bin-ubuntu-arm64.tar.gz"):
+                print(r["tag_name"])
+                raise SystemExit(0)
+' || true)"
+fi
+LLAMA_TAG="${LLAMA_TAG:-b12720}"
+echo "using llama.cpp $LLAMA_TAG"
+mkdir -p "$WORK/llama_raw" "$WORK/llama"
+curl -fsSL "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_TAG/llama-${LLAMA_TAG}-bin-ubuntu-arm64.tar.gz" | tar -xz -C "$WORK/llama_raw"
+LLAMA_SRC="$(find "$WORK/llama_raw" -maxdepth 2 -name llama-server -printf '%h\n' | head -n1)"
+test -n "$LLAMA_SRC" && test -f "$LLAMA_SRC/llama-server"
+cp -a "$LLAMA_SRC/llama-server" "$WORK/llama/"
+cp -a "$LLAMA_SRC"/libllama*.so* "$WORK/llama/"
+cp -a "$LLAMA_SRC"/libggml*.so* "$WORK/llama/"
+cp -a "$LLAMA_SRC"/libmtmd*.so* "$WORK/llama/" 2>/dev/null || true
+
 echo "== 3/3 rootfs (Ubuntu 24.04 arm64) =="
 docker rm -f ocroot >/dev/null 2>&1 || true
-docker run --platform linux/arm64 --name ocroot -v "$WORK/oc:/oc:ro" ubuntu:24.04 bash -euc '
+docker run --platform linux/arm64 --name ocroot -v "$WORK/oc:/oc:ro" -v "$WORK/llama:/llama:ro" ubuntu:24.04 bash -euc '
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
   apt-get install -y --no-install-recommends ca-certificates curl git ripgrep openssh-client \
-    python3 nodejs npm unzip zip less nano procps
+    python3 nodejs npm unzip zip less nano procps libgomp1
   install -m755 /oc/opencode /usr/local/bin/opencode
   cp /oc/version /etc/opencode-version
   /usr/local/bin/opencode --version || echo "WARN: smoke test failed under qemu (non-fatal)"
+
+  mkdir -p /opt/llama
+  cp -a /llama/. /opt/llama/
+  chmod 755 /opt/llama/llama-server
+  ln -sf /opt/llama/llama-server /usr/local/bin/llama-server
+  ldd /opt/llama/llama-server || true
+  /opt/llama/llama-server --version || echo "WARN: llama-server smoke test failed under qemu (non-fatal)"
 
   # Pre-seed official models registry in rootfs for instant offline boot
   mkdir -p /root/.cache/opencode

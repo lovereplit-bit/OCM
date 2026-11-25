@@ -57,7 +57,7 @@ class OpenCodeService : Service() {
             proc = p
             val log = File(filesDir, "server.log")
             thread(isDaemon = true) { try { p.inputStream.copyTo(FileOutputStream(log, false)) } catch (_: Exception) {} }
-            val ok = Runtime.waitReady(p, port, pw, 35_000)
+            val ok = Runtime.waitReady(p, port, pw, 50_000)
             if (ok) {
                 ServerState.port = port; ServerState.password = pw
                 ServerState.error = null; ServerState.ready = true
@@ -73,8 +73,8 @@ class OpenCodeService : Service() {
                         if (lf.exists()) lf.readLines().takeLast(8).joinToString("\n") else ""
                     } catch (_: Exception) { "" }
                     ServerState.error = "OpenCode завершился с ошибкой ($code)" + (if (logTail.isNotEmpty()) ":\n$logTail" else "")
-                    // Auto-heal config if startup crashed
-                    Runtime.sanitizeConfig(this, uid, forceReset = (attempt >= 1))
+                    // Sanitize broken/corrupt config without discarding valid plugins and providers
+                    Runtime.sanitizeConfig(this, uid, forceReset = false)
                 }
                 p.destroy()
             }
@@ -128,6 +128,7 @@ class OpenCodeService : Service() {
         ServerState.ready = false
         watcher?.interrupt()
         proc?.destroy()
+        try { LocalBridgeServer.stop() } catch (_: Exception) {}
         try { wake?.release() } catch (_: Exception) {}
         super.onDestroy()
     }
