@@ -1,90 +1,95 @@
-# 🧠 Локальные ИИ Модели (Hugging Face) в OpenCode Mobile v2.0.1
+# Local AI Models (Hugging Face) in OpenCode Mobile v2.1
 
-В OpenCode Mobile внедрена полноценная поддержка скачивания и работы локальных ИИ моделей напрямую с **Hugging Face** без необходимости подключения к интернету и без расхода API-баланса.
-
----
-
-## 🌟 Основные возможности
-
-1. **Загрузка по требованию (On-Demand)**:
-   - Модели не вшиты в APK и не тратят память при установке.
-   - Скачиваются в один клик из раздела **Настройки → Модели и провайдеры → Локальные ИИ модели (Hugging Face)**.
-   - Поддерживается отображение прогресса (проценты, скорость загрузки в МБ/с, скачанный объем).
-
-2. **Отображение в Главном Хабе**:
-   - Скачанные модели автоматически появляются в главном селекторе моделей чата с отметкой **`(Локально)`** и фиолетовым бейджем **`Локально`**.
-   - Работают полностью офлайн на вашем Android-устройстве.
-
-3. **Добавление своих моделей**:
-   - Кнопка **«Добавить свою ссылку с Hugging Face»** позволяет вставить любую прямую ссылку на файл `.gguf` или `.safetensors` из репозиториев Hugging Face.
-
-4. **Локальный мост для ветки OpenCode v1**:
-   - Встроенный сервер моста на `127.0.0.1:8088` транслирует локальные модели в стандартный OpenAI API формат (`/v1/chat/completions`, `/v1/models`).
-   - Автоматическая синхронизация конфигурации `opencode.json` в `~/.config/opencode/opencode.json`.
+OpenCode Mobile supports downloading and running local AI models directly from **Hugging Face** -- fully offline, no API balance consumed.
 
 ---
 
-## 📦 Каталог встроенных моделей (500 МБ – 4 ГБ)
+## Key Features
 
-| Модель | Тип | Размер | Назначение и особенности |
+1. **On-Demand Download**:
+   - Models are not bundled in the APK.
+   - Download in one tap from **Settings > Local AI Models (Hugging Face)**.
+   - Progress display: percentage, speed (MB/s), downloaded volume.
+
+2. **Main Hub Integration**:
+   - Downloaded models appear in the chat model selector with a `(Local)` suffix and accent badge.
+   - Work fully offline on your Android device.
+
+3. **Custom Models**:
+   - "Add your Hugging Face link" button accepts any direct `.gguf` file URL from Hugging Face repositories.
+
+4. **Offline Mode**:
+   - Toggle in **Settings > Appearance > Offline Mode**.
+   - When enabled, the app disables all network requests and uses only the local GGUF model for inference.
+   - The banner shows "Offline" status with a visual indicator.
+
+5. **Local Bridge (OpenCode v1)**:
+   - Built-in server on `127.0.0.1:8088` translates local models into standard OpenAI API format (`/v1/chat/completions`, `/v1/models`).
+   - Uses `llama-server` (llama.cpp) for GGUF inference on-device.
+   - Auto-sync with `opencode.json` at `~/.config/opencode/opencode.json`.
+
+---
+
+## Built-in Model Catalog (500 MB -- 4 GB)
+
+| Model | Type | Size | Purpose |
 |---|---|---|---|
-| **Walkyrie** | Text to Image | **~2.8 ГБ** | Генерация артов и изображений по текстовому описанию. Автоматический предпросмотр в чате. |
-| **Sakura-Iris-3B** | Text / Code | **~3.14 ГБ** | 3B модель высокой точности (Q4_K_M) для кода, литературного текста и перевода. |
-| **Nanosaur 2** | Vision-Language | **~1.3 ГБ** *(с энкодером ~2.0 ГБ)* | Мультимодальная модель для анализа изображений, вложений и генерации кода робототехники. |
-| **Qwen2.5-Coder-0.5B** | Code / LLM | **~550 МБ** | Сверхлегкий ассистент по кодингу для любых телефонов со слабым процессором. |
-| **SmolLM2-1.7B-Instruct** | Chat / General | **~1.0 ГБ** | Быстрая и качественная диалоговая модель от Hugging Face. |
-| **Qwen2.5-Coder-1.5B** | Code / LLM | **~1.1 ГБ** | Оптимальный баланс высокой скорости и точности написания кода на мобильных устройствах. |
-| **DeepSeek-R1-Distill-1.5B**| Reasoning / Code | **~1.1 ГБ** | Модель с поддержкой пошаговых цепочек размышлений (`<think>...</think>`). |
-| **Llama-3.2-1B-Instruct** | Chat / General | **~800 МБ** | Официальная ультракомпактная модель от Meta. |
-| **Llama-3.2-3B-Instruct** | Chat / Code | **~2.2 ГБ** | Флагманская 3B модель Meta с улучшенным контекстом. |
-| **Phi-3.5-mini-instruct** | Reasoning / Code | **~2.4 ГБ** | 3.8B модель Microsoft с поддержкой контекста до 128k токенов. |
-| **Qwen2.5-Coder-3B** | Code / LLM | **~2.2 ГБ** | Мощная 3B модель для сложного рефакторинга и создания архитектуры проектов. |
+| **Walkyrie** | Text to Image | ~2.8 GB | Art and image generation from text descriptions. Auto-preview in chat. |
+| **Sakura-Iris-3B** | Text / Code | ~3.14 GB | High-accuracy 3B model (Q4_K_M) for code, text and translation. |
+| **Qwen2.5-Coder-0.5B** | Code / LLM | ~550 MB | Ultra-light coding assistant for any phone. |
+| **SmolLM2-1.7B-Instruct** | Chat / General | ~1.0 GB | Fast quality dialog model from Hugging Face. |
+| **Qwen2.5-Coder-1.5B** | Code / LLM | ~1.1 GB | Optimal speed/accuracy balance for mobile coding. |
+| **DeepSeek-R1-Distill-1.5B** | Reasoning / Code | ~1.1 GB | Step-by-step reasoning chains (`<think>...</think>`). |
+| **Llama-3.2-1B-Instruct** | Chat / General | ~800 MB | Official ultra-compact model from Meta. |
+| **Llama-3.2-3B-Instruct** | Chat / Code | ~2.2 GB | Flagship 3B model from Meta. |
+| **Phi-3.5-mini-instruct** | Reasoning / Code | ~2.4 GB | 3.8B model from Microsoft, up to 128k token context. |
+| **Qwen2.5-Coder-3B** | Code / LLM | ~2.2 GB | Powerful 3B model for complex refactoring. |
 
 ---
 
-## 🚀 Как использовать
+## Usage
 
-### Скачивание модели:
-1. Откройте **Настройки** (иконка ползунков в панели навигации).
-2. В блоке **«Модели и провайдеры»** выберите пункт **«Локальные ИИ модели (Hugging Face)»**.
-3. Найдите нужную модель (например, *Walkyrie*, *Sakura-Iris-3B* или *Nanosaur 2*) и нажмите **«⬇ Скачать с Hugging Face»**.
-4. Дождитесь завершения скачивания.
+### Downloading a model:
+1. Open **Settings** (slider icon in the navigation bar).
+2. In **"Models & Providers"** select **"Local AI Models (Hugging Face)"**.
+3. Find the model and tap **"Download from Hugging Face"**.
+4. Wait for the download to finish.
 
-### Выбор модели в чате:
-1. Нажмите на чип выбора модели над полем ввода сообщения в чате (или нажмите **«⚡ Выбрать в чате»** в карточке модели).
-2. В списке моделей в самом верху отобразятся скачанные модели с припиской **`(Локально)`**.
-3. Нажмите на модель для выбора.
-4. Отправляйте запросы — генерация происходит локально!
+### Selecting a model in chat:
+1. Tap the model chip above the message input field.
+2. Downloaded models appear at the top with a `(Local)` suffix.
+3. Tap the model to select it.
+4. Send messages -- inference runs locally.
 
-### Генерация изображений (Walkyrie):
-- Выберите модель `Walkyrie (Text to Image) (Локально)`.
-- Напишите в чат описание желаемого изображения (например: `Нарисуй футуристический неоновый город на закате`).
-- Модель сформирует визуальный артефакт в `/sdcard/OpenCode/generated/` и выведет его в чат с кнопкой предпросмотра `[🖼️ Открыть изображение]`.
+### Image generation (Walkyrie):
+- Select `Walkyrie (Text to Image) (Local)`.
+- Describe the image you want in chat.
+- The model generates a visual artifact in `/sdcard/OpenCode/generated/` and shows it in chat with a preview button.
 
 ---
 
-## 🛠️ Архитектура моста (Bridge)
+## Bridge Architecture
 
-- **Порт:** `127.0.0.1:8088` (IPv4 loopback).
-- **Провайдер в OpenCode v1:**
+- **Port:** `127.0.0.1:8088` (IPv4 loopback).
+- **Inference engine:** `llama-server` from llama.cpp, running as a native ARM64 binary.
+- **Provider in OpenCode v1:**
   ```json
   "provider": {
     "local": {
-      "name": "Локальные модели (GGUF)",
+      "name": "Local Models (GGUF)",
       "npm": "@ai-sdk/openai",
       "options": {
         "baseURL": "http://127.0.0.1:8088/v1",
         "apiKey": "local"
       },
       "models": {
-        "walkyrie": { "name": "Walkyrie (Локально, Text-to-Image)", "attachment": true, "free": true },
-        "sakura-iris-3b": { "name": "Sakura-Iris-3B (Локально)", "free": true },
-        "nanosaur-2": { "name": "Nanosaur 2 (Локально, Vision)", "attachment": true, "free": true }
+        "walkyrie": { "name": "Walkyrie (Local, Text-to-Image)", "attachment": true, "free": true },
+        "sakura-iris-3b": { "name": "Sakura-Iris-3B (Local)", "free": true }
       }
     }
   }
   ```
-- **Управление через терминал:**
+- **Terminal commands:**
   ```bash
   bash scripts/run-local-bridge.sh status
   bash scripts/run-local-bridge.sh models

@@ -1,7 +1,7 @@
 <p align="center">
   <img src="docs/logo.svg" alt="OpenCode logo" width="96">
 </p>
-<p align="center">Настоящий OpenCode на Android-телефоне. Без root и без отдельного компьютера.</p>
+<p align="center">OpenCode on your Android phone. No root, no desktop required.</p>
 <p align="center">
   <a href="https://github.com/lovereplit-bit/OCM/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/lovereplit-bit/OCM?style=flat-square" /></a>
   <a href="https://github.com/lovereplit-bit/OCM/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/lovereplit-bit/OCM/build.yml?style=flat-square&branch=main" /></a>
@@ -10,122 +10,117 @@
 
 ---
 
-### Установка
+### Installation
 
-Скачайте `OpenCode-<версия>-<сборка>.apk` со страницы
-[Releases](https://github.com/lovereplit-bit/OCM/releases/latest) и установите.
+Download `OpenCode-<version>-<build>.apk` from
+[Releases](https://github.com/lovereplit-bit/OCM/releases/latest) and install.
 
-- Android 11 или новее, 64-битный ARM (arm64-v8a)
-- Первый запуск распаковывает Linux-окружение (пару минут, один раз)
-- Работает сразу: первый же запуск открывает чат, бесплатные модели отвечают без входа
-- Обновления приходят по воздуху: **Настройки → Обновления**
+- Android 11+, 64-bit ARM (arm64-v8a)
+- First launch unpacks the Linux environment (a couple of minutes, once)
+- Works immediately: free models respond without login
+- OTA updates: **Settings > Updates**
 
-Текущая версия приложения: **1.0.8** (откат на рабочую линейку с ядром OpenCode **1.x**).
-Ветка 1.x закреплена сознательно: в ней чат с ИИ работает из коробки.
+Current version: **2.1** (OpenCode core **1.x** line).
 
-### Что внутри
+### What's inside
 
-OpenCode Mobile — Android-приложение, в которое упакованы полноценный Linux-окружение (proot), `opencode serve` 1.x и
-свой мобильный интерфейс к нему. Никакой сайт не открывается, чаты остаются читаемыми даже без сети.
+OpenCode Mobile is an Android app that bundles a full Linux environment (proot), `opencode serve` 1.x and
+a custom mobile UI. No website is opened, chats remain readable even without network.
 
-- Все команды терминального агента работают на телефоне: `/init`, `/connect`, `/models`, `/undo`, `/share` и остальные
-- MCP-серверы и плагины настраиваются так же, как на компьютере
-- Чат с агентом, живой вывод терминала и дерево файлов проекта
-- Книжная и альбомная ориентации
-- Звуки и уведомления: задача завершена, агент ждёт ответа, кончилась квота
-- Фоновая работа через foreground-службу, чтобы сервер не убивался
-- Загрузка `AGENTS.md` и файлов агентов из файлового пикера телефона: **Настройки → Агенты**
-- Загрузка локальных ИИ-моделей (GGUF) для работы агента без интернета: **Настройки → Локальные модели**
-- Доступ к `/storage/emulated/0` и `Download` из Linux-окружения
+- All terminal agent commands work on the phone: `/init`, `/connect`, `/models`, `/undo`, `/share` etc.
+- MCP servers and plugins configured the same way as on desktop
+- Chat with the agent, live terminal output and project file tree
+- Portrait and landscape orientation
+- Sounds and notifications: task complete, agent waiting, quota exhausted
+- Background work via foreground service
+- Upload `AGENTS.md` and agent files from the phone file picker: **Settings > Agents**
+- Download local AI models (GGUF) for offline agent work: **Settings > Local Models**
+- Access to `/storage/emulated/0` and `Download` from the Linux environment
 
-### Локальные ИИ-модели с Hugging Face и офлайн-режим (500 МБ – 4 ГБ)
+### Local AI Models (Hugging Face) and Offline Mode (500 MB -- 4 GB)
 
-Приложение позволяет скачивать и автоматически подключать локальные легковесные модели напрямую с **Hugging Face**:
-- **Чистый вес APK**: модели не вшиты в сборку, а скачиваются по требованию в **Настройки → Локальные ИИ модели (Hugging Face)**.
-- **Отображение в Главном Хабе**: скачанные модели сразу появляются в списке моделей чата с припиской **`(Локально)`** и бейджем `Локально`.
-- **Каталог встроенных моделей**:
-  - 🎨 **Walkyrie (около 2.8 ГБ)** — Text-to-Image модель генерации изображений по описанию с встроенным артефакт-предпросмотром.
-  - 🤖 **Sakura-Iris-3B (минимальный размер 3.14 ГБ)** — высокоточная 3B модель (Q4_K_M) для кода, текста и перевода.
-  - 👁️ **Nanosaur 2 (около 1.3 ГБ, с энкодером ~2.0 ГБ)** — мультимодальная Vision-Language модель для анализа изображений и кода.
-  - ⚡ **Qwen 2.5 Coder 0.5B** (~550 МБ) — ультрабыстрый ассистент по кодингу для любых телефонов.
-  - ⚡ **Qwen 2.5 Coder 1.5B** (~1.1 ГБ) — оптимальный баланс скорости и качества кода на мобильных устройствах.
-  - 🧠 **DeepSeek-R1 Distill 1.5B** (~1.1 ГБ) — рассуждающая модель (Reasoning) с цепочками мыслей офлайн.
-  - 🦙 **Llama 3.2 1B & 3B** (~800 МБ / ~2.2 ГБ) — официальные компактные модели от Meta.
-  - 🔬 **Phi-3.5 Mini Instruct** (~2.4 ГБ) — модель от Microsoft с контекстом до 128k токенов.
-  - 💻 **Qwen 2.5 Coder 3B** (~2.2 ГБ) — флагманская 3B модель для сложного кодинга.
-- **Свои модели**: возможность вставить любую прямую ссылку на `.gguf` или `.safetensors` файл с Hugging Face через кнопку *«Добавить свою ссылку с Hugging Face»*.
-- **Локальный мост (OpenCode v1)**: фоновый мост на `127.0.0.1:8088` с полной совместимостью с OpenAI API (`/v1/models`, `/v1/chat/completions`) и автосинхронизацией `opencode.json`.
-- Подробная документация: [`docs/LOCAL_MODELS.md`](docs/LOCAL_MODELS.md).
+The app lets you download and auto-register local lightweight models directly from **Hugging Face**:
+- **Clean APK weight**: models are not bundled, downloaded on demand in **Settings > Local AI Models**.
+- **Main hub display**: downloaded models appear in the chat model selector with a `(Local)` suffix and a `Local` badge.
+- **Built-in catalog**: Walkyrie (text-to-image, ~2.8 GB), Sakura-Iris-3B (code/text, ~3.14 GB), Qwen 2.5 Coder 0.5B/1.5B/3B, DeepSeek-R1 Distill 1.5B, Llama 3.2 1B/3B, Phi-3.5 Mini, SmolLM2-1.7B.
+- **Custom models**: paste any direct `.gguf` link from Hugging Face.
+- **Local bridge**: background server on `127.0.0.1:8088` with OpenAI API compatibility (`/v1/models`, `/v1/chat/completions`), auto-sync with `opencode.json`.
+- **Offline mode**: toggle in Settings, works without any network when a local GGUF model is selected.
+- Detailed docs: [`docs/LOCAL_MODELS.md`](docs/LOCAL_MODELS.md).
 
-### Профили: гость — тоже человек, и у каждого свой
+### Custom API Providers
 
-- **Гость без входа.** При первом запуске достаточно нажать «Продолжить как гость»: приложение тут же создаёт
-  **случайный ник** (`Гость-7F3A`), **случайный пароль** и отдельный профиль со своей историей, ключами и бесплатной
-  квотой. Никто не сидит на общем аккаунте: у каждого гостя — свой.
-- **Почта без Google.** Можно указать почту — получите именованный профиль на этом телефоне. Пароль не нужен,
-  данные не покидают устройство.
-- **Смена профиля** — в Настройках; чаты и файлы остаются на телефоне и доступны при повторном входе.
-- Изоляция как в Termux: у каждого профиля свой HOME, свой случайный порт и свой случайный пароль локального сервера.
+- Add your own OpenAI-compatible API endpoint in **Settings > Models & Providers > Custom API**.
+- CORS-free: requests go through the native Android proxy (`extHttp`), no WebView fetch restrictions.
+- Auto-probes `/v1/models` for model discovery; manual model ID entry supported.
+- Works with OpenRouter, Together, Groq, local servers (Ollama, LM Studio, llama.cpp), and any OpenAI-compatible endpoint.
 
-### Аккаунт opencode: личная квота Zen
+### Seasonal HUD Themes
 
-Вход по Google/GitHub через `opencode console login` (device flow) подключает личную квоту OpenCode Zen — как в
-opencode на компьютере. После входа приложение **зеркалит аккаунт в credential-хранилище opencode**, поэтому модели
-сразу работают под вашей квотой, а не под общей анонимной (в 1.x сервер сам этого не делает — без зеркала вход
-выглядел бесполезным). Выйти можно в любой момент: Настройки → Аккаунт opencode.
+The UI adapts to the season with decorative overlays:
+- **Halloween** (Oct 25--31): dark atmospheric HUD
+- **New Year / Winter** (Dec 1 -- Feb 28): snowfall overlay
+- **Spring** (Mar 1 -- May 31): petal float
+- Manual override in **Settings > Appearance > Seasonal Theme** -- set any theme any time of year.
 
-Подсказки при ошибках квоты умные: если вы уже вошли — приложение предлагает перезапустить сервер или сменить
-модель/ключ, а не «войдите в Google» в сотый раз.
+### Session Drawer
 
-### Интерфейс
+- Current chat highlighted with accent dot
+- Running/busy sessions shown with spinner and "Active" badge
+- Unread agent responses marked with green dot and "New reply" badge
+- Filter chips to show only Running or Unread sessions
+- Hamburger button shows dots when there are busy or unread sessions
 
-- Настройки открываются **в один тап** иконкой в верхней панели — и ещё раз из списка сессий.
-- Чипы модели и «мышления» в поле ввода не выталкивают друг друга: длинное имя модели обрезается многоточием.
-- Названия сессий в списке обрезаются, не залезая под кнопку удаления.
-- Плашка «модели не подключены» встроена в поле ввода и никогда не закрывает верхнюю панель.
-- Настройки — это нижний мобильный лист, а не растянутое окно.
+### Profiles: every guest gets their own
 
-### ⚡ OpenCode IP Rotator (Обход лимитов бесплатной квоты HTTP 429)
+- **Guest without login.** First launch: tap "Continue as guest" -- the app creates a
+  **random nick** (`Guest-7F3A`), **random password** and a separate profile with its own history, keys and free quota.
+- **Email without Google.** You can enter an email for a named profile on this phone.
+- **Switch profiles** in Settings; chats and files stay on the phone.
+- Isolation: each profile has its own HOME, random port and random local server password.
 
-Для пользователей гостевых аккаунтов и бесплатных моделей OpenCode (Zen) в приложение интегрирован **OpenCode IP Rotator** (на базе [opencode-ip-rotator](https://github.com/alztrk/opencode-ip-rotator)):
-- **Автоматический обход лимитов**: Устраняет ошибки  на гостевых профилях без необходимости регистрации.
-- **Ротация IP**: Ротирует исходящие IP-адреса через **Cloudflare WARP** () и пул HTTP/SOCKS5 прокси ().
-- **Поддержка моделей**: Неограниченный доступ к моделям , , ,  через OpenAI-совместимый API.
-- **Управление в Настройках**: В секции «Джейлбрейки и плагины» доступен экран настройки IP Rotator с отображением внешнего IP, кнопкой мгновенной смены IP и подключением к OpenCode в один тап.
-- **Быстрый запуск сервера**: Локальный запуск скриптом === Starting OpenCode IP Rotator ===
-Docker not available, running natively with Python 3... или через Docker Compose ().
-- Подробная документация: [docs/IP_ROTATOR.md](docs/IP_ROTATOR.md).
+### OpenCode account: personal Zen quota
 
-### Агенты
+Login via Google/GitHub through `opencode console login` (device flow) connects your personal OpenCode Zen quota.
+After login the app mirrors the account into the opencode credential store, so models work under your quota.
+Logout anytime: Settings > OpenCode Account.
 
-В OpenCode два встроенных агента, между которыми можно переключаться в поле ввода.
+### OpenCode IP Rotator (HTTP 429 bypass)
 
-- **build** — основной, полный доступ, для работы над кодом
-- **plan** — только чтение, для анализа и планирования
-  - Не редактирует файлы
-  - Спрашивает разрешение перед командами bash
-  - Удобен для изучения незнакомого кода
+For guest accounts and free models, the app integrates **OpenCode IP Rotator**:
+- Automatic 429 bypass for guest profiles
+- IP rotation via **Cloudflare WARP** and HTTP/SOCKS5 proxy pool
+- Model support: big-pickle, claude-3-5-sonnet, gpt-4o, gemini-2.0-flash
+- Settings: "Jailbreaks & Plugins" > "OpenCode IP Rotator"
+- Detailed docs: [docs/IP_ROTATOR.md](docs/IP_ROTATOR.md).
 
-Также есть субагент **general** для сложных поисков; вызывается через `@general`.
+### Agents
 
-### Для разработчиков
+Two built-in agents, switchable in the input field:
 
-- `tests/run.sh` — e2e-тесты интерфейса в headless Chromium против мок-сервера opencode (74 проверки).
-- `tests/check-bridge.py` — статическая проверка: каждый `OC.*` из UI существует как `@JavascriptInterface` в Kotlin и в моке.
-- `scripts/build-runtime.sh` — proot как native-библиотеки, Ubuntu arm64, новейший стабильный `v1.*` opencode.
-- `scripts/fetch-ui-deps.sh` — marked, DOMPurify, highlight.js, xterm.js (закреплённые версии) и иконки файлов из репозитория opencode на том же теге. Всё вендорится в APK — интерфейсу не нужна сеть.
-- Сборка полностью в GitHub Actions: пуш в `main` публикует APK в Releases. `docs/SETUP.md` — одноразовая настройка.
+- **build** -- main, full access, for coding
+- **plan** -- read-only, for analysis and planning
+
+Sub-agent **general** for complex searches via `@general`.
+
+### For developers
+
+- `tests/run.sh` -- e2e UI tests in headless Chromium against the opencode mock server (74 checks).
+- `tests/check-bridge.py` -- static check: every `OC.*` from UI exists as `@JavascriptInterface` in Kotlin and in the mock.
+- `scripts/build-runtime.sh` -- proot as native libs, Ubuntu arm64, latest stable `v1.*` opencode.
+- `scripts/fetch-ui-deps.sh` -- marked, DOMPurify, highlight.js, xterm.js (pinned versions) vendored into APK.
+- Build is fully in GitHub Actions: push to `main` publishes APK in Releases. `docs/SETUP.md` -- one-time setup.
 
 ### Contributing
 
-PR приветствуются. Перед пушем запускайте `bash tests/run.sh` — проверки CI должны проходить.
-Новости и обсуждение — в [Telegram](https://t.me/OpenCodeMob).
+PRs welcome. Run `bash tests/run.sh` before pushing -- CI checks must pass.
+News and discussion: [Telegram](https://t.me/OpenCodeMob).
 
 ### Building on OpenCode
 
-OpenCode Mobile — независимый проект: он не создан командой OpenCode и не связан с ней. Внутри — их MIT-лицензированный
-релиз 1.x. OpenCode как CLI-агент есть и у Warp — [docs.warp.dev/agents/cli-agents/opencode](https://docs.warp.dev/agents/cli-agents/opencode/).
+OpenCode Mobile is an independent project: not created by or affiliated with the OpenCode team. Inside is their MIT-licensed
+1.x release. OpenCode as a CLI agent is also available at Warp -- [docs.warp.dev/agents/cli-agents/opencode](https://docs.warp.dev/agents/cli-agents/opencode/).
 
 ---
 
-**Наше сообщество:** [Telegram — @OpenCodeMob](https://t.me/OpenCodeMob)
+**Community:** [Telegram -- @OpenCodeMob](https://t.me/OpenCodeMob)
