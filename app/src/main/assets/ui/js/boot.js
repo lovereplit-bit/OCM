@@ -50,7 +50,7 @@ function start(){
   waitT=setTimeout(()=>{
     if(el&&!entered){
       extra.append(
-        h('button',{class:'btn wide',onclick:()=>{O.bootHide();entered=true;O.enter({offline:true})}},O.icon('doc'),'Читать кэшированные чаты, пока идёт запуск'),
+        h('button',{class:'btn wide',onclick:()=>{O.bootHide();entered=true;O.enter()}},O.icon('doc'),'Читать кэшированные чаты, пока идёт запуск'),
         h('button',{class:'btn wide',style:{marginTop:'8px'},onclick:()=>{
           if(spin)spin.remove();
           msg.textContent='Сброс конфигурации...';

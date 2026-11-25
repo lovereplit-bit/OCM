@@ -33,24 +33,11 @@ O.openSettings=()=>{
   profCard.append(profRow,accRow);
   body.append(profCard);
 
-  // 2. Models & Providers & Offline Mode
+  // 2. Models & Providers
   body.append(h('div',{class:'settings-section-title'},O.tr('Models & Providers','Модели и провайдеры')));
   const modelsCard=h('div',{class:'settings-card'});
-  const isOfflineOn=Boolean(O.store.get('offline_mode',false));
-  const netOnline=O.native.isOnline?O.native.isOnline():true;
-  const offlineRow=O.toggleRow(
-    'wifiOff',
-    O.tr('Offline Mode (Local Only)','Офлайн-режим (только локальные модели)'),
-    netOnline
-      ?O.tr('Use downloaded GGUF models without external API calls','Работать полностью локально без запросов в интернет')
-      :O.tr('No internet detected — local GGUF mode recommended','Интернет недоступен — включите локальные GGUF модели'),
-    isOfflineOn||!netOnline,
-    v=>{if(O.setOfflineMode)O.setOfflineMode(v)}
-  );
   modelsCard.append(
     O.listRow('cpu',O.tr('Active Model','Текущая модель'),S.model?S.model.providerID+'/'+S.model.modelID:O.tr('Not selected','Не выбрана'),O.icon('chevR'),()=>O.openModels()),
-    O.listRow('download',O.tr('Local AI Models (Hugging Face)','Локальные ИИ модели (Hugging Face)'),O.tr('Download GGUF & image models (437MB - 3.5GB)','Скачивание моделей 437МБ–3.5ГБ, работа офлайн'),O.icon('chevR'),()=>O.openLocalModels(s)),
-    offlineRow,
     O.listRow('key',O.tr('Connect Providers','Подключить провайдеров'),'OpenCode Zen, OpenAI, Anthropic, Gemini, DeepSeek...',O.icon('chevR'),()=>O.openConnect()),
     O.listRow('search',O.tr('Custom API Provider','Свой API провайдер'),'OpenAI-совм., Anthropic, Ollama, OpenRouter, Groq...',O.icon('chevR'),()=>O.openCustomProvider(s))
   );
@@ -67,10 +54,8 @@ O.openSettings=()=>{
     s.close();
     setTimeout(()=>location.reload(),400);
   });
-  const themeName={opencode:'OpenCode Dark',light:'Light',tokyonight:'Tokyo Night',gruvbox:'Gruvbox'}[S.opts.theme]||S.opts.theme;
-  const activeSeason=O.activeSeasonKey?O.activeSeasonKey(S.opts):'none';
-  const seasonTag=(O.SEASONAL_THEMES&&O.SEASONAL_THEMES.find(t=>t.id===activeSeason)?.name)||(activeSeason==='none'?'Обычный':activeSeason);
-  const themeRow=O.listRow('palette',O.tr('Themes, Accent & Seasonal HUD','Темы, акцент и сезонный HUD'),themeName+' · '+seasonTag+' · '+S.opts.fs+'px',O.icon('chevR'),()=>O.openThemes());
+  const themeName={opencode:'Тёмная',light:'Светлая'}[S.opts.theme]||'Тёмная';
+  const themeRow=O.listRow('palette',O.tr('Appearance','Оформление'),themeName+' · '+S.opts.fs+'px',O.icon('chevR'),()=>O.openThemes());
   const thinkRow=O.toggleRow('bulb',O.tr('Show Reasoning / Thinking','Показывать размышления'),O.tr('Display model thought process in responses','Блоки размышлений в ответах'),S.opts.thinking,v=>{S.opts.thinking=v;O.saveOpts();O.chat.renderAll()});
   const detailRow=O.toggleRow('code',O.tr('Expand Tool Details','Детали инструментов'),O.tr('Show commands, output and file diffs','Команды, вывод терминала и правки'),S.opts.details,v=>{S.opts.details=v;O.saveOpts();O.chat.renderAll()});
   appCard.append(langRow,themeRow,thinkRow,detailRow);
@@ -741,8 +726,8 @@ function openJailbreaks(){
   const myToken=getAuthorToken();
 
   const syncCloud=async(silent)=>{
-    if((O.isOfflineMode&&O.isOfflineMode())||(O.native.isOnline&&!O.native.isOnline())){
-      if(!silent)O.toast(O.tr('Offline mode active — showing saved presets','Офлайн-режим — показаны сохранённые пресеты'),1800);
+    if(O.native.isOnline&&!O.native.isOnline()){
+      if(!silent)O.toast(O.tr('No connection — showing saved presets','Нет соединения — показаны сохранённые пресеты'),1800);
       return;
     }
     try{
@@ -1154,8 +1139,8 @@ function openCustomPlugins(){
 
   const syncCloudPlugins=async(silent)=>{
     O.restoreCommunityState();
-    if((O.isOfflineMode&&O.isOfflineMode())||(O.native.isOnline&&!O.native.isOnline())){
-      if(!silent)O.toast(O.tr('Offline mode active — showing saved plugins','Офлайн-режим — показаны локальные плагины'),1800);
+    if(O.native.isOnline&&!O.native.isOnline()){
+      if(!silent)O.toast(O.tr('No connection — showing saved plugins','Нет соединения — показаны сохранённые плагины'),1800);
       return;
     }
     try{
@@ -1353,7 +1338,7 @@ function openUploadPluginModal(onDone){
 O.restoreCommunityState();
 O.syncAllCommunity=async()=>{
   O.restoreCommunityState();
-  if((O.isOfflineMode&&O.isOfflineMode())||(O.native.isOnline&&!O.native.isOnline()))return;
+  if(O.native.isOnline&&!O.native.isOnline())return;
   try{
     const myTok=getAuthorToken();
     const [jbsRes, plugsRes]=await Promise.all([
@@ -1695,266 +1680,6 @@ function openIpRotator() {
     )
   );
 }
-// ---- Local AI Models (Hugging Face Downloader & Bridge) ----
-function openLocalModels(parentSheet) {
-  let activeFilter = 'all';
-  const body = h('div');
-  const s = O.sheet(O.tr('Local AI Models (Hugging Face)', 'Локальные ИИ модели (Hugging Face)'), body, { full: true });
-
-  // Ensure local bridge is active
-  try { O.native.startLocalBridge(); } catch (_) {}
-  const bridgeStatus = O.native.getLocalBridgeStatus();
-
-  // 1. Info Banner & Bridge Status
-  const infoBanner = h('div', { class: 'local-models-banner' },
-    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' } },
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
-        h('span', { class: 'status-dot-green' }),
-        h('b', { style: { fontSize: '13px' } }, bridgeStatus.running ? O.tr('Local Bridge Active (127.0.0.1:8088)', 'Локальный мост активен (127.0.0.1:8088)') : O.tr('Bridge Starting...', 'Запуск моста...'))
-      ),
-      h('span', { class: 'badge-model badge-local' }, O.tr('Offline GGUF · v1', 'GGUF Офлайн · v1'))
-    ),
-    h('div', { class: 'mut s', style: { lineHeight: '1.4' } },
-      O.tr('Download GGUF & image models from Hugging Face (437MB – 3.5GB). Models execute offline via built-in llama-server and appear in the model hub as (Local).',
-           'Загрузка ИИ моделей напрямую с Hugging Face (437 МБ – 3.5 ГБ). Модели работают полностью офлайн через встроенный llama-server и отображаются в хабе с отметкой «(Локально)».')
-    )
-  );
-
-  // 2. Custom Model Link Input Bar
-  const customBtn = h('button', {
-    class: 'btn wide',
-    style: { margin: '10px 0 14px' },
-    onclick: () => openAddCustomModelModal()
-  }, O.icon('plus'), O.tr('Add Custom Hugging Face URL', 'Добавить свою ссылку с Hugging Face'));
-
-  // 3. Filter Tabs
-  const tabsContainer = h('div', { class: 'filter-tabs-row' });
-  const filters = [
-    { id: 'all', label: O.tr('All Models', 'Все модели') },
-    { id: 'image', label: O.tr('Text to Image', 'Text to Image') },
-    { id: 'llm', label: O.tr('Text / Code', 'Текст и Код') },
-    { id: 'vlm', label: O.tr('Vision (SmolVLM)', 'Vision (SmolVLM-500M)') },
-    { id: 'downloaded', label: O.tr('Downloaded', 'Скачанные') }
-  ];
-
-  function renderTabs() {
-    tabsContainer.textContent = '';
-    filters.forEach(f => {
-      const btn = h('button', {
-        class: 'filter-chip' + (activeFilter === f.id ? ' on' : ''),
-        onclick: () => { activeFilter = f.id; renderTabs(); renderList(); }
-      }, f.label);
-      tabsContainer.append(btn);
-    });
-  }
-
-  // 4. Model Cards List
-  const listEl = h('div', { class: 'local-models-list' });
-
-  function renderList() {
-    listEl.textContent = '';
-    const rawList = O.native.getLocalModels ? O.native.getLocalModels() : [];
-
-    let items = rawList;
-    if (activeFilter === 'image') items = items.filter(x => x.type === 'image');
-    else if (activeFilter === 'llm') items = items.filter(x => x.type === 'llm');
-    else if (activeFilter === 'vlm') items = items.filter(x => x.type === 'vlm');
-    else if (activeFilter === 'downloaded') items = items.filter(x => x.downloaded);
-
-    if (!items.length) {
-      listEl.append(h('div', { class: 'mut', style: { padding: '28px 16px', textAlign: 'center' } },
-        O.tr('No models found for selected filter.', 'В этой категории пока нет моделей.')
-      ));
-      return;
-    }
-
-    items.forEach(m => {
-      const card = h('div', { class: 'local-model-card' + (m.downloaded ? ' downloaded' : ''), id: 'model_card_' + m.id });
-
-      const typeIcon = m.type === 'image' ? 'image' : (m.type === 'vlm' ? 'eye' : 'cpu');
-      const typeLabel = m.type === 'image' ? 'Text-to-Image' : (m.type === 'vlm' ? 'Vision-Language' : 'Text & Code');
-      const topRow = h('div', { class: 'local-model-card-top' },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' } },
-          h('b', { style: { fontSize: '15px' } }, m.name),
-          h('span', { class: 'local-tag-pill', style: { display: 'inline-flex', alignItems: 'center', gap: '4px' } }, O.icon(typeIcon), typeLabel)
-        ),
-        h('span', { class: 'local-size-badge' }, m.size)
-      );
-
-      const desc = h('div', { class: 'local-model-desc' }, m.description || m.repo);
-
-      const srcRow = h('div', { class: 'mut s', style: { margin: '4px 0 8px', display: 'flex', gap: '8px', flexWrap: 'wrap' } },
-        h('span', null, 'Источник: ' + (m.repo || 'Hugging Face GGUF')),
-        m.filename ? h('span', { class: 'mono' }, m.filename) : null
-      );
-
-      const statusWrap = h('div', { class: 'local-model-status-wrap' });
-      const actionsRow = h('div', { class: 'local-model-actions' });
-
-      if (m.downloading) {
-        const pct = m.pct || 0;
-        const pbar = h('div', { class: 'local-pbar-bg' }, h('div', { class: 'local-pbar-fill', style: { width: pct + '%' } }));
-        const ptxt = h('div', { class: 'local-pbar-text' },
-          h('span', null, pct + '% ' + (m.speed ? '· ' + m.speed : '')),
-          h('span', null, formatBytes(m.downloadedBytes || 0) + ' / ' + formatBytes(m.totalBytes || m.sizeBytes || 0))
-        );
-        statusWrap.append(pbar, ptxt);
-
-        const cancelBtn = h('button', {
-          class: 'btn sm dng',
-          onclick: () => {
-            O.native.cancelModelDownload(m.id);
-            O.toast(O.tr('Download cancelled', 'Загрузка отменена'), 1500);
-            renderList();
-          }
-        }, O.icon('x'), O.tr('Cancel', 'Отмена'));
-        actionsRow.append(cancelBtn);
-      } else if (m.downloaded) {
-        const badgeReady = h('div', { class: 'local-ready-badge' },
-          O.icon('check', 'ok'),
-          h('span', null, O.tr('Downloaded · Available in chat hub as (Local)', 'Скачано · Доступно в хабе моделей как «(Локально)»'))
-        );
-        statusWrap.append(badgeReady);
-
-        const selectBtn = h('button', {
-          class: 'btn pri sm',
-          onclick: async () => {
-            try { if (O.native.syncLocalModels) O.native.syncLocalModels(); } catch (_) {}
-            try { if (O.native.preloadLocalModel) O.native.preloadLocalModel(m.id); } catch (_) {}
-            O.setModel('local', m.id);
-            O.toast(O.tr('Selected model: ', 'Выбрана модель: ') + m.name + ' (Локально)', 2000);
-            s.close();
-            if (parentSheet && parentSheet.close) parentSheet.close();
-          }
-        }, O.icon('check'), O.tr('Select in Chat', 'Выбрать в чате'));
-
-        const deleteBtn = h('button', {
-          class: 'btn sm dng',
-          onclick: async () => {
-            if (await O.confirm(O.tr('Delete model?', 'Удалить модель?'), m.name + ' (' + m.size + ')', O.tr('Delete', 'Удалить'), true)) {
-              O.native.deleteModel(m.id, m.filename);
-              O.toast(O.tr('Model deleted', 'Модель удалена'), 1500);
-              renderList();
-            }
-          }
-        }, O.icon('trash'), O.tr('Delete', 'Удалить'));
-
-        actionsRow.append(selectBtn, deleteBtn);
-      } else {
-        const notDlTxt = h('div', { class: 'mut s' }, O.tr('Not downloaded yet. Tap below to download from Hugging Face.', 'Ещё не скачана. Нажмите кнопку ниже для загрузки с Hugging Face.'));
-        statusWrap.append(notDlTxt);
-
-        const dlBtn = h('button', {
-          class: 'btn pri sm',
-          onclick: () => {
-            if (O.native.isOnline && !O.native.isOnline()) {
-              O.toast(O.tr('No internet connection for Hugging Face download', 'Нет подключения к интернету для загрузки модели'), 3000);
-              return;
-            }
-            O.native.downloadModel(m.id, m.url, m.filename, m.name);
-            O.toast(O.tr('Download started: ', 'Загрузка начата: ') + m.name, 2000);
-            renderList();
-          }
-        }, O.icon('download'), O.tr('Download from Hugging Face', 'Скачать с Hugging Face'));
-
-        actionsRow.append(dlBtn);
-      }
-
-      card.append(topRow, desc, srcRow, statusWrap, actionsRow);
-      listEl.append(card);
-    });
-  }
-
-  // Realtime download progress listener
-  O.on('model_download_progress', data => {
-    if (!data || !data.id) return;
-    const card = document.getElementById('model_card_' + data.id);
-    if (!card) {
-      renderList();
-      return;
-    }
-    if (data.status === 'completed' || data.status === 'ready' || data.status === 'error' || data.status === 'cancelled') {
-      renderList();
-      if (data.status === 'completed') {
-        O.toast(data.name + ' ' + O.tr('downloaded successfully!', 'успешно скачана и готова к работе!'), 3000);
-      } else if (data.status === 'error' && data.error) {
-        O.toast(O.tr('Download error: ', 'Ошибка загрузки: ') + data.error, 4000);
-      }
-      return;
-    }
-    let pbar = card.querySelector('.local-pbar-fill');
-    let ptxt = card.querySelector('.local-pbar-text');
-    if (pbar && ptxt) {
-      pbar.style.width = (data.pct || 0) + '%';
-      ptxt.innerHTML = '<span>' + (data.pct || 0) + '% ' + (data.speed ? '· ' + data.speed : '') + '</span>' +
-        '<span>' + formatBytes(data.downloadedBytes || 0) + ' / ' + formatBytes(data.totalBytes || 0) + '</span>';
-    } else {
-      renderList();
-    }
-  });
-
-  function openAddCustomModelModal() {
-    const urlInp = h('input', { class: 'mono', placeholder: 'https://huggingface.co/User/Repo/resolve/main/model.gguf' });
-    const nameInp = h('input', { placeholder: O.tr('Model Name (e.g. My Llama-3.2)', 'Название модели (напр. My Llama-3.2)') });
-    const typeSelect = h('select', { style: { padding: '8px', borderRadius: '6px', background: 'var(--bg-card)', color: 'var(--fg)', border: '1px solid var(--line)' } },
-      h('option', { value: 'llm' }, O.tr('Text & Code (GGUF)', 'Текст и Код (GGUF)')),
-      h('option', { value: 'image' }, O.tr('Text to Image (Safetensors / GGUF)', 'Text to Image (Safetensors / GGUF)')),
-      h('option', { value: 'vlm' }, O.tr('Vision-Language (Multimodal)', 'Vision-Language (Мультимодальная)'))
-    );
-    const fnInp = h('input', { class: 'mono', placeholder: O.tr('Target filename (optional, auto-derived)', 'Имя файла (необязательно, определится само)') });
-
-    const saveBtn = h('button', {
-      class: 'btn pri wide',
-      style: { marginTop: '14px' },
-      onclick: () => {
-        let u = urlInp.value.trim();
-        if (!u) return O.toast(O.tr('Enter Hugging Face URL', 'Введите ссылку на модель Hugging Face'));
-        if (O.native.isOnline && !O.native.isOnline()) {
-          return O.toast(O.tr('No internet connection', 'Нет подключения к интернету'), 3000);
-        }
-        if (u.includes('huggingface.co') && u.includes('/blob/')) {
-          u = u.replace('/blob/', '/resolve/');
-        }
-        if (!u.startsWith('http://') && !u.startsWith('https://')) {
-          u = 'https://' + u;
-        }
-        const urlTail = (u.split('/').pop() || '').split('?')[0];
-        const nm = nameInp.value.trim() || urlTail || 'Custom-GGUF';
-        let fn = fnInp.value.trim();
-        if (!fn) fn = urlTail;
-        if (!fn || !fn.includes('.')) fn = nm.toLowerCase().replace(/[^a-z0-9_-]/g, '_') + '.gguf';
-        const stem = fn.replace(/\.[^.]+$/, '');
-        const id = stem.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-
-        O.native.downloadModel(id, u, fn, nm);
-        O.toast(O.tr('Download started: ', 'Загрузка начата: ') + nm, 2500);
-        addSheet.close();
-        renderList();
-      }
-    }, O.icon('download'), O.tr('Download & Add to OpenCode', 'Скачать и добавить в OpenCode'));
-
-    const addSheet = O.sheet(O.tr('Add Custom Model from Hugging Face', 'Добавить свою модель с Hugging Face'), h('div', null,
-      h('div', { class: 'field' }, h('label', null, O.tr('Hugging Face Direct / GGUF URL', 'Прямая ссылка на Hugging Face (.gguf / .safetensors)')), urlInp),
-      h('div', { class: 'field' }, h('label', null, O.tr('Display Name', 'Отображаемое имя')), nameInp),
-      h('div', { class: 'field' }, h('label', null, O.tr('Model Type', 'Тип модели')), typeSelect),
-      h('div', { class: 'field' }, h('label', null, O.tr('Target Filename (optional)', 'Имя файла на телефоне (необязательно)')), fnInp),
-      saveBtn
-    ), { full: true });
-  }
-
-  function formatBytes(bytes) {
-    if (!bytes || bytes <= 0) return '0 MB';
-    if (bytes >= 1e9) return (bytes / 1e9).toFixed(2) + ' ГБ';
-    if (bytes >= 1e6) return (bytes / 1e6).toFixed(1) + ' МБ';
-    return Math.round(bytes / 1e3) + ' КБ';
-  }
-
-  renderTabs();
-  renderList();
-  body.append(infoBanner, customBtn, tabsContainer, listEl);
-}
-
-O.openLocalModels = openLocalModels;
 O.openIpRotator = openIpRotator;
 
 })();

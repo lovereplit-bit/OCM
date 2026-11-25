@@ -55,14 +55,6 @@ O.native={
   preparePreview:p=>(window.OC&&OC.preparePreview?OC.preparePreview(p):''),
   notify:(kind,title,text)=>{try{if(window.OC&&OC.notify)OC.notify(kind,title,text)}catch(_){}},
   state:()=>j(OC.state())||{},
-  downloadModel:(id,url,filename,name)=>j(window.OC&&OC.downloadModel?OC.downloadModel(id,url,filename,name):'{}')||{ok:false},
-  cancelModelDownload:id=>j(window.OC&&OC.cancelModelDownload?OC.cancelModelDownload(id):'{}')||{ok:false},
-  deleteModel:(id,filename)=>j(window.OC&&OC.deleteModel?OC.deleteModel(id,filename):'{}')||{ok:false},
-  getLocalModels:()=>j(window.OC&&OC.getLocalModels?OC.getLocalModels():'[]')||[],
-  syncLocalModels:()=>j(window.OC&&OC.syncLocalModels?OC.syncLocalModels():'[]')||[],
-  preloadLocalModel:id=>Boolean(window.OC&&OC.preloadLocalModel&&OC.preloadLocalModel(id)),
-  startLocalBridge:()=>Boolean(window.OC&&OC.startLocalBridge&&OC.startLocalBridge()),
-  getLocalBridgeStatus:()=>j(window.OC&&OC.getLocalBridgeStatus?OC.getLocalBridgeStatus():'{}')||{running:false},
   isOnline:()=>{try{return window.OC&&OC.isOnline?Boolean(OC.isOnline()):navigator.onLine!==false}catch{return navigator.onLine!==false}}
 };
 O.openUrl=u=>{if(/^https?:\/\//i.test(u)&&!/appassets\.androidplatform\.net/i.test(u))OC.openLink(u)};

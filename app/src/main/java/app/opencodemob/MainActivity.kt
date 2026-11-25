@@ -197,8 +197,6 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(web, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
-        ModelDownloader.onProgress = { json -> emit("model_download_progress", json) }
-        try { LocalBridgeServer.start(this) } catch (_: Exception) {}
         checkOpenAppTrigger()
 
         onBackPressedDispatcher.addCallback(this) {
@@ -528,7 +526,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun flags() = JSONObject().apply {
-        for (k in FLAG_KEYS) put(k, Prefs.flag(this@MainActivity, k, k != "noseccomp" && k != "offline_mode"))
+        for (k in FLAG_KEYS) put(k, Prefs.flag(this@MainActivity, k, k != "noseccomp"))
     }
 
     private fun cfgFile(): File {
@@ -854,7 +852,7 @@ class MainActivity : ComponentActivity() {
                 fileListHtml.append("""
                     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #27272a;">
                         <span style="font-family:monospace;color:#e4e4e7;">${f.name}</span>
-                        ${if (isH) "<a href=\"${f.name}\" style=\"color:#38bdf8;text-decoration:none;font-weight:600;\">Открыть</a>" else if (isImg) "<a href=\"${f.name}\" style=\"color:#a1a1aa;text-decoration:none;\">Изображение</a>" else "<span style=\"color:#71717a;\">${f.length() / 1024} KB</span>"}
+                        ${if (isH) "<a href=\"${f.name}\" style=\"color:#a1a1aa;text-decoration:none;font-weight:600;\">Открыть</a>" else if (isImg) "<a href=\"${f.name}\" style=\"color:#a1a1aa;text-decoration:none;\">Изображение</a>" else "<span style=\"color:#71717a;\">${f.length() / 1024} KB</span>"}
                     </div>
                 """.trimIndent())
             }
@@ -878,7 +876,7 @@ class MainActivity : ComponentActivity() {
                         <div class="hdr">
                             <div>
                                 <h2>
-                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#a1a1aa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
                                     Встроенный веб-предпросмотр
                                 </h2>
                                 <p>Проект: ${target.name}</p>
@@ -908,7 +906,6 @@ class MainActivity : ComponentActivity() {
             put("installed", Runtime.isInstalled(this@MainActivity))
             put("core", Updater.installedCore(this@MainActivity))
             put("online", Runtime.isOnline(this@MainActivity))
-            put("offlineMode", Prefs.flag(this@MainActivity, "offline_mode", false))
             put("perms", perms()); put("flags", flags()); put("ready", ServerState.ready)
         }.toString()
 
@@ -1133,57 +1130,6 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface fun preparePreview(path: String): String = this@MainActivity.prepareWebPreview(path)
 
-        // --- Local AI Models (Hugging Face / GGUF) ---
-        @JavascriptInterface fun downloadModel(id: String, url: String, filename: String, name: String): String {
-            return ModelDownloader.startDownload(this@MainActivity, id, url, filename, name).toString()
-        }
-
-        @JavascriptInterface fun cancelModelDownload(id: String): String {
-            return ModelDownloader.cancelDownload(this@MainActivity, id).toString()
-        }
-
-        @JavascriptInterface fun deleteModel(id: String, filename: String): String {
-            return ModelDownloader.deleteModel(this@MainActivity, id, filename).toString()
-        }
-
-        @JavascriptInterface fun getLocalModels(): String {
-            return ModelDownloader.getLocalModels(this@MainActivity).toString()
-        }
-
-        @JavascriptInterface fun startLocalBridge(): Boolean {
-            return LocalBridgeServer.start(this@MainActivity)
-        }
-
-        @JavascriptInterface fun getLocalBridgeStatus(): String {
-            return JSONObject()
-                .put("running", LocalBridgeServer.isAlive())
-                .put("port", LocalBridgeServer.activePort)
-                .toString()
-        }
-
-        @JavascriptInterface fun syncLocalModels(): String {
-            val u = uid()
-            if (u.isNotEmpty()) Runtime.sanitizeConfig(this@MainActivity, u)
-            LocalBridgeServer.start(this@MainActivity)
-            Runtime.disposeRunningInstance()
-            return ModelDownloader.getLocalModels(this@MainActivity).toString()
-        }
-
-        @JavascriptInterface fun preloadLocalModel(modelId: String): Boolean {
-            LocalBridgeServer.start(this@MainActivity)
-            thread(isDaemon = true) {
-                try {
-                    val url = java.net.URL("http://127.0.0.1:${LocalBridgeServer.activePort}/preload?model=${java.net.URLEncoder.encode(modelId, "UTF-8")}")
-                    val con = url.openConnection() as java.net.HttpURLConnection
-                    con.connectTimeout = 2000
-                    con.readTimeout = 3000
-                    con.responseCode
-                    con.disconnect()
-                } catch (_: Exception) {}
-            }
-            return true
-        }
-
         @JavascriptInterface fun isOnline(): Boolean {
             return Runtime.isOnline(this@MainActivity)
         }
@@ -1231,6 +1177,6 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
-        val FLAG_KEYS = listOf("snd_done", "snd_action", "snd_quota", "noseccomp", "offline_mode")
+        val FLAG_KEYS = listOf("snd_done", "snd_action", "snd_quota", "noseccomp")
     }
 }

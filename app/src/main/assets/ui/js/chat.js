@@ -106,43 +106,64 @@ function fillPart(el,p,m,fresh){
   case'patch':el.className='part';el.textContent='';el.append(h('span',{class:'chip'},O.icon('edit'),h('span',null,'Изменено файлов: '+((p.files||[]).length))));break;
   case'retry':el.className='part warn s';el.textContent='Повтор: '+((p.error&&p.error.data&&p.error.data.message)||'запрос не удался');break;
   case'compaction':el.className='part sep';el.textContent='Контекст сжат';break}}
+function countDiffLines(txt){
+  let a=0,d=0;
+  String(txt||'').split('\n').forEach(l=>{
+    if(l.startsWith('+')&&!l.startsWith('+++'))a++;
+    else if(l.startsWith('-')&&!l.startsWith('---'))d++;
+  });
+  return{a,d};
+}
+function countOps(ops){
+  let a=0,d=0;
+  for(const o of ops||[]){
+    if(o[0]==='+')a++;
+    else if(o[0]==='-')d++;
+  }
+  return{a,d};
+}
 function getMsgDiff(m){
-  let added=0,deleted=0,found=false;
+  let patchA=0,patchD=0,patchFound=false;
+  let toolA=0,toolD=0,toolFound=false;
+  let textA=0,textD=0,textFound=false;
   for(const p of m.parts){
     if(p.type==='patch'){
-      found=true;
+      patchFound=true;
+      let fileA=0,fileD=0,hasFiles=false;
       if(Array.isArray(p.files)){
         p.files.forEach(f=>{
-          if(typeof f.additions==='number')added+=f.additions;
-          if(typeof f.deletions==='number')deleted+=f.deletions;
+          if(typeof f.additions==='number'){fileA+=f.additions;hasFiles=true}
+          if(typeof f.deletions==='number'){fileD+=f.deletions;hasFiles=true}
         });
       }
-      if(p.diff){
-        String(p.diff).split('\n').forEach(l=>{
-          if(l.startsWith('+')&&!l.startsWith('+++'))added++;
-          else if(l.startsWith('-')&&!l.startsWith('---'))deleted++;
-        });
+      if(hasFiles){patchA+=fileA;patchD+=fileD}
+      else if(p.diff){
+        const c=countDiffLines(p.diff);patchA+=c.a;patchD+=c.d;
       }
     }
-    if(p.type==='tool'&&p.metadata&&p.metadata.diff){
-      found=true;
-      String(p.metadata.diff).split('\n').forEach(l=>{
-        if(l.startsWith('+')&&!l.startsWith('+++'))added++;
-        else if(l.startsWith('-')&&!l.startsWith('---'))deleted++;
-      });
+    if(p.type==='tool'){
+      const st=p.state||{},md=st.metadata||p.metadata||{},i=st.input||{};
+      let counted=false;
+      const diff=md.diff||p.diff;
+      if(typeof diff==='string'&&diff){const c=countDiffLines(diff);toolA+=c.a;toolD+=c.d;counted=true}
+      else if(p.tool==='edit'&&i.oldString!=null){const c=countOps(O.diffOps(String(i.oldString),String(i.newString||'')));toolA+=c.a;toolD+=c.d;counted=true}
+      else if(p.tool==='write'&&typeof i.content==='string'){toolA+=i.content.replace(/\n$/,'').split('\n').length;counted=true}
+      else if((p.tool==='patch'||p.tool==='apply_patch')&&typeof i.patch==='string'){const c=countDiffLines(i.patch);toolA+=c.a;toolD+=c.d;counted=true}
+      if(counted)toolFound=true;
     }
     if(p.type==='text'&&p.text){
       const mMatch=p.text.match(/(?:^|\n)\s*([+]\d+)\s+([-]\d+)\s*(?:$|\n)/);
       if(mMatch){
-        if(added===0&&deleted===0){
-          added=parseInt(mMatch[1].replace('+',''),10)||0;
-          deleted=parseInt(mMatch[2].replace('-',''),10)||0;
-          if(added>0||deleted>0)found=true;
-        }
+        textA=parseInt(mMatch[1].replace('+',''),10)||0;
+        textD=parseInt(mMatch[2].replace('-',''),10)||0;
+        textFound=true;
       }
     }
   }
-  return{added,deleted,found};
+  if(patchFound&&(patchA>0||patchD>0||!toolFound))return{added:patchA,deleted:patchD,found:patchFound};
+  if(toolFound)return{added:toolA,deleted:toolD,found:true};
+  if(textFound)return{added:textA,deleted:textD,found:textFound};
+  return{added:0,deleted:0,found:false};
 }
 
 function render(el){
@@ -166,18 +187,20 @@ function metaUpdate(el,m){
     if(i.cost)t.push('$'+i.cost.toFixed(4));
     meta.append(h('span',null,t.join('  ')));
 
-    // Render diff stats line ONLY under messages that actually modified files (+N -M)
+    // Render line statistics at the bottom of assistant messages that changed files
     const diffStat=getMsgDiff(m);
     const oldDiffLine=el.firstChild.querySelector('.msg-diff-line')||el.firstChild.querySelector('.msg-diff-badge');
-    const hasDiff = (diffStat.added > 0 || diffStat.deleted > 0);
+    const hasDiff=diffStat.found||diffStat.added>0||diffStat.deleted>0;
     if(hasDiff){
       const badge=h('div',{
         class:'msg-diff-line',
         title:O.tr('View code changes in project','Посмотреть изменения кода в проекте'),
         onclick:()=>O.setTab('changes')
       },
+      h('span',{class:'diff-label'},O.tr('Written','Написано')),
       h('span',{class:'diff-stat-val add'},'+'+diffStat.added),
-      h('span',{style:{color:'#52525b'}},' '),
+      h('span',{class:'diff-sep'}),
+      h('span',{class:'diff-label'},O.tr('Deleted','Стёрто')),
       h('span',{class:'diff-stat-val del'},'-'+diffStat.deleted));
       if(oldDiffLine)oldDiffLine.replaceWith(badge);
       else el.firstChild.append(badge);
@@ -450,15 +473,9 @@ function updateChips(){
   if(spanMo)spanMo.textContent=mName;
   const nokey=!m&&S.up;
   nokeyEl.classList.toggle('hide',!nokey);
-  const isOffline=O.isOfflineMode&&O.isOfflineMode();
-  const hasLocals=O.native.getLocalModels?O.native.getLocalModels().some(x=>x.downloaded):false;
-  ta.disabled=!S.up&&!!S.offline;
+  ta.disabled=!S.up;
   if(ta.disabled){
-    ta.placeholder=O.tr('Offline — reading cached chats','Офлайн — чтение кэшированных чатов');
-  }else if(isOffline){
-    ta.placeholder=hasLocals
-      ?O.tr('Offline mode — local model ready...','Офлайн-режим — локальная модель готова...')
-      :O.tr('Offline mode — download a local model in Settings...','Офлайн-режим — скачайте локальную модель...');
+    ta.placeholder=O.tr('Waiting for the local runtime...','Ожидание локального сервера...');
   }else{
     ta.placeholder=O.tr('Chat with OpenCode...','Чат с OpenCode...');
   }
@@ -547,29 +564,6 @@ async function onSend(){
     if(sc){if(!S.model)return O.openConnect();clear();try{const sid=await sess();api('POST','/session/'+sid+'/command',{command:sc.name,arguments:cm[2]||'',agent:S.agent,model:modelStr()},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}}
 
   if(!S.model){O.toast('Подключите провайдера, чтобы выбрать модель');O.openConnect();return}
-  if((O.isOfflineMode&&O.isOfflineMode())&&S.model.providerID!=='local'){
-    const locals=(O.native.getLocalModels?O.native.getLocalModels():[]).filter(x=>x.downloaded);
-    if(locals.length){
-      O.setModel('local',locals[0].id);
-      O.toast(O.tr('Offline mode: switched to local model ','Офлайн: переключено на локальную модель ')+(locals[0].name||locals[0].id),2400);
-    }else{
-      O.toast(O.tr('No internet: download a local model in Settings for offline chat','Нет сети: скачайте локальную модель для работы офлайн'),3500);
-      if(O.openLocalModels)O.openLocalModels();
-      return;
-    }
-  }
-  if(S.model&&S.model.providerID==='local'){
-    try{
-      if(O.native.startLocalBridge)O.native.startLocalBridge();
-      if(O.native.syncLocalModels)O.native.syncLocalModels();
-      if(O.native.preloadLocalModel)O.native.preloadLocalModel(S.model.modelID);
-      if(!S.providers.some(p=>p.id==='local'&&p.models&&p.models[S.model.modelID])){
-        try{await api('POST','/instance/dispose',null)}catch(_){}
-        await new Promise(r=>setTimeout(r,200));
-        await O.loadMeta();
-      }
-    }catch(_){}
-  }
   if(text.startsWith('!')){const cmd=text.slice(1).trim();
     if(/^opencode(\s+tui)?\s*$/i.test(cmd)){O.toast('Приложение уже является интерфейсом OpenCode. TUI — во вкладке «Терминал» → Shell, агент — во вкладке «Чат»',6000);clear();return}
     clear();try{const sid=await sess();api('POST','/session/'+sid+'/shell',{agent:S.agent,model:S.model,command:cmd},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}

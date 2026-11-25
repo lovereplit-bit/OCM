@@ -129,19 +129,13 @@ O.openModels=()=>{
       h('span',{class:'recommended-badge'},O.tr('Recommended','Рекомендуется'))),
     h('div',{class:'detached-card-right'},effortTxt));
 
-  const localModelsCard=h('button',{class:'detached-card',onclick:()=>{s.close();O.openLocalModels()}},
-    h('div',{class:'detached-card-left'},
-      O.icon('download'),
-      h('span',{style:{marginLeft:'6px'}},O.tr('Download Local Models (Hugging Face)','Локальные ИИ модели (Hugging Face)'))),
-    h('div',{class:'detached-card-right'},'›'));
-
   const connectCard=h('button',{class:'detached-card',onclick:()=>{s.close();O.openConnect()}},
     h('div',{class:'detached-card-left'},
       O.icon('key'),
       h('span',{style:{marginLeft:'6px'}},O.tr('Connect more providers','Подключить провайдеров (API ключи)'))),
     h('div',{class:'detached-card-right'},'›'));
 
-  const container=h('div',null,q,listEl,h('div',{style:{height:'10px'}}),swRow,effortCard,localModelsCard,connectCard);
+  const container=h('div',null,q,listEl,h('div',{style:{height:'10px'}}),swRow,effortCard,connectCard);
   const s=O.sheet(O.tr('Select model','Выбор модели'),container,{hud:true,full:true});
 
   function draw(){
@@ -157,7 +151,7 @@ O.openModels=()=>{
 
     let items=all;
     if(onlyFree){
-      items=items.filter(x=>O.isModelFree(x)||x.isLocal||x.isCustom);
+      items=items.filter(x=>O.isModelFree(x)||x.isCustom);
     }
     if(filterText){
       const f=filterText.toLowerCase();
@@ -177,9 +171,6 @@ O.openModels=()=>{
       const aOn=(a.pid+'/'+a.mid)===activeKey;
       const bOn=(b.pid+'/'+b.mid)===activeKey;
       if(aOn!==bOn)return aOn?-1:1;
-      const aLoc=a.isLocal||a.pid==='local';
-      const bLoc=b.isLocal||b.pid==='local';
-      if(aLoc!==bLoc)return aLoc?-1:1;
       if(Boolean(a.isCustom)!==Boolean(b.isCustom))return a.isCustom?-1:1;
       return (a.name||a.mid).localeCompare(b.name||b.mid);
     });
@@ -188,28 +179,23 @@ O.openModels=()=>{
     items.forEach(x=>{
       const isSel=activeKey===(x.pid+'/'+x.mid);
       const isFree=O.isModelFree(x);
-      const isLoc=Boolean(x.isLocal || x.pid==='local' || (x.name&&x.name.includes('(Локально)')));
-      const isCust=Boolean(x.isCustom && !isLoc);
-      const badgeCls=isLoc?'badge-local':(isCust?'badge-custom':(isFree?'badge-free':'badge-paid'));
-      const badgeTxt=isLoc?O.tr('Local','Локально'):(isCust?'API':(isFree?O.tr('Free','Бесплатно'):O.tr('Paid','Платная')));
+      const isCust=Boolean(x.isCustom);
+      const badgeCls=isCust?'badge-custom':(isFree?'badge-free':'badge-paid');
+      const badgeTxt=isCust?'API':(isFree?O.tr('Free','Бесплатно'):O.tr('Paid','Платная'));
       const badge=h('span',{class:'badge-model '+badgeCls},badgeTxt);
 
       const ctx=x.m&&x.m.limit&&x.m.limit.context,parts=[];
-      parts.push(isLoc?'Локальный мост (GGUF)':(x.pname||x.pid));
+      parts.push(x.pname||x.pid);
       if(ctx)parts.push(O.fmtK(ctx)+' context');
       if(x.m&&(x.m.modalities&&x.m.modalities.includes('image')||x.m.attachment!==false))parts.push('images / t2i');
       if(x.m&&(x.m.reasoning||x.m.variants))parts.push('reasoning');
-      if(isLoc)parts.push('офлайн');
-      else if(!isFree&&!isCust&&x.m&&x.m.cost&&typeof x.m.cost.input==='number'&&x.m.cost.input>0){
+      if(!isFree&&!isCust&&x.m&&x.m.cost&&typeof x.m.cost.input==='number'&&x.m.cost.input>0){
         parts.push('$'+x.m.cost.input+'/1M');
       }
       const sub=parts.join(' · ');
 
-      const row=h('button',{class:'model-row'+(isSel?' on':'')+(isLoc?' model-row-local':'')+(isCust?' model-row-custom':''),onclick:()=>{
+      const row=h('button',{class:'model-row'+(isSel?' on':'')+(isCust?' model-row-custom':''),onclick:()=>{
         O.setModel(x.pid,x.mid);
-        if(isLoc&&O.native&&O.native.preloadLocalModel){
-          try{O.native.preloadLocalModel(x.mid)}catch(_){}
-        }
         s.close();
         O.toast(O.tr('Selected: ','Выбрана: ')+(x.name||x.mid),1500);
       }},
@@ -360,7 +346,7 @@ O.openCustomProvider=(parentSheet,editPid)=>{
   const drawExisting=()=>{
     existingWrap.textContent='';
     const cur=readCfg();
-    const entries=Object.entries(cur.provider||{}).filter(([id])=>id!=='local'&&id!=='opencode');
+    const entries=Object.entries(cur.provider||{}).filter(([id])=>id!=='opencode');
     if(!entries.length)return;
     existingWrap.append(h('div',{class:'settings-section-title',style:{marginTop:'4px'}},O.tr('Configured Custom Providers','Подключённые кастомные провайдеры')));
     const card=h('div',{class:'group-card'});
@@ -644,35 +630,30 @@ O.openCustomProvider=(parentSheet,editPid)=>{
     saveBtn),{hud:true,full:true});
 };
 
-// ---- themes / seasonal HUD / help ----
+// ---- appearance / help ----
 O.openThemes=()=>{
   const th=[
-    ['opencode','OpenCode Dark','#0d0d0f','#38bdf8'],
-    ['light','Светлая (Light)','#f8f8fa','#0284c7'],
-    ['tokyonight','Tokyo Night','#1a1b26','#7aa2f7'],
-    ['gruvbox','Gruvbox','#282828','#8ec07c']
+    ['opencode','Тёмная','#0d0d0f','#a1a1aa'],
+    ['light','Светлая','#f8f8fa','#52525b']
   ];
   const accents=[
-    ['auto','Авто','#38bdf8'],
-    ['#38bdf8','Небесный','#38bdf8'],
-    ['#22d3ee','Ледяной','#22d3ee'],
-    ['#4ade80','Изумруд','#4ade80'],
-    ['#60a5fa','Кобальт','#60a5fa'],
-    ['#e11d48','Кармин','#e11d48'],
-    ['#e4e4e7','Платина','#e4e4e7']
+    ['auto','Авто','#a1a1aa'],
+    ['#a1a1aa','Графит','#a1a1aa'],
+    ['#d4d4d8','Платина','#d4d4d8'],
+    ['#71717a','Сталь','#71717a'],
+    ['#e4e4e7','Светлый','#e4e4e7']
   ];
 
   const box=h('div');
   const draw=()=>{
     box.textContent='';
-    const activeSeason=O.activeSeasonKey?O.activeSeasonKey(S.opts):'none';
 
     box.append(h('div',{class:'grp',style:{marginTop:'4px'}},O.tr('Base Theme','Тема интерфейса')));
     const themeCard=h('div',{class:'group-card'});
     th.forEach(t=>themeCard.append(O.listRow(
       h('span',{style:{width:'22px',height:'22px',borderRadius:'7px',background:t[2],border:'2.5px solid '+t[3],flex:'none'}}),
       t[1],
-      t[0]==='opencode'?O.tr('Signature obsidian hub style','Фирменный стиль главного хаба'):'',
+      t[0]==='opencode'?O.tr('Graphite dark palette','Тёмная графитовая палитра'):O.tr('Light neutral palette','Светлая нейтральная палитра'),
       S.opts.theme===t[0]?O.icon('check','ok'):null,
       ()=>{S.opts.theme=t[0];O.saveOpts();draw()}
     )));
@@ -691,14 +672,14 @@ O.openThemes=()=>{
     });
     const customPicker=h('input',{
       type:'color',
-      value:O.resolveAccentHex?O.resolveAccentHex():'#38bdf8',
+      value:O.resolveAccentHex?O.resolveAccentHex():'#a1a1aa',
       style:{width:'40px',height:'32px',padding:'2px',borderRadius:'8px',cursor:'pointer',flex:'none'},
       onchange:e=>{S.opts.accent=e.target.value;O.saveOpts();draw()}
     });
     const hexInp=h('input',{
       class:'mono',
       value:(S.opts.accent&&S.opts.accent!=='auto')?S.opts.accent:'',
-      placeholder:'#38bdf8',
+      placeholder:'#a1a1aa',
       style:{flex:1,minWidth:0,padding:'6px 10px',fontSize:'13px'},
       onchange:e=>{
         const v=e.target.value.trim();
@@ -709,29 +690,6 @@ O.openThemes=()=>{
     box.append(accRow,h('div',{class:'card',style:{display:'flex',alignItems:'center',gap:'8px',marginTop:'8px',padding:'10px 12px'}},
       h('span',{class:'mut s'},O.tr('Custom Hex:','Свой цвет:')),customPicker,hexInp));
 
-    box.append(h('div',{class:'grp'},O.tr('Seasonal HUD (Calendar & Custom)','Сезонный HUD и праздники')));
-    const seasonCard=h('div',{class:'group-card'});
-    const sList=O.SEASONAL_THEMES||[];
-    sList.forEach(st=>{
-      const isCur=(S.opts.seasonalMode||'auto')===st.id;
-      const activeBadge=(st.id===activeSeason&&st.id!=='none'&&isCur)?' · '+O.tr('Active now','Активно сейчас'):'';
-      seasonCard.append(O.listRow(
-        st.icon||'calendar',
-        st.name,
-        st.desc+activeBadge,
-        isCur?O.icon('check','ok'):null,
-        ()=>{S.opts.seasonalMode=st.id;O.saveOpts();draw()}
-      ));
-    });
-    seasonCard.append(O.toggleRow(
-      'zap',
-      O.tr('Seasonal Animations','Плавные анимации HUD'),
-      O.tr('Floating snowflakes, petals, particles inside frame','Лёгкие фоновые частицы без нагрузки на интерфейс'),
-      S.opts.seasonalAnim!==false,
-      v=>{S.opts.seasonalAnim=v;O.saveOpts();draw()}
-    ));
-    box.append(seasonCard);
-
     box.append(h('div',{class:'grp'},O.tr('Text Size','Размер текста')));
     box.append(h('div',{class:'seg'},[13,14,15,16,18].map(n=>h('button',{
       class:S.opts.fs===n?'on':'',
@@ -739,7 +697,7 @@ O.openThemes=()=>{
     },n+'px'))));
   };
   draw();
-  O.sheet(O.tr('Appearance & Seasonal HUD','Оформление и темы'),box,{hud:true,full:true});
+  O.sheet(O.tr('Appearance','Оформление'),box,{hud:true,full:true});
 };
 
 O.openHelp=()=>O.sheet('Справка',h('div',null,h('div',{class:'grp'},'Команды'),O.builtins.map(b=>O.listRow(b.i,'/'+b.n,b.d,null,()=>{O.back();b.run()})),

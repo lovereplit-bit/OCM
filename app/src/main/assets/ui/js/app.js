@@ -48,9 +48,7 @@ function build(){
 
   const bottomBar=h('div',{id:'bottom-bar'},B.chat,B.memory);
 
-  const seasonalLayer=h('div',{id:'seasonal-hud',class:'seasonal-hud'});
-  app.append(seasonalLayer,top,T.banner,main,bottomBar);
-  if(O.applySeasonalHud)O.applySeasonalHud(seasonalLayer,S.opts);
+  app.append(top,T.banner,main,bottomBar);
 
   O.filesInit(P.files);
   O.chatInit(P.chat);
@@ -163,18 +161,9 @@ function updateTop(){
 
 function updateBanner(){
   if(!built)return;
-  const offlineMode=O.isOfflineMode&&O.isOfflineMode();
-  const hasLocals=O.native.getLocalModels?O.native.getLocalModels().some(x=>x.downloaded):false;
   T.banner.textContent='';
-  T.banner.classList.remove('offline-mode');
-  if(offlineMode&&S.up){
-    T.banner.classList.add('offline-mode');
-    T.banner.append(O.icon('wifiOff'),h('span',null,hasLocals
-      ?O.tr('Offline Mode · Local GGUF models active','Офлайн-режим · Локальные GGUF модели активны')
-      :O.tr('Offline Mode · Download a local model in Settings','Офлайн-режим · Скачайте локальную модель в Настройках')));
-    T.banner.classList.remove('hide');
-  }else if(S.offline&&!S.up){
-    T.banner.append(O.icon('wifiOff'),h('span',null,O.tr('Offline — showing cached chats','Офлайн — показаны кэшированные чаты')));
+  if(S.offline&&!S.up){
+    T.banner.append(O.icon('wifiOff'),h('span',null,O.tr('No connection — showing cached chats','Нет соединения — показаны кэшированные чаты')));
     T.banner.classList.remove('hide');
   }else if(!S.up){
     T.banner.append(h('span',{class:'spin',style:{width:'12px',height:'12px'}}),h('span',null,O.tr('Connecting to local runtime...','Подключение к локальному серверу...')));
@@ -195,7 +184,6 @@ async function refreshStatus(){
 O.enter=async opt=>{
   build();
   O.saveOpts();
-  S.offline=!!(opt&&opt.offline);
   S.up=false;
   updateBanner();
   OC.sseStart();

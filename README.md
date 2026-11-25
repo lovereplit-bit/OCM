@@ -20,7 +20,7 @@ Download `OpenCode-<version>-<build>.apk` from
 - Works immediately: free models respond without login
 - OTA updates: **Settings > Updates**
 
-Current version: **2.1** (OpenCode core **1.x** line).
+Current version: **2.2** (OpenCode core **1.x** line).
 
 ### What's inside
 
@@ -34,34 +34,15 @@ a custom mobile UI. No website is opened, chats remain readable even without net
 - Sounds and notifications: task complete, agent waiting, quota exhausted
 - Background work via foreground service
 - Upload `AGENTS.md` and agent files from the phone file picker: **Settings > Agents**
-- Download local AI models (GGUF) for offline agent work: **Settings > Local Models**
+- Line statistics under agent replies: lines written and lines deleted
 - Access to `/storage/emulated/0` and `Download` from the Linux environment
-
-### Local AI Models (Hugging Face) and Offline Mode (500 MB -- 4 GB)
-
-The app lets you download and auto-register local lightweight models directly from **Hugging Face**:
-- **Clean APK weight**: models are not bundled, downloaded on demand in **Settings > Local AI Models**.
-- **Main hub display**: downloaded models appear in the chat model selector with a `(Local)` suffix and a `Local` badge.
-- **Built-in catalog**: Walkyrie (text-to-image, ~2.8 GB), Sakura-Iris-3B (code/text, ~3.14 GB), Qwen 2.5 Coder 0.5B/1.5B/3B, DeepSeek-R1 Distill 1.5B, Llama 3.2 1B/3B, Phi-3.5 Mini, SmolLM2-1.7B.
-- **Custom models**: paste any direct `.gguf` link from Hugging Face.
-- **Local bridge**: background server on `127.0.0.1:8088` with OpenAI API compatibility (`/v1/models`, `/v1/chat/completions`), auto-sync with `opencode.json`.
-- **Offline mode**: toggle in Settings, works without any network when a local GGUF model is selected.
-- Detailed docs: [`docs/LOCAL_MODELS.md`](docs/LOCAL_MODELS.md).
 
 ### Custom API Providers
 
 - Add your own OpenAI-compatible API endpoint in **Settings > Models & Providers > Custom API**.
 - CORS-free: requests go through the native Android proxy (`extHttp`), no WebView fetch restrictions.
 - Auto-probes `/v1/models` for model discovery; manual model ID entry supported.
-- Works with OpenRouter, Together, Groq, local servers (Ollama, LM Studio, llama.cpp), and any OpenAI-compatible endpoint.
-
-### Seasonal HUD Themes
-
-The UI adapts to the season with decorative overlays:
-- **Halloween** (Oct 25--31): dark atmospheric HUD
-- **New Year / Winter** (Dec 1 -- Feb 28): snowfall overlay
-- **Spring** (Mar 1 -- May 31): petal float
-- Manual override in **Settings > Appearance > Seasonal Theme** -- set any theme any time of year.
+- Works with OpenRouter, Together, Groq, local servers (Ollama, LM Studio), and any OpenAI-compatible endpoint.
 
 ### Session Drawer
 

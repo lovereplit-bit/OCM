@@ -3,7 +3,7 @@ const O=window.OCM,api=O.api;
 const bus=O.bus={h:{},on(n,f){(this.h[n]=this.h[n]||[]).push(f)},emit(n,...a){(this.h[n]||[]).forEach(f=>{try{f(...a)}catch(e){console.error(n,e)}})}};
 const S=O.S={dir:'',sessions:[],childSessions:{},sid:null,status:{},unread:O.store.get('session_unread',{}),perms:[],questions:[],todos:{},diffs:{},
   providers:[],agents:[],commands:[],cfg:{},agent:'build',model:null,variant:null,mcp:{},lsp:[],branch:'',
-  offline:false,up:false,gstatus:{},account:{email:null,checked:false},opts:Object.assign({thinking:true,details:true,theme:'opencode',accent:'auto',seasonalMode:'auto',seasonalAnim:true,fs:14},O.store.get('opts',{}))};
+  offline:false,up:false,gstatus:{},account:{email:null,checked:false},opts:Object.assign({thinking:true,details:true,theme:'opencode',accent:'auto',fs:14},O.store.get('opts',{}))};
 const activeWork=new Set(),seenUnreadMsgs=new Map();
 const rootSid=sid=>{let cur=sid,seen=new Set();while(cur&&S.childSessions&&S.childSessions[cur]&&!seen.has(cur)){seen.add(cur);cur=S.childSessions[cur].parentID}return cur||sid};
 const isViewing=sid=>!!(sid&&sid===S.sid&&(!O.getTab||O.getTab()==='chat'||innerWidth>=820)&&!document.hidden);
@@ -34,7 +34,7 @@ O.markSessionRead=sid=>{
   O.store.set('session_unread',S.unread);
   bus.emit('sessions');
 };
-const THEME_ACCENTS={opencode:'#38bdf8',light:'#0284c7',tokyonight:'#7aa2f7',gruvbox:'#8ec07c',nord:'#88c0d0',catppuccin:'#89b4fa',dracula:'#8be9fd'};
+const THEME_ACCENTS={opencode:'#a1a1aa',light:'#52525b'};
 const parseHex=hex=>{
   const m=/^#([0-9a-f]{6})$/i.exec(String(hex||'').trim());
   if(!m)return null;
@@ -53,7 +53,7 @@ const relLum=c=>{
 O.resolveAccentHex=()=>{
   const raw=S.opts&&S.opts.accent;
   if(raw&&raw!=='auto'&&parseHex(raw))return parseHex(raw).hex;
-  return THEME_ACCENTS[(S.opts&&S.opts.theme)||'opencode']||'#38bdf8';
+  return THEME_ACCENTS[(S.opts&&S.opts.theme)||'opencode']||'#a1a1aa';
 };
 O.applyAppearance=()=>{
   const theme=(S.opts&&S.opts.theme)||'opencode';
@@ -61,7 +61,7 @@ O.applyAppearance=()=>{
   const root=document.documentElement;
   root.dataset.theme=theme;
   root.style.setProperty('--fs',((S.opts&&S.opts.fs)||14)+'px');
-  const raw=parseHex(O.resolveAccentHex())||{r:56,g:189,b:248,hex:'#38bdf8'};
+  const raw=parseHex(O.resolveAccentHex())||{r:161,g:161,b:170,hex:'#a1a1aa'};
   const lum=relLum(raw);
   // Ensure primary fill contrast and legible accent text on both light and obsidian dark themes
   let textAcc=raw.hex;
@@ -75,23 +75,12 @@ O.applyAppearance=()=>{
   root.style.setProperty('--acc-soft',`rgba(${raw.r},${raw.g},${raw.b},${isLight?0.12:0.14})`);
   root.style.setProperty('--acc-border',`rgba(${raw.r},${raw.g},${raw.b},${isLight?0.34:0.32})`);
   root.style.setProperty('--acc-ring',`rgba(${raw.r},${raw.g},${raw.b},0.28)`);
-  if(O.applySeasonalHud)O.applySeasonalHud(null,S.opts);
 };
 O.saveOpts=()=>{O.store.set('opts',S.opts);O.applyAppearance()};
-O.isOfflineMode=()=>Boolean(O.store.get('offline_mode',false)||(O.native.isOnline&&!O.native.isOnline())||S.offline);
-O.setOfflineMode=(on,quiet)=>{
-  const val=Boolean(on);
-  O.store.set('offline_mode',val);
-  try{if(window.OC&&OC.setFlag)OC.setFlag('offline_mode',val)}catch(_){}
-  O.pickDefaults();
-  bus.emit('conn');
-  bus.emit('meta');
-  if(!quiet)O.toast(val?(O.tr('Offline mode enabled — prioritizing local GGUF models','Офлайн-режим включён — приоритет локальных моделей')):(O.tr('Online mode restored','Сетевой режим восстановлен')),2200);
-};
 window.addEventListener('online',()=>bus.emit('conn'));
 window.addEventListener('offline',()=>bus.emit('conn'));
 
-// ---- IndexedDB key/value cache (offline reading) ----
+// ---- IndexedDB key/value cache (cached reading) ----
 let dbp;const db=()=>dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('ocm',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}));
 O.kv={async get(k){try{const d=await db();return await new Promise(res=>{const q=d.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>res(undefined)})}catch{return undefined}},
   async set(k,v){try{const d=await db();await new Promise(res=>{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=res;t.onerror=res;t.onabort=res})}catch{}}};
@@ -243,22 +232,21 @@ O.customProviderIds=()=>{
     if(!raw||!raw.trim())return new Set();
     const obj=O.parseJsonc(raw);
     const prov=obj&&obj.provider?obj.provider:{};
-    return new Set(Object.keys(prov).filter(k=>k!=='local'));
+    return new Set(Object.keys(prov).filter(k=>k!=='opencode'));
   }catch(_){return new Set()}
 };
 O.isModelFree=x=>{
   if(!x)return false;
-  if(x.isLocal || x.pid==='local')return true;
   if(x.free===true)return true;
   const m=x.m||x;
-  if(m.free===true || m.local===true)return true;
+  if(m.free===true)return true;
   const c=m.cost;
   if(c&&typeof c.input==='number'&&typeof c.output==='number'){
     if(c.input===0&&c.output===0)return true;
     if(c.input>0||c.output>0)return false;
   }
   const str=((x.name||'')+' '+(x.mid||'')+' '+(x.pid||'')).toLowerCase();
-  if(/\bfree\b|бесплатн|локальн/i.test(str))return true;
+  if(/\bfree\b|бесплатн/i.test(str))return true;
   if(x.pid==='opencode'&&(!c||(!c.input&&!c.output)))return true;
   return false;
 };
@@ -266,84 +254,20 @@ O.primaryAgents=()=>S.agents.filter(a=>a.mode!=='subagent'&&!a.hidden);
 O.modelInfo=(pid,mid)=>{
   const p=S.providers.find(x=>x.id===pid);
   if(p&&p.models&&p.models[mid])return p.models[mid];
-  if(pid==='local'){
-    try{
-      const locals=O.native.getLocalModels?O.native.getLocalModels():[];
-      const f=locals.find(x=>x.id===mid);
-      if(f&&f.downloaded){
-        const displayName=f.name.includes('(Локально)')?f.name:(f.name+' (Локально)');
-        return {id:f.id,name:displayName,free:true,local:true,attachment:f.type==='image'||f.type==='vlm',limit:{context:f.type==='image'?4096:32768}};
-      }
-    }catch(_){}
-  }
   return null;
 };
 O.allModels=()=>{
-  const locals=(O.native.getLocalModels?O.native.getLocalModels():[]).filter(x=>x.downloaded);
-  const downloadedIds=new Set(locals.map(x=>x.id));
   const customIds=O.customProviderIds();
-
-  const list=S.providers.flatMap(p=>{
-    if(p.id==='local'){
-      // Never show ghost or un-downloaded models in the active picker
-      return Object.values(p.models||{}).filter(m=>downloadedIds.has(m.id)).map(m=>({
-        pid:p.id,
-        pname:p.name||'Локально (GGUF)',
-        mid:m.id,
-        name:m.name||m.id,
-        isLocal:true,
-        m
-      }));
-    }
+  return S.providers.flatMap(p=>{
     const isCustom=customIds.has(p.id)&&p.id!=='opencode';
     return Object.values(p.models||{}).map(m=>({pid:p.id,pname:p.name,mid:m.id,name:m.name||m.id,isCustom,m}));
   });
-
-  try{
-    locals.forEach(loc=>{
-      const displayName=loc.name.includes('(Локально)')?loc.name:(loc.name+' (Локально)');
-      const exists=list.find(m=>m.pid==='local'&&m.mid===loc.id);
-      if(exists){
-        exists.name=displayName;
-        exists.isLocal=true;
-        exists.m=exists.m||{};
-        exists.m.free=true;
-        exists.m.local=true;
-      }else{
-        list.unshift({
-          pid:'local',
-          pname:'Локально (GGUF)',
-          mid:loc.id,
-          name:displayName,
-          isLocal:true,
-          m:{
-            id:loc.id,
-            name:displayName,
-            free:true,
-            local:true,
-            attachment:loc.type==='image'||loc.type==='vlm',
-            limit:{context:loc.type==='image'?4096:32768}
-          }
-        });
-      }
-    });
-  }catch(_){}
-
-  return list;
 };
 O.pickDefaults=()=>{
   const prim=O.primaryAgents();if(!prim.some(a=>a.name===S.agent))S.agent=(prim[0]&&prim[0].name)||'build';
   const ok=m=>m&&O.modelInfo(m.providerID,m.modelID);
-  const preferLocal=O.isOfflineMode();
   let m=null;
-  if(preferLocal){
-    const allLoc=O.allModels().filter(x=>x.isLocal||x.pid==='local');
-    if(allLoc.length){
-      const curOk=S.sid&&ok(O.store.get('session.model.'+S.sid))&&O.store.get('session.model.'+S.sid).providerID==='local';
-      m=curOk?O.store.get('session.model.'+S.sid):{providerID:'local',modelID:allLoc[0].mid};
-    }
-  }
-  if(!m&&S.sid){
+  if(S.sid){
     const sesSaved=O.store.get('session.model.'+S.sid);
     if(ok(sesSaved))m=sesSaved;
   }

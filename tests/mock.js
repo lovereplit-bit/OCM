@@ -1,6 +1,6 @@
 (function(){
 const srv={sessions:[],msgs:{},calls:[]};window.__srv=srv;
-const DEF={version:'1.0.8',code:1,user:'dev@example.com',name:'Dev',guest:false,googleConfigured:true,installed:true,core:'v1.18.5',perms:{notifications:true,files:true,install:true,battery:false},flags:{snd_done:true,snd_action:true,snd_quota:false,noseccomp:false},ready:true,online:true,offlineMode:false};
+const DEF={version:'1.0.8',code:1,user:'dev@example.com',name:'Dev',guest:false,googleConfigured:true,installed:true,core:'v1.18.5',perms:{notifications:true,files:true,install:true,battery:false},flags:{snd_done:true,snd_action:true,snd_quota:false,noseccomp:false},ready:true,online:true};
 const route=(method,path,body)=>{const u=new URL('http://x'+path),p=u.pathname;srv.calls.push({method,p,q:u.search,body:body?JSON.parse(body):null});
  if(p==='/config/providers')return{providers:[{id:'opencode',name:'OpenCode Zen',models:{
    'big-pickle':{id:'big-pickle',name:'Big Pickle',limit:{context:200000},cost:{input:0,output:0},variants:{low:{},high:{}}},
@@ -49,8 +49,7 @@ window.OC={
  cfgRead:()=>window.__cfg||'{\n // comment\n "plugin":["a"],\n "mcp":{"ctx7":{"type":"remote","url":"https://m.example/mcp","enabled":true}}\n}',cfgWrite(t){window.__cfg=t;return JSON.stringify({ok:true})},readLog:()=>'log line',
  pickFile(k,d){window.__picked=[k,d]},copy(t){window.__copied=t},pasteText:()=>'pasted',share(t){window.__shared=t},openLink(u){window.__opened=u},
  openApp(t){return true},preparePreview(p){return ''},startVoiceInput(l){},
- downloadModel(id,url,f,n){return JSON.stringify({ok:true})},cancelModelDownload(id){return JSON.stringify({ok:true})},deleteModel(id,f){return JSON.stringify({ok:true})},getLocalModels(){return '[]'},syncLocalModels(){return '[]'},preloadLocalModel(){return true},isOnline(){return true},
- startLocalBridge(){return true},getLocalBridgeStatus(){return JSON.stringify({running:true,port:8088})},
+ isOnline(){return true},
  checkUpdates(){setTimeout(()=>OCEvent('update',{core:'v1.18.6'}),5)},applyAppUpdate(){},applyCoreUpdate(){}
 };
 window.__onPrompt=b=>{const sid='ses_1';const P=(part)=>__push({type:'message.part.updated',properties:{part:Object.assign({sessionID:sid},part)}});
