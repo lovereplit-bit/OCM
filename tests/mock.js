@@ -1,11 +1,26 @@
 (function(){
-const srv={sessions:[],msgs:{},calls:[]};window.__srv=srv;
+const srv={sessions:[],msgs:{},calls:[],config:{provider:{}}};window.__srv=srv;
 const DEF={version:'1.0.8',code:1,user:'dev@example.com',name:'Dev',guest:false,googleConfigured:true,installed:true,core:'v1.18.5',perms:{notifications:true,files:true,install:true,battery:false},flags:{snd_done:true,snd_action:true,snd_quota:false,noseccomp:false},ready:true,online:true};
-const route=(method,path,body)=>{const u=new URL('http://x'+path),p=u.pathname;srv.calls.push({method,p,q:u.search,body:body?JSON.parse(body):null});
- if(p==='/config/providers')return{providers:[{id:'opencode',name:'OpenCode Zen',models:{
+const route=(method,path,body)=>{const u=new URL('http://x'+path),p=u.pathname;const parsedBody=body?JSON.parse(body):null;srv.calls.push({method,p,q:u.search,body:parsedBody});
+ if(p==='/global/config'&&method==='PATCH'&&parsedBody){
+  if(parsedBody.provider){srv.config.provider=Object.assign(srv.config.provider||{},parsedBody.provider)}
+  else if(parsedBody.$schema&&window.__cfg){try{const c=JSON.parse(window.__cfg);srv.config.provider=c.provider||{}}catch(_){}}
+  return srv.config;
+ }
+ if(p==='/config/providers'){
+  const base=[{id:'opencode',name:'OpenCode Zen',models:{
    'big-pickle':{id:'big-pickle',name:'Big Pickle',limit:{context:200000},cost:{input:0,output:0},variants:{low:{},high:{}}},
    'gpt-x':{id:'gpt-x',name:'GPT X',limit:{context:100000},cost:{input:1,output:2}},
-   'claude-super-long-preview-ultra-experimental-context-window-1m':{id:'claude-super-long-preview-ultra-experimental-context-window-1m',name:'Claude Super Long Preview Ultra Experimental Context Window 1M',limit:{context:1000000},cost:{input:0,output:0},variants:{low:{},high:{}}}}}],default:{opencode:'big-pickle'}};
+   'claude-super-long-preview-ultra-experimental-context-window-1m':{id:'claude-super-long-preview-ultra-experimental-context-window-1m',name:'Claude Super Long Preview Ultra Experimental Context Window 1M',limit:{context:1000000},cost:{input:0,output:0},variants:{low:{},high:{}}}}}];
+  for(const [pid,pdef] of Object.entries(srv.config.provider||{})){
+   const models={};
+   for(const [mid,mdef] of Object.entries(pdef.models||{})){
+    models[mid]=Object.assign({id:mid,providerID:pid,name:mdef.name||mid},mdef);
+   }
+   base.push({id:pid,name:pdef.name||pid,source:'config',env:[],options:pdef.options||{},models});
+  }
+  return{providers:base,default:{opencode:'big-pickle'}};
+ }
  if(p==='/experimental/console/orgs')return window.__orgs!==undefined?window.__orgs:{orgs:[{accountEmail:'dev@example.com',orgName:'Org',active:true}]};
  if(p==='/provider')return{all:[{id:'opencode',name:'OpenCode'},{id:'anthropic',name:'Anthropic'}],connected:['opencode'],default:{}};
  if(p==='/provider/auth')return{anthropic:[{type:'oauth',label:'Claude Pro/Max'},{type:'api',label:'API key'}]};

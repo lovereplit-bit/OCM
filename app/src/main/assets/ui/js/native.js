@@ -18,9 +18,11 @@ async function finishHttp(d){const p=pend.get(d.id);if(!p)return;pend.delete(d.i
   let data=text;if(!p.raw&&text&&(d.ct||'').includes('json')){try{data=JSON.parse(text)}catch{}}
   if(d.status>=200&&d.status<300)p.res(data);
   else p.rej(Object.assign(new Error((data&&data.data&&data.data.message)||(data&&data.message)||(typeof data==='string'&&data.slice(0,200))||('HTTP '+d.status)),{status:d.status,data}))}
-function finishExtHttp(d){const p=extPend.get(d.id);if(!p)return;extPend.delete(d.id);
+async function finishExtHttp(d){const p=extPend.get(d.id);if(!p)return;extPend.delete(d.id);
   if(d.err&&!d.status){p.rej(Object.assign(new Error(d.err),{status:0,net:true}));return}
-  const text=d.body||'';let data=text;
+  let text=d.body||'';
+  if(d.file){try{text=await(await fetch('/_resp/'+d.id)).text()}catch(e){p.rej(e);return}finally{try{OC.drop(d.id)}catch{}}}
+  let data=text;
   if(text&&((d.ct||'').includes('json')||text.trim().startsWith('{')||text.trim().startsWith('['))){try{data=JSON.parse(text)}catch{}}
   p.res({ok:Boolean(d.ok||(d.status>=200&&d.status<300)),status:d.status||0,ct:d.ct||'',text,data});
 }

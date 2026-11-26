@@ -35,7 +35,7 @@ object Net {
     private fun base() = "127.0.0.1:${ServerState.port}"
     private fun auth() = Runtime.basic(ServerState.password)
 
-    fun extRequest(id: String, method: String, url: String, headersJson: String, body: String, emit: (String, JSONObject) -> Unit) {
+    fun extRequest(c: Context, id: String, method: String, url: String, headersJson: String, body: String, emit: (String, JSONObject) -> Unit) {
         pool.execute {
             val o = JSONObject().put("id", id)
             try {
@@ -55,11 +55,16 @@ object Net {
                     } catch (_: Exception) {}
                 }
                 extHttp.newCall(b.build()).execute().use { r: Response ->
-                    val raw = try { r.body?.string() ?: "" } catch (_: Exception) { "" }
                     o.put("status", r.code)
                         .put("ok", r.isSuccessful)
                         .put("ct", r.header("Content-Type") ?: "")
-                        .put("body", raw.take(300_000))
+                    val bytes = try { r.body?.bytes() ?: ByteArray(0) } catch (_: Exception) { ByteArray(0) }
+                    if (bytes.size < 200_000) o.put("body", String(bytes, Charsets.UTF_8))
+                    else {
+                        val dir = File(c.cacheDir, "resp").apply { mkdirs() }
+                        File(dir, id).writeBytes(bytes)
+                        o.put("file", true)
+                    }
                 }
             } catch (e: Exception) {
                 o.put("ok", false).put("status", 0).put("err", e.message ?: e.toString())

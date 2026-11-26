@@ -316,11 +316,89 @@ object Runtime {
         return pb.start()
     }
 
-    private fun cleanJson(raw: String): String {
-        return raw.replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), "")
-            .replace(Regex("//.*"), "")
-            .replace(Regex(",\\s*([\\u007D\\]])"), "$1")
-            .trim()
+    /** Strip JSONC comments and trailing commas outside string literals so URLs like https:// are preserved. */
+    internal fun cleanJson(raw: String): String {
+        val noComments = StringBuilder(raw.length)
+        var i = 0
+        val n = raw.length
+        var inString = false
+        var escaped = false
+        while (i < n) {
+            val c = raw[i]
+            if (inString) {
+                noComments.append(c)
+                if (escaped) {
+                    escaped = false
+                } else if (c == '\\') {
+                    escaped = true
+                } else if (c == '\u0022') {
+                    inString = false
+                }
+                i++
+                continue
+            }
+            if (c == '\u0022') {
+                inString = true
+                noComments.append(c)
+                i++
+                continue
+            }
+            if (c == '/' && i + 1 < n) {
+                val next = raw[i + 1]
+                if (next == '/') {
+                    i += 2
+                    while (i < n && raw[i] != '\n') i++
+                    continue
+                }
+                if (next == '*') {
+                    i += 2
+                    while (i + 1 < n && !(raw[i] == '*' && raw[i + 1] == '/')) i++
+                    i = if (i + 1 < n) i + 2 else n
+                    continue
+                }
+            }
+            noComments.append(c)
+            i++
+        }
+
+        val s = noComments.toString()
+        val out = StringBuilder(s.length)
+        inString = false
+        escaped = false
+        var idx = 0
+        val len = s.length
+        while (idx < len) {
+            val c = s[idx]
+            if (inString) {
+                out.append(c)
+                if (escaped) {
+                    escaped = false
+                } else if (c == '\\') {
+                    escaped = true
+                } else if (c == '\u0022') {
+                    inString = false
+                }
+                idx++
+                continue
+            }
+            if (c == '\u0022') {
+                inString = true
+                out.append(c)
+                idx++
+                continue
+            }
+            if (c == ',') {
+                var j = idx + 1
+                while (j < len && s[j].isWhitespace()) j++
+                if (j < len && (s[j] == '\u007D' || s[j] == ']')) {
+                    idx++
+                    continue
+                }
+            }
+            out.append(c)
+            idx++
+        }
+        return out.toString().trim()
     }
 
     fun sanitizeConfig(c: Context, uid: String, forceReset: Boolean = false) {
@@ -364,8 +442,10 @@ object Runtime {
             try {
                 val cleaned = cleanJson(txt)
                 val obj = org.json.JSONObject(cleaned)
-                cleanBrokenProviderOverrides(obj)
-                configFile.writeText(obj.toString(2))
+                val fixed = cleanBrokenProviderOverrides(obj)
+                if (cleaned != txt || fixed) {
+                    configFile.writeText(obj.toString(2))
+                }
             } catch (_: Exception) {
                 val bak = File(cfgDir, "opencode.json.corrupt-" + System.currentTimeMillis())
                 try { configFile.copyTo(bak, overwrite = true) } catch (_: Exception) {}
@@ -375,10 +455,14 @@ object Runtime {
         } catch (_: Exception) {}
     }
 
-    private fun cleanBrokenProviderOverrides(rootObj: org.json.JSONObject) {
+    private fun cleanBrokenProviderOverrides(rootObj: org.json.JSONObject): Boolean {
+        var changed = false
         try {
-            val prov = rootObj.optJSONObject("provider") ?: return
-            prov.remove("clawrouter")
+            val prov = rootObj.optJSONObject("provider") ?: return false
+            if (prov.has("clawrouter")) {
+                prov.remove("clawrouter")
+                changed = true
+            }
 
             // If openrouter was overridden with empty models or broken @ai-sdk/openai, purge it so built-in provider works
             val openrouter = prov.optJSONObject("openrouter")
@@ -387,6 +471,7 @@ object Runtime {
                 val npm = openrouter.optString("npm")
                 if (npm == "@ai-sdk/openai" && (mo == null || mo.length() == 0)) {
                     prov.remove("openrouter")
+                    changed = true
                 }
             }
 
@@ -401,14 +486,17 @@ object Runtime {
                 if (pid == "opencode-ip-rotator") {
                     if (npm.isEmpty() || npm == "@ai-sdk/openai") {
                         p.put("npm", "@ai-sdk/openai-compatible")
+                        changed = true
                     }
                 } else if (baseUrl.isNotEmpty() && !baseUrl.contains("api.openai.com")) {
                     if (npm == "@ai-sdk/openai" || (pid == "ollama" && npm.isEmpty())) {
                         p.put("npm", "@ai-sdk/openai-compatible")
+                        changed = true
                     }
                 }
             }
         } catch (_: Exception) {}
+        return changed
     }
 
     fun ensureDefaults(c: Context, uid: String) {
@@ -683,12 +771,34 @@ For example:
         } catch (_: Exception) {}
     }
 
+    @Volatile private var activeServerProc: Process? = null
+
+    fun stopActiveServer() {
+        val p = activeServerProc ?: return
+        try {
+            if (p.isAlive) {
+                p.destroy()
+                val deadline = System.currentTimeMillis() + 1500
+                while (p.isAlive && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(50)
+                }
+                if (p.isAlive) {
+                    p.destroyForcibly()
+                    val fDeadline = System.currentTimeMillis() + 500
+                    while (p.isAlive && System.currentTimeMillis() < fDeadline) {
+                        Thread.sleep(50)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        if (activeServerProc === p) activeServerProc = null
+    }
+
     fun startServer(c: Context, uid: String, port: Int, password: String, noSeccomp: Boolean): Process {
+        stopActiveServer()
         ensureDefaults(c, uid)
         updateDns(c)
         val lib = c.applicationInfo.nativeLibraryDir
-        val root = rootfs(c)
-        val home = home(c, uid)
         val ptmp = File(c.filesDir, "proot-tmp").apply { mkdirs() }
 
         val a = prootBase(c, uid)
@@ -711,7 +821,9 @@ For example:
             put("DISABLE_TELEMETRY", "1")
             put("DO_NOT_TRACK", "1")
         }
-        return pb.start()
+        val proc = pb.start()
+        activeServerProc = proc
+        return proc
     }
 
     fun waitReady(port: Int, password: String, timeoutMs: Long): Boolean = waitReady(null, port, password, timeoutMs)

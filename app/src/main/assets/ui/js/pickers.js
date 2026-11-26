@@ -213,6 +213,7 @@ O.openModels=()=>{
     listEl.append(groupCard);
   }
   draw();
+  bus.on('meta',()=>{if(s.root.isConnected)draw()});
 };
 
 O.openAllModelsCatalog=()=>O.openModels();
@@ -317,8 +318,7 @@ const normalizeBaseUrl=(raw,proto)=>{
 };
 
 O.openCustomProvider=(parentSheet,editPid)=>{
-  const readCfg=()=>{const t=O.native.cfgRead();let obj={};try{if(t&&t.trim())obj=O.parseJsonc(t)}catch{}obj.provider=obj.provider||{};return obj};
-  const cfgObj=readCfg();
+  const cfgObj=O.readCfgObj();
   const existingDef=editPid&&cfgObj.provider[editPid]?cfgObj.provider[editPid]:null;
 
   const existingWrap=h('div');
@@ -345,7 +345,7 @@ O.openCustomProvider=(parentSheet,editPid)=>{
 
   const drawExisting=()=>{
     existingWrap.textContent='';
-    const cur=readCfg();
+    const cur=O.readCfgObj();
     const entries=Object.entries(cur.provider||{}).filter(([id])=>id!=='opencode');
     if(!entries.length)return;
     existingWrap.append(h('div',{class:'settings-section-title',style:{marginTop:'4px'}},O.tr('Configured Custom Providers','Подключённые кастомные провайдеры')));
@@ -368,14 +368,14 @@ O.openCustomProvider=(parentSheet,editPid)=>{
           const ms=Object.keys(def.models||{});
           manualInp.value=ms.join(', ');
           sel.clear();ms.forEach(m=>sel.add(m));
+          renderCheckboxes();
+          statusBox.textContent='Загружено в форму: '+pid+' ('+ms.length+' моделей).';
           O.toast('Загружено в форму: '+pid,1200);
         }},O.icon('edit')),
         h('button',{class:'ibtn s',title:O.tr('Delete','Удалить'),onclick:async()=>{
           if(!await O.confirm(O.tr('Remove provider?','Удалить провайдера?'),pid,'Удалить',true))return;
-          const cc=readCfg();delete cc.provider[pid];
-          O.native.cfgWrite(JSON.stringify(cc,null,2));
-          try{await api('POST','/instance/dispose',null)}catch(_){}
-          await O.loadMeta();drawExisting();
+          await O.removeProviderConfig(pid);
+          drawExisting();
           O.toast('Удалено: '+pid,1500);
         }},O.icon('trash'))
       ));
@@ -437,6 +437,11 @@ O.openCustomProvider=(parentSheet,editPid)=>{
     modelList.textContent='';
     if(!foundModels.length){modelList.classList.add('hide');return}
     modelList.classList.remove('hide');
+    if(foundModels.length>1){
+      modelList.append(h('div',{style:{display:'flex',gap:'6px',padding:'4px',borderBottom:'1px solid var(--line)',marginBottom:'4px'}},
+        h('button',{class:'btn sm',type:'button',onclick:()=>{foundModels.forEach(m=>sel.add(m));manualInp.value=[...sel].join(', ');renderCheckboxes()}},O.tr('Select all','Выбрать все')),
+        h('button',{class:'btn sm',type:'button',onclick:()=>{sel.clear();manualInp.value='';renderCheckboxes()}},O.tr('Clear','Снять все'))));
+    }
     foundModels.forEach(mid=>{
       const chk=h('input',{type:'checkbox',checked:sel.has(mid),style:{width:'auto',margin:'0 8px 0 0'}});
       chk.onchange=()=>{
@@ -445,6 +450,11 @@ O.openCustomProvider=(parentSheet,editPid)=>{
       };
       modelList.append(h('label',{style:{display:'flex',alignItems:'center',padding:'6px 4px',fontSize:'13px',cursor:'pointer'}},chk,h('span',{class:'mono grow'},mid)));
     });
+  };
+  manualInp.oninput=()=>{
+    const list=manualInp.value.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
+    sel.clear();list.forEach(m=>sel.add(m));
+    if(foundModels.length)renderCheckboxes();
   };
 
   const probeBtn=h('button',{class:'btn grow',type:'button',onclick:async()=>{
@@ -516,15 +526,28 @@ O.openCustomProvider=(parentSheet,editPid)=>{
     testBtn.disabled=true;statusBox.textContent='Тестируем ответ модели '+modelId+'...';
     try{
       const hd=buildHeaders(url,key);
-      let ep=url+'/chat/completions',payload={model:modelId,messages:[{role:'user',content:'Reply OK'}],max_tokens:8,stream:false};
-      if(curProto==='@ai-sdk/anthropic'){
-        ep=url.endsWith('/v1')?(url+'/messages'):(url+'/v1/messages');
-        payload={model:modelId,messages:[{role:'user',content:'Reply OK'}],max_tokens:16,stream:false};
-      }else if(curProto==='@ai-sdk/openai'){
-        ep=url+'/responses';
-        payload={model:modelId,input:'Reply OK',max_output_tokens:16};
+      const buildTestReq=base=>{
+        if(curProto==='@ai-sdk/anthropic'){
+          return{ep:base.endsWith('/v1')?(base+'/messages'):(base+'/v1/messages'),payload:{model:modelId,messages:[{role:'user',content:'Reply OK'}],max_tokens:16,stream:false}};
+        }
+        if(curProto==='@ai-sdk/openai'){
+          return{ep:base+'/responses',payload:{model:modelId,input:'Reply OK',max_output_tokens:16}};
+        }
+        if(curProto==='@ai-sdk/google'){
+          return{ep:base+'/models/'+encodeURIComponent(modelId)+':generateContent'+(key?('?key='+encodeURIComponent(key)):''),payload:{contents:[{parts:[{text:'Reply OK'}]}],generationConfig:{maxOutputTokens:16}}};
+        }
+        return{ep:base+'/chat/completions',payload:{model:modelId,messages:[{role:'user',content:'Reply OK'}],max_tokens:8,stream:false}};
+      };
+      let usedUrl=url;
+      let tReq=buildTestReq(url);
+      let r=await O.extFetch(tReq.ep,{method:'POST',headers:hd,body:tReq.payload,timeout:18000});
+      if(!r.ok&&(r.status===403||r.status===404||r.status===405)&&!/\/v\d|\/openai|\/api\/paas/i.test(url)){
+        const altBase=url+'/v1';
+        const altReq=buildTestReq(altBase);
+        const r2=await O.extFetch(altReq.ep,{method:'POST',headers:hd,body:altReq.payload,timeout:18000});
+        if(r2.ok||r2.status<r.status){r=r2;usedUrl=altBase}
       }
-      const r=await O.extFetch(ep,{method:'POST',headers:hd,body:payload,timeout:18000});
+      if(usedUrl!==url)urlInp.value=usedUrl;
       if(r.ok){
         statusBox.textContent='Тест пройден (HTTP '+r.status+'). API и ключ работают исправно с моделью '+modelId+'.';
         O.toast('API отвечает корректно!',2000);
@@ -546,8 +569,16 @@ O.openCustomProvider=(parentSheet,editPid)=>{
     v=>{markFree=v}
   );
 
+  const RESERVED_PIDS=new Set(['opencode','openai','anthropic','google','openrouter','deepseek','groq','xai','mistral','together','fireworks','cerebras','nvidia','huggingface','github-copilot','azure','amazon-bedrock']);
+
   const saveBtn=h('button',{class:'btn pri wide',style:{marginTop:'12px'},onclick:async()=>{
-    const pid=idInp.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'')||('custom-'+Date.now().toString(36));
+    const obj=O.readCfgObj();
+    let pid=idInp.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'');
+    if(!pid){
+      const slug=nameInp.value.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+      pid=(slug&&!RESERVED_PIDS.has(slug))?slug:('custom-'+Date.now().toString(36));
+      if(obj.provider&&obj.provider[pid]&&editPid!==pid)pid+='-'+Date.now().toString(36);
+    }
     const pname=nameInp.value.trim()||pid;
     let url=normalizeBaseUrl(urlInp.value,curProto);
     if(!url)return O.toast('Введите Base URL');
@@ -570,32 +601,28 @@ O.openCustomProvider=(parentSheet,editPid)=>{
         limit:{context:128000,output:8192}
       };
       if(markFree){
-        entry.free=true;
         entry.cost={input:0,output:0};
       }
       mo[mid]=entry;
     });
 
-    const obj=readCfg();
     const provOpts={baseURL:url,apiKey:key||(pid.includes('ollama')?'ollama':'sk-local')};
     if(pid==='openrouter'||url.includes('openrouter.ai')){
       provOpts.headers={'HTTP-Referer':'https://opencode.mobile','X-Title':'OpenCode Mobile'};
     }
-    obj.provider[pid]={name:pname,npm:curProto,options:provOpts,models:mo};
-
-    const w=O.native.cfgWrite(JSON.stringify(obj,null,2));
-    if(!w.ok)return O.toast(w.err||'Ошибка записи opencode.json');
+    const provDef={name:pname,npm:curProto,options:provOpts,models:mo};
 
     saveBtn.disabled=true;
     try{
-      if(key)try{await api('PUT','/auth/'+pid,{type:'api',key})}catch(_){}
-      try{await api('POST','/instance/dispose',null)}catch(_){}
-      await new Promise(r=>setTimeout(r,260));
-      await O.loadMeta();
+      let res;
+      try{
+        res=await O.saveProviderConfig(pid,provDef,key);
+      }catch(e){
+        return O.toast(e.message||'Ошибка записи opencode.json');
+      }
 
       const firstMid=Object.keys(mo)[0];
-      const loadedProv=S.providers.find(p=>p.id===pid&&p.models&&Object.keys(p.models).length>0);
-      if(loadedProv&&firstMid){
+      if(res.loaded&&firstMid){
         O.setModel(pid,firstMid);
         O.toast('Провайдер '+pname+' подключён ('+Object.keys(mo).length+' моделей)!',3000);
         sh.close();if(parentSheet&&parentSheet.close)parentSheet.close();

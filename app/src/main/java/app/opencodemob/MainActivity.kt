@@ -530,7 +530,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun cfgFile(): File {
-        val dir = File(Runtime.home(this, uid()), ".config/opencode").apply { mkdirs() }
+        val dir = File(Runtime.home(this, ensureUid()), ".config/opencode").apply { mkdirs() }
         val jsonc = File(dir, "opencode.jsonc")
         val json = File(dir, "opencode.json")
         if (jsonc.exists()) {
@@ -1008,6 +1008,10 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 stopService(Intent(this@MainActivity, OpenCodeService::class.java))
                 ServerState.ready = false
+                if (lastReady) {
+                    lastReady = false
+                    emit("server", JSONObject().put("ready", false))
+                }
                 ui.postDelayed({ start() }, 700)
             }
         }
@@ -1069,7 +1073,7 @@ class MainActivity : ComponentActivity() {
             Net.request(this@MainActivity, id, method, path, body) { n, d -> emit(n, d) }
         }
         @JavascriptInterface fun extHttp(id: String, method: String, url: String, headersJson: String, body: String) {
-            Net.extRequest(id, method, url, headersJson, body) { n, d -> emit(n, d) }
+            Net.extRequest(this@MainActivity, id, method, url, headersJson, body) { n, d -> emit(n, d) }
         }
         @JavascriptInterface fun drop(id: String) { Net.drop(this@MainActivity, id) }
         @JavascriptInterface fun sseStart() { Net.sseStart { n, d -> emit(n, d) } }

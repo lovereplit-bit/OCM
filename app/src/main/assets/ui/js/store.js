@@ -226,12 +226,80 @@ O.loadMeta=async()=>{
   if(pr.status==='fulfilled')O.kv.set('projects',pr.value);
   if(br.status==='fulfilled')S.branch=br.value&&br.value.branch||'';
   O.pickDefaults();bus.emit('meta')};
+O.readCfgObj=()=>{
+  const t=(O.native&&O.native.cfgRead?O.native.cfgRead():'')||'';
+  let obj={};
+  try{if(t&&t.trim())obj=O.parseJsonc(t)}catch(_){}
+  if(!obj||typeof obj!=='object'||Array.isArray(obj))obj={};
+  obj.provider=obj.provider||{};
+  return obj;
+};
+O.saveProviderConfig=async(pid,provDef,apiKey)=>{
+  const obj=O.readCfgObj();
+  const hadPrev=Boolean(obj.provider&&obj.provider[pid]);
+  const fullObj=Object.assign({},obj,{provider:Object.assign({},obj.provider,{[pid]:provDef})});
+
+  // Remove previous entry on disk first so PATCH /global/config replaces models cleanly and invalidates cachedGlobal
+  if(hadPrev){
+    const cleanObj=Object.assign({},obj,{provider:Object.assign({},obj.provider)});
+    delete cleanObj.provider[pid];
+    const pw=O.native.cfgWrite(JSON.stringify(cleanObj,null,2));
+    if(!pw.ok)throw new Error(pw.err||'Ошибка записи opencode.json');
+  }
+
+  let hotLoaded=false;
+  if(S.up){
+    try{
+      await api('PATCH','/global/config',{provider:{[pid]:provDef}},{dir:false,timeout:10000});
+      hotLoaded=true;
+    }catch(_){}
+  }
+
+  if(!hotLoaded){
+    const w=O.native.cfgWrite(JSON.stringify(fullObj,null,2));
+    if(!w.ok)throw new Error(w.err||'Ошибка записи opencode.json');
+  }
+
+  if(apiKey)try{await api('PUT','/auth/'+pid,{type:'api',key:apiKey})}catch(_){}
+  try{await api('POST','/instance/dispose',null)}catch(_){}
+  await new Promise(r=>setTimeout(r,300));
+  await O.loadMeta();
+
+  const loadedProv=S.providers.find(p=>p.id===pid&&p.models&&Object.keys(p.models).length>0);
+  if(loadedProv)return{loaded:true};
+
+  O.native.cfgWrite(JSON.stringify(fullObj,null,2));
+  return{loaded:false};
+};
+O.removeProviderConfig=async pid=>{
+  const cc=O.readCfgObj();
+  const existed=Boolean(cc.provider&&cc.provider[pid]);
+  delete cc.provider[pid];
+  try{
+    const ar=O.native.readText('/root/.local/share/opencode/auth.json');
+    if(ar&&ar.ok&&ar.text){
+      const ao=JSON.parse(ar.text||'{}');
+      if(ao[pid]){delete ao[pid];O.native.writeText('/root/.local/share/opencode/auth.json',JSON.stringify(ao,null,2))}
+    }
+  }catch(_){}
+  const schemaUrl=cc.$schema||'https://opencode.ai/config.json';
+  const diskObj=Object.assign({},cc);delete diskObj.$schema;
+  O.native.cfgWrite(JSON.stringify(diskObj,null,2));
+  if(S.up){
+    try{await api('PATCH','/global/config',{$schema:schemaUrl},{dir:false,timeout:8000})}catch(_){}
+  }
+  try{await api('POST','/instance/dispose',null)}catch(_){}
+  await new Promise(r=>setTimeout(r,200));
+  await O.loadMeta();
+  if(S.providers.some(p=>p.id===pid)){
+    O.native.cfgWrite(JSON.stringify(Object.assign({$schema:schemaUrl},diskObj),null,2));
+    if(window.OC&&OC.restartServer)OC.restartServer();
+  }
+  return existed;
+};
 O.customProviderIds=()=>{
   try{
-    const raw=O.native&&O.native.cfgRead?O.native.cfgRead():'';
-    if(!raw||!raw.trim())return new Set();
-    const obj=O.parseJsonc(raw);
-    const prov=obj&&obj.provider?obj.provider:{};
+    const prov=O.readCfgObj().provider||{};
     return new Set(Object.keys(prov).filter(k=>k!=='opencode'));
   }catch(_){return new Set()}
 };
@@ -253,14 +321,15 @@ O.isModelFree=x=>{
 O.primaryAgents=()=>S.agents.filter(a=>a.mode!=='subagent'&&!a.hidden);
 O.modelInfo=(pid,mid)=>{
   const p=S.providers.find(x=>x.id===pid);
-  if(p&&p.models&&p.models[mid])return p.models[mid];
-  return null;
+  if(!p||!p.models)return null;
+  if(p.models[mid])return p.models[mid];
+  return Object.values(p.models).find(m=>m&&m.id===mid)||null;
 };
 O.allModels=()=>{
   const customIds=O.customProviderIds();
   return S.providers.flatMap(p=>{
-    const isCustom=customIds.has(p.id)&&p.id!=='opencode';
-    return Object.values(p.models||{}).map(m=>({pid:p.id,pname:p.name,mid:m.id,name:m.name||m.id,isCustom,m}));
+    const isCustom=(customIds.has(p.id)||p.source==='config')&&p.id!=='opencode';
+    return Object.entries(p.models||{}).map(([k,m])=>({pid:p.id,pname:p.name||p.id,mid:(m&&m.id)||k,name:(m&&(m.name||m.id))||k,isCustom,m}));
   });
 };
 O.pickDefaults=()=>{

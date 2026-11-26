@@ -45,6 +45,7 @@ class OpenCodeService : Service() {
         var attempt = 0
         while (!stopping && attempt < 4) {
             val t0 = SystemClock.elapsedRealtime()
+            Runtime.stopActiveServer()
             val port = Runtime.stablePort(this)
             val pw = Runtime.stablePassword(this)
             // two failed starts in a row -> retry without the seccomp fast path (slower, but works on odd kernels)
@@ -127,6 +128,7 @@ class OpenCodeService : Service() {
         ServerState.ready = false
         watcher?.interrupt()
         proc?.destroy()
+        thread(isDaemon = true) { Runtime.stopActiveServer() }
         try { wake?.release() } catch (_: Exception) {}
         super.onDestroy()
     }

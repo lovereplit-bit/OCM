@@ -1389,16 +1389,8 @@ setTimeout(()=>{try{O.syncAllCommunity()}catch(_){}},1000);
 O.configureIpRotatorProvider = async (enabled, customBaseUrl) => {
   const baseUrl = (customBaseUrl || O.store.get('rotator_url', 'http://127.0.0.1:8000/v1')).trim().replace(/\/+$/, '');
   const pid = 'opencode-ip-rotator';
-  const t = O.native.cfgRead();
-  let obj = {};
-  try { if (t.trim()) obj = O.parseJsonc(t); } catch {}
-  obj.provider = obj.provider || {};
   if (!enabled) {
-    if (obj.provider[pid]) {
-      delete obj.provider[pid];
-      O.native.cfgWrite(JSON.stringify(obj, null, 2));
-      try { await api('POST', '/instance/dispose', null); } catch (_) {}
-      await O.loadMeta();
+    if (await O.removeProviderConfig(pid)) {
       O.pickDefaults();
     }
     O.store.set('rotator_enabled', false);
@@ -1406,7 +1398,6 @@ O.configureIpRotatorProvider = async (enabled, customBaseUrl) => {
   }
   const mkRotModel = (id, title) => ({
     name: title || (id + ' (Free)'),
-    free: true,
     attachment: false,
     tool_call: true,
     temperature: true,
@@ -1433,24 +1424,25 @@ O.configureIpRotatorProvider = async (enabled, customBaseUrl) => {
       }
     }
   } catch (_) {}
-  obj.provider[pid] = {
+  const provDef = {
     name: 'OpenCode IP Rotator',
     npm: '@ai-sdk/openai-compatible',
     options: { baseURL: baseUrl, apiKey: 'rotator' },
     models: mo
   };
-  const w = O.native.cfgWrite(JSON.stringify(obj, null, 2));
-  if (!w.ok) throw new Error(w.err || 'Ошибка записи конфигурации');
-  try { await api('PUT', '/auth/' + pid, { type: 'api', key: 'rotator' }); } catch (_) {}
-  try { await api('POST', '/instance/dispose', null); } catch (_) {}
-  await new Promise(r => setTimeout(r, 250));
-  await O.loadMeta();
+  const res = await O.saveProviderConfig(pid, provDef, 'rotator');
   O.store.set('rotator_enabled', true);
   O.store.set('rotator_url', baseUrl);
   const mKeys = Object.keys(mo);
   if (mKeys.length > 0) {
     const target = mKeys.includes('big-pickle') ? 'big-pickle' : mKeys[0];
-    O.setModel(pid, target);
+    if (res.loaded) {
+      O.setModel(pid, target);
+    } else {
+      O.store.set('model.' + S.agent, { providerID: pid, modelID: target });
+      if (S.sid) O.store.set('session.model.' + S.sid, { providerID: pid, modelID: target });
+      if (window.OC && OC.restartServer) OC.restartServer();
+    }
   }
 };
 
