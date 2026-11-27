@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  VERSION_NAME: "2.2"
+  VERSION_NAME: "2.2.1"
 
 jobs:
   build:
@@ -85,20 +85,16 @@ jobs:
           gradle :app:assembleRelease --no-daemon --stacktrace -PappVersionName="$VERSION_NAME" -PappVersionCode="$CODE" 2>&1 | tee gradle-build.log
           cp app/build/outputs/apk/release/app-release.apk "OpenCode-${VERSION_NAME}-${CODE}.apk"
           {
-            echo "OpenCode Mobile ${VERSION_NAME} — Release v2.2"
+            echo "OpenCode Mobile ${VERSION_NAME} — Release v2.2.1"
             echo
             echo "Core: opencode $(grep opencode_core runtime-info.txt | cut -d= -f2) (1.x line) + Linux rootfs proot"
             echo
-            echo "What's new in v2.2:"
-            echo "- Added line statistics under agent replies: lines written and deleted"
-            echo "- Fixed custom API providers: CORS-free proxy, /v1 probe, manual model entry"
-            echo "- Completely removed ClawRouter from codebase"
-            echo "- Session drawer: current chat highlight, busy indicator, unread badge"
-            echo "- Unified grayscale palette: no blue accents, gray-white-black tokens in both themes"
-            echo "- Removed all AI-slop emoji from UI, SVG icons only"
-            echo "- Removed local GGUF models, offline mode and seasonal themes"
-            echo "- Plugin persistence fix: config preserved across updates"
-            echo "- IP Rotator / WARP fixes and stability improvements"
+            echo "What's new in v2.2.1:"
+            echo "- Text-to-Image (T2I) photo attachments in chat with unified grayscale media cards and fullscreen lightbox"
+            echo "- Custom API providers: fixed model persistence in opencode.json, hot-reload via PATCH /global/config, and T2I capability flag"
+            echo "- Replaced legacy IP Rotator with native Cloudflare WARP, WireGuard .conf, HTTP/SOCKS5 proxy, and Psiphon fallback tunnel"
+            echo "- Auto-rotate IP & resume chat on quota/rate-limit errors + live IP, City, and Country inspector in WARP settings"
+            echo "- Unified grayscale palette across all chat widgets, media viewers, and network controls"
             echo
             echo "Telegram: https://t.me/OpenCodeMob"
           } > notes.md

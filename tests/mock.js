@@ -65,6 +65,13 @@ window.OC={
  pickFile(k,d){window.__picked=[k,d]},copy(t){window.__copied=t},pasteText:()=>'pasted',share(t){window.__shared=t},openLink(u){window.__opened=u},
  openApp(t){return true},preparePreview(p){return ''},startVoiceInput(l){},
  isOnline(){return true},
+ warpStatus:()=>JSON.stringify({enabled:false,mode:'direct',activeMode:'direct',status:'idle',ip:'198.51.100.1',city:'Amsterdam',country:'Netherlands',countryCode:'NL',autoRotate:true,autoFallback:true,cfonCountry:'DE',burnedCount:0,rotations:0,wgConfigs:[]}),
+ warpRefreshGeo(){},warpSetConfig(j){window.__warpCfg=j},warpRotate(sid){setTimeout(()=>OCEvent('warp_rotated',{ok:true,ip:'203.0.113.7',city:'Frankfurt',country:'Germany',sessionID:sid}),10)},
+ warpClearBurned:()=>JSON.stringify({enabled:false,mode:'direct',burnedCount:0}),
+ warpImportWg:(n,c)=>JSON.stringify({ok:true,endpoint:'127.0.0.1:51820'}),warpSelectWg:()=>JSON.stringify({}),warpDeleteWg:()=>JSON.stringify({}),
+ cacheMediaImage(id,s,f){setTimeout(()=>OCEvent('media_cached',{id,ok:true,path:'/root/media/'+f,name:f,url:s}),5)},
+ saveMediaImage(s,f){setTimeout(()=>OCEvent('media_saved',{ok:true,name:f||'image.png'}),5)},
+ shareImage(s,f){window.__sharedImage=[s,f]},
  checkUpdates(){setTimeout(()=>OCEvent('update',{core:'v1.18.6'}),5)},applyAppUpdate(){},applyCoreUpdate(){}
 };
 window.__onPrompt=b=>{const sid='ses_1';const P=(part)=>__push({type:'message.part.updated',properties:{part:Object.assign({sessionID:sid},part)}});

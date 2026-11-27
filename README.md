@@ -20,7 +20,7 @@ Download `OpenCode-<version>-<build>.apk` from
 - Works immediately: free models respond without login
 - OTA updates: **Settings > Updates**
 
-Current version: **2.2** (OpenCode core **1.x** line).
+Current version: **2.2.1** (OpenCode core **1.x** line).
 
 ### What's inside
 
@@ -36,12 +36,13 @@ a custom mobile UI. No website is opened, chats remain readable even without net
 - Upload `AGENTS.md` and agent files from the phone file picker: **Settings > Agents**
 - Line statistics under agent replies: lines written and lines deleted
 - Access to `/storage/emulated/0` and `Download` from the Linux environment
+- **T2I photo attachments in chat:** models supporting image generation (`t2i`) render inline grayscale image cards with fullscreen lightbox zoom, Save to Downloads, and Android Share (`/imagine` or `T2I` toggle)
 
 ### Custom API Providers
 
 - Add your own OpenAI-compatible API endpoint in **Settings > Models & Providers > Custom API**.
 - CORS-free: requests go through the native Android proxy (`extHttp`), no WebView fetch restrictions.
-- Auto-probes `/v1/models` for model discovery; manual model ID entry supported.
+- Auto-probes `/v1/models` for model discovery; manual model ID entry and T2I capability tagging supported.
 - Works with OpenRouter, Together, Groq, local servers (Ollama, LM Studio), and any OpenAI-compatible endpoint.
 
 ### Session Drawer
@@ -66,14 +67,13 @@ Login via Google/GitHub through `opencode console login` (device flow) connects 
 After login the app mirrors the account into the opencode credential store, so models work under your quota.
 Logout anytime: Settings > OpenCode Account.
 
-### OpenCode IP Rotator (HTTP 429 bypass)
+### WARP & Bypass (opencode-infinite, HTTP 429 bypass)
 
-For guest accounts and free models, the app integrates **OpenCode IP Rotator**:
-- Automatic 429 bypass for guest profiles
-- IP rotation via **Cloudflare WARP** and HTTP/SOCKS5 proxy pool
-- Model support: big-pickle, claude-3-5-sonnet, gpt-4o, gemini-2.0-flash
-- Settings: "Jailbreaks & Plugins" > "OpenCode IP Rotator"
-- Detailed docs: [docs/IP_ROTATOR.md](docs/IP_ROTATOR.md).
+To bypass IP rate limits and HTTP 429 quota errors, the app integrates **WARP & Bypass** inspired by `opencode-infinite`:
+- Non-root **Cloudflare WARP** (`bepass-org/warp-plus` bundled as `libwarp.so`) routed via local `ProxyGate` (`127.0.0.1:18120`) for both `opencode` runtime and WebView `extHttp`
+- Automatic **HTTP 429 / quota error capture**: rotates the exit IP and avoids recently burned IPs (24h memory)
+- **Reserve fallback chain** if native WARP is blocked: `WARP Scan`, `WARP-in-WARP (Gool)`, imported `WireGuard .conf`, `HTTP/HTTPS/SOCKS5` proxy pool, and `Psiphon (--cfon)`
+- Live status in **Settings > WARP & Bypass**: displays current exit **IP**, **City**, and **Country**, with manual **Change IP (WARP)** rotation and `.conf` import
 
 ### Agents
 

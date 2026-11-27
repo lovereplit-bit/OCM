@@ -58,6 +58,7 @@ flask:'<path d="M10 2v7.31l-4.6 7.82A2 2 0 007.12 20h9.76a2 2 0 001.72-2.87L14 9
 smartphone:'<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 18h.01"/>',
 monitor:'<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
 wifiOff:'<path d="M2 2l20 20M8.5 16.5a5 5 0 017 0M5 13a10 10 0 015.2-2.8M19 13a10 10 0 00-2.5-1.8M2 9a15 15 0 015.3-3.1M22 9a15 15 0 00-7.7-3.8M12 20h.01"/>',
+download:'<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',maximize:'<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>',sparkles:'<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3zM5 17l.8 2.2L8 20l-2.2.8L5 23l-.8-2.2L2 20l2.2-.8L5 17z"/>',
 zap:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',logo:'<path d="M5 3h14v18H5zM9 7h6v10H9z" fill="currentColor" fill-rule="evenodd" stroke="none"/>'
 };
 O.icon=(n,c)=>{const s=document.createElement('span');s.className='ic'+(c?' '+c:'');

@@ -25,6 +25,7 @@ O.stripAnsi=s=>String(s||'')
   .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,'');
 O.debounce=(f,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>f(...a),ms)}};
 O.store={get(k,d){try{const v=localStorage.getItem('ocm.'+k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem('ocm.'+k,JSON.stringify(v))}catch{}}};
+O.tr=(en,ru)=>(O.store.get('lang','ru')==='en'?en:ru);
 let last=0,ctr=0;
 O.mid=()=>{const n=Date.now();if(n!==last){last=n;ctr=0}ctr++;
   const hex=(BigInt(n)*0x1000n+BigInt(ctr)).toString(16).padStart(12,'0').slice(-12);

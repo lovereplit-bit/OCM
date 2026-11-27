@@ -475,7 +475,11 @@ object Runtime {
                 }
             }
 
-            // Fix rotator and custom third-party relays from @ai-sdk/openai to @ai-sdk/openai-compatible
+            // Upgrade custom third-party relays from @ai-sdk/openai to @ai-sdk/openai-compatible and purge legacy rotator entry
+            if (prov.has("opencode-ip-rotator")) {
+                prov.remove("opencode-ip-rotator")
+                changed = true
+            }
             val it = prov.keys()
             while (it.hasNext()) {
                 val pid = it.next()
@@ -483,12 +487,7 @@ object Runtime {
                 val npm = p.optString("npm", "")
                 val opts = p.optJSONObject("options")
                 val baseUrl = opts?.optString("baseURL", "") ?: ""
-                if (pid == "opencode-ip-rotator") {
-                    if (npm.isEmpty() || npm == "@ai-sdk/openai") {
-                        p.put("npm", "@ai-sdk/openai-compatible")
-                        changed = true
-                    }
-                } else if (baseUrl.isNotEmpty() && !baseUrl.contains("api.openai.com")) {
+                if (baseUrl.isNotEmpty() && !baseUrl.contains("api.openai.com")) {
                     if (npm == "@ai-sdk/openai" || (pid == "ollama" && npm.isEmpty())) {
                         p.put("npm", "@ai-sdk/openai-compatible")
                         changed = true
@@ -559,6 +558,114 @@ object Runtime {
                 echo "Opening web preview for ${S}TARGET..."
             """.trimIndent() + "\n"
 
+            val t2iContent = """
+                #!/usr/bin/env python3
+                import base64, json, os, re, sys, time, urllib.error, urllib.request
+
+                def load_provider():
+                    cfg_path = os.path.expanduser("~/.config/opencode/opencode.json")
+                    if not os.path.exists(cfg_path):
+                        return None
+                    try:
+                        cfg = json.load(open(cfg_path, encoding="utf-8"))
+                    except Exception:
+                        return None
+                    prov = cfg.get("provider") or {}
+                    req_model = sys.argv[3] if len(sys.argv) > 3 else os.environ.get("T2I_MODEL", "")
+                    req_pid = os.environ.get("T2I_PROVIDER", "")
+                    candidates = []
+                    for pid, p in prov.items():
+                        if not isinstance(p, dict):
+                            continue
+                        opts = p.get("options") or {}
+                        base = str(opts.get("baseURL") or "").rstrip("/")
+                        key = str(opts.get("apiKey") or "")
+                        if not base:
+                            continue
+                        models = p.get("models") or {}
+                        for mid, m in models.items():
+                            is_t2i = bool(isinstance(m, dict) and ((m.get("options") or {}).get("t2i") or "image" in ((m.get("modalities") or {}).get("output") or [])))
+                            if re.search(r"image|flux|dall-e|imagen|sdxl|midjourney|ideogram|seedream|nano-banana|t2i", mid, re.I):
+                                is_t2i = True
+                            score = 0
+                            if req_pid and pid == req_pid:
+                                score += 10
+                            if req_model and mid == req_model:
+                                score += 20
+                            if is_t2i:
+                                score += 5
+                            candidates.append((score, base, key, mid))
+                    candidates.sort(key=lambda x: x[0], reverse=True)
+                    return candidates[0] if candidates else None
+
+                def main():
+                    if len(sys.argv) < 2 or not sys.argv[1].strip():
+                        print("Usage: t2i <prompt> [out.png] [model_id]", file=sys.stderr)
+                        sys.exit(1)
+                    prompt = sys.argv[1].strip()
+                    out_path = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2].strip() else f"/root/.cache/opencode-mob/media/t2i_{int(time.time()*1000)}.png"
+                    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+                    pick = load_provider()
+                    if not pick:
+                        print("ERROR: No custom API provider with baseURL configured for T2I.", file=sys.stderr)
+                        sys.exit(2)
+                    _, base, key, model = pick
+                    if base.endswith("/v1"):
+                        img_ep = base + "/images/generations"
+                        chat_ep = base + "/chat/completions"
+                    else:
+                        img_ep = base + "/v1/images/generations"
+                        chat_ep = base + "/v1/chat/completions"
+                    hdr = {"Content-Type": "application/json"}
+                    if key:
+                        hdr["Authorization"] = "Bearer " + key
+                    img_bytes = None
+                    try:
+                        req = urllib.request.Request(img_ep, data=json.dumps({"model": model, "prompt": prompt, "n": 1}).encode("utf-8"), headers=hdr)
+                        with urllib.request.urlopen(req, timeout=90) as r:
+                            res = json.loads(r.read().decode("utf-8", "replace"))
+                        item = (res.get("data") or [{}])[0]
+                        if item.get("b64_json"):
+                            img_bytes = base64.b64decode(item["b64_json"])
+                        elif item.get("url"):
+                            with urllib.request.urlopen(item["url"], timeout=60) as ir:
+                                img_bytes = ir.read()
+                    except Exception:
+                        img_bytes = None
+                    if img_bytes is None:
+                        try:
+                            req = urllib.request.Request(chat_ep, data=json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}]}).encode("utf-8"), headers=hdr)
+                            with urllib.request.urlopen(req, timeout=90) as r:
+                                res = json.loads(r.read().decode("utf-8", "replace"))
+                            msg = ((res.get("choices") or [{}])[0].get("message") or {})
+                            imgs = msg.get("images") or []
+                            if imgs:
+                                u = (imgs[0].get("image_url") or {}).get("url") or imgs[0].get("url") or ""
+                                if u.startswith("data:image/"):
+                                    img_bytes = base64.b64decode(u.split(",", 1)[1])
+                                elif u.startswith("http"):
+                                    with urllib.request.urlopen(u, timeout=60) as ir:
+                                        img_bytes = ir.read()
+                            if img_bytes is None and isinstance(msg.get("content"), str):
+                                m = re.search(r"data:image/[a-zA-Z0-9+]+;base64,([A-Za-z0-9+/=]+)", msg["content"])
+                                if m:
+                                    img_bytes = base64.b64decode(m.group(1))
+                        except Exception as e:
+                            print(f"ERROR: T2I request failed: {e}", file=sys.stderr)
+                            sys.exit(3)
+                    if not img_bytes:
+                        print("ERROR: Model returned no image payload.", file=sys.stderr)
+                        sys.exit(4)
+                    with open(out_path, "wb") as f:
+                        f.write(img_bytes)
+                    abs_p = os.path.abspath(out_path)
+                    print(f"MEDIA_SAVED:{abs_p}")
+                    print(f"![Generated Image]({abs_p})")
+
+                if __name__ == "__main__":
+                    main()
+            """.trimIndent() + "\n"
+
             val appBins = listOf(
                 File(rootBin, "openapp"), File(rootBin, "open-app"),
                 File(rootUsrBin, "openapp"), File(homeBin, "openapp")
@@ -577,6 +684,14 @@ object Runtime {
             for (f in prevBins) {
                 try {
                     f.writeText(openpreviewContent)
+                    Os.chmod(f.path, 0x1ED)
+                } catch (_: Exception) {}
+            }
+
+            val t2iBins = listOf(File(rootBin, "t2i"), File(rootUsrBin, "t2i"), File(homeBin, "t2i"))
+            for (f in t2iBins) {
+                try {
+                    f.writeText(t2iContent)
                     Os.chmod(f.path, 0x1ED)
                 } catch (_: Exception) {}
             }
@@ -716,7 +831,12 @@ You can embed interactive buttons in your markdown responses (the app renders cl
 - `<button data-action="files">Открыть Файлы</button>`
 - `<button data-action="term">Терминал</button>`
 
-## 5. Diff Statistics Reporting (MANDATORY)
+## 5. Attaching & Generating Photos (T2I)
+When creating, generating, plotting, or saving an image (`.png`, `.jpg`, `.jpeg`, `.webp`):
+- If you are calling an image generation model via shell, use `t2i "<prompt>"` (or save any generated image inside the workspace / `/root/.cache/opencode-mob/media/`).
+- Always embed the image in your response as standard Markdown `![description](/absolute/path/to/image.png)` (or `https://...` / `data:image/...`) so OpenCode Mobile displays it as a photo attachment card in chat.
+
+## 6. Diff Statistics Reporting (MANDATORY)
 At the very end of EVERY response, you MUST output a separate line with line additions and deletions:
 +N -M
 For example:
@@ -729,14 +849,15 @@ For example:
             File(dotOpencode, "AGENTS.md").writeText(promptText)
 
             val readme = File(home, "README.md")
-            if (!readme.exists() || !readme.readText().contains("v2.0.2")) {
+            if (!readme.exists() || !readme.readText().contains("v2.2.1")) {
                 readme.writeText("""
-# OpenCode Mobile v2.0.2
+# OpenCode Mobile v2.2.1
 
 Мобильная среда разработки на Android (ARM64).
 
 ### Возможности
-- **Модели**: Облачные модели через OpenCode Zen и собственные API-провайдеры.
+- **Модели**: Облачные модели через OpenCode Zen, кастомные API-провайдеры и T2I генерация фото.
+- **WARP и обход лимитов**: Встроенный Cloudflare WARP, WireGuard .conf, прокси-пул и Psiphon-резерв с авто-ротацией IP.
 - **Linux-окружение**: Терминал, компиляторы, Python, Node.js, Git.
 - **Встроенный веб-предпросмотр**: Запуск сайтов и HTML/CSS/JS проектов прямо в приложении.
 - **Интеграция с Android**: Открытие приложений агентом (`openapp telegram`).
@@ -798,12 +919,15 @@ For example:
         stopActiveServer()
         ensureDefaults(c, uid)
         updateDns(c)
+        WarpManager.init(c)
         val lib = c.applicationInfo.nativeLibraryDir
         val ptmp = File(c.filesDir, "proot-tmp").apply { mkdirs() }
 
         val a = prootBase(c, uid)
         a += listOf("/usr/local/bin/opencode", "serve", "--hostname", "127.0.0.1", "--port", port.toString())
 
+        val gateUrl = "http://127.0.0.1:${WarpManager.GATE_PORT}"
+        val noProxy = "127.0.0.1,localhost,::1"
         val pb = ProcessBuilder(a).redirectErrorStream(true).directory(c.filesDir)
         pb.environment().apply {
             clear()
@@ -814,6 +938,9 @@ For example:
             put("HOME", "/root"); put("USER", "root"); put("SHELL", "/bin/bash")
             put("LANG", "C.UTF-8"); put("TERM", "xterm-256color"); put("TMPDIR", "/tmp")
             put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+            put("HTTP_PROXY", gateUrl); put("HTTPS_PROXY", gateUrl)
+            put("http_proxy", gateUrl); put("https_proxy", gateUrl)
+            put("NO_PROXY", noProxy); put("no_proxy", noProxy)
             put("OPENCODE_SERVER_USERNAME", "opencode")
             put("OPENCODE_SERVER_PASSWORD", password)
             put("OPENCODE_DISABLE_AUTOUPDATE", "1") // stay on 1.x: no `upgrade --major` behind our back

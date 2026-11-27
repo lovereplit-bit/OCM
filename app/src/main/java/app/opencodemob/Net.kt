@@ -24,8 +24,14 @@ object Net {
     private val http = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS).readTimeout(15, TimeUnit.MINUTES).writeTimeout(60, TimeUnit.SECONDS).build()
     private val extHttp = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS).readTimeout(35, TimeUnit.SECONDS).writeTimeout(25, TimeUnit.SECONDS)
+        .connectTimeout(12, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS).writeTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true).followSslRedirects(true).build()
+    private val proxiedExtHttp by lazy {
+        extHttp.newBuilder()
+            .proxy(java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress("127.0.0.1", WarpManager.GATE_PORT)))
+            .build()
+    }
+    fun externalClient(): OkHttpClient = if (WarpManager.isProxied()) proxiedExtHttp else extHttp
     private val stream = http.newBuilder().readTimeout(0, TimeUnit.SECONDS).pingInterval(20, TimeUnit.SECONDS).build()
     private val pool = Executors.newCachedThreadPool()
     private val sockets = ConcurrentHashMap<String, WebSocket>()
@@ -54,7 +60,7 @@ object Net {
                         }
                     } catch (_: Exception) {}
                 }
-                extHttp.newCall(b.build()).execute().use { r: Response ->
+                externalClient().newCall(b.build()).execute().use { r: Response ->
                     o.put("status", r.code)
                         .put("ok", r.isSuccessful)
                         .put("ct", r.header("Content-Type") ?: "")

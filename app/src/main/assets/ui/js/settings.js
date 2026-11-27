@@ -84,13 +84,18 @@ O.openSettings=()=>{
   );
   body.append(agentCard);
 
-  // 6. Jailbreaks & Custom Plugins
-  body.append(h('div',{class:'settings-section-title'},O.tr('Jailbreaks & Plugins','Джейлбрейки и плагины')));
+  // 6. Jailbreaks, Plugins & WARP Tunnel
+  body.append(h('div',{class:'settings-section-title'},O.tr('Extensions & Bypass','Расширения и обход лимитов')));
+  const warpSt=(O.native&&O.native.warpStatus)?O.native.warpStatus():{enabled:false,mode:'direct'};
+  const warpLoc=[warpSt.city,warpSt.country].filter(Boolean).join(', ');
+  const warpSub=warpSt.enabled
+    ?([String(warpSt.activeMode||warpSt.mode||'WARP').toUpperCase(),warpSt.ip,warpLoc].filter(Boolean).join(' · '))
+    :O.tr('WARP, WireGuard & proxy IP rotation (Bypass 429)','WARP, WireGuard и прокси-ротация IP (обход лимитов)');
   const jbCard=h('div',{class:'settings-card'});
   jbCard.append(
     O.listRow('shield',O.tr('Custom Jailbreaks','Пользовательские джейлбрейки'),O.tr('Presets for Zen models, upload & toggle','Пресеты для моделей Zen, загрузка и отключение'),O.icon('chevR'),()=>openJailbreaks()),
     O.listRow('plug',O.tr('Custom Plugins','Пользовательские плагины'),O.tr('Marketplace, upload custom plugins','Каталог и загрузка пользовательских плагинов'),O.icon('chevR'),()=>openCustomPlugins()),
-    O.listRow('zap',O.tr('OpenCode IP Rotator (Bypass 429)','OpenCode IP Rotator (обход лимитов)'),O.store.get('rotator_enabled',false)?O.tr('Active · Rotating IP','Активен · Ротация IP включена'):O.tr('Cloudflare WARP & proxy rotator for guest tier','Обход лимитов на гостевом аккаунте'),O.icon('chevR'),()=>openIpRotator())
+    O.listRow('zap',O.tr('WARP & Bypass (opencode-infinite)','WARP и обход лимитов'),warpSub,O.icon('chevR'),()=>openWarpSettings())
   );
   body.append(jbCard);
 
@@ -510,7 +515,7 @@ O.getActiveJailbreak=()=>{
   return jbs[0]||null;
 };
 
-const BASE_SYSTEM_INSTRUCTIONS = `# OpenCode Mobile Environment & Instructions (v2.0.1)
+const BASE_SYSTEM_INSTRUCTIONS = `# OpenCode Mobile Environment & Instructions (v2.2.1)
 
 You are running inside **OpenCode Mobile** directly on native Android (ARM64 / aarch64 architecture).
 You have full access to a complete Linux userspace environment, terminal tools, and native Android integrations.
@@ -542,7 +547,15 @@ You have the built-in skill to preview web projects directly inside OpenCode Mob
 - \`<button data-action="files">Открыть Файлы</button>\`
 - \`<button data-action="term">Терминал</button>\`
 
-## 5. Diff Statistics Reporting (MANDATORY)
+## 5. Core Skill: Attaching & Generating Photos (T2I)
+The OpenCode Mobile chat renders inline grayscale image cards with fullscreen zoom, Downloads save, and Android share!
+- If the user asks you to generate a photo or you are a coding/tool model generating an image via the configured Custom API:
+  run \`/usr/local/bin/t2i "<prompt>"\` in bash (or generate a local image file).
+- To attach ANY generated or local photo in chat, output a markdown image link pointing to the absolute path or image URL:
+  \`![Generated image](/path/to/image.png)\`
+  or output a \`MEDIA_SAVED:/path/to/image.png\` marker from your script/command.
+
+## 6. Diff Statistics Reporting (MANDATORY)
 At the very end of EVERY response, you MUST output a separate line with line additions and deletions:
 +N -M
 (If no files were edited, output: +0 -0)`;
@@ -1385,294 +1398,238 @@ O.syncAllCommunity=async()=>{
 setTimeout(()=>{try{O.syncAllCommunity()}catch(_){}},1000);
 
 
-// ---- OpenCode IP Rotator (Bypass 429 / WARP & Proxy Pool) ----
-O.configureIpRotatorProvider = async (enabled, customBaseUrl) => {
-  const baseUrl = (customBaseUrl || O.store.get('rotator_url', 'http://127.0.0.1:8000/v1')).trim().replace(/\/+$/, '');
-  const pid = 'opencode-ip-rotator';
-  if (!enabled) {
-    if (await O.removeProviderConfig(pid)) {
-      O.pickDefaults();
-    }
-    O.store.set('rotator_enabled', false);
-    return;
-  }
-  const mkRotModel = (id, title) => ({
-    name: title || (id + ' (Free)'),
-    attachment: false,
-    tool_call: true,
-    temperature: true,
-    cost: { input: 0, output: 0 },
-    limit: { context: 128000, output: 8192 }
-  });
-  let mo = {
-    'big-pickle': mkRotModel('big-pickle', 'Big Pickle (Free - Rotator)'),
-    'mimo-v2.6-flash-free': mkRotModel('mimo-v2.6-flash-free', 'MiMo v2.6 Flash (Free - Rotator)'),
-    'deepseek-v4.1-flash-free': mkRotModel('deepseek-v4.1-flash-free', 'DeepSeek v4.1 Flash (Free - Rotator)'),
-    'glm-5.3-flash-free': mkRotModel('glm-5.3-flash-free', 'GLM 5.3 Flash (Free - Rotator)')
-  };
-  try {
-    const resp = await O.extFetch(baseUrl + '/models', { method: 'GET', headers: { 'Accept': 'application/json' }, timeout: 8000 });
-    if (resp.ok && resp.data) {
-      const data = resp.data;
-      const list = Array.isArray(data) ? data : (data.data || data.models || []);
-      if (list.length) {
-        mo = {};
-        list.forEach(m => {
-          const mid = typeof m === 'string' ? m : (m.id || m.name);
-          if (mid) mo[mid] = mkRotModel(mid, (m.name || mid) + ' (Free)');
-        });
-      }
-    }
-  } catch (_) {}
-  const provDef = {
-    name: 'OpenCode IP Rotator',
-    npm: '@ai-sdk/openai-compatible',
-    options: { baseURL: baseUrl, apiKey: 'rotator' },
-    models: mo
-  };
-  const res = await O.saveProviderConfig(pid, provDef, 'rotator');
-  O.store.set('rotator_enabled', true);
-  O.store.set('rotator_url', baseUrl);
-  const mKeys = Object.keys(mo);
-  if (mKeys.length > 0) {
-    const target = mKeys.includes('big-pickle') ? 'big-pickle' : mKeys[0];
-    if (res.loaded) {
-      O.setModel(pid, target);
-    } else {
-      O.store.set('model.' + S.agent, { providerID: pid, modelID: target });
-      if (S.sid) O.store.set('session.model.' + S.sid, { providerID: pid, modelID: target });
-      if (window.OC && OC.restartServer) OC.restartServer();
-    }
-  }
+// ---- WARP, WireGuard & Proxy Rotation (opencode-infinite) ----
+O.warpRotateAndRetry = (sid) => {
+  O.toast(O.tr('Rotating IP via WARP...', 'Меняем IP через WARP...'), 3000);
+  if (O.native && O.native.warpRotate) O.native.warpRotate(sid || S.sid || '');
 };
 
-O.rotateIpNow = async () => {
-  const nodeUrl = O.store.get('rotator_node_url', 'http://127.0.0.1:8001').trim().replace(/\/+$/, '');
-  const rotUrl = O.store.get('rotator_url', 'http://127.0.0.1:8000/v1').trim().replace(/\/+$/, '');
-  const hostUrl = rotUrl.replace(/\/v1$/, '');
-  O.toast(O.tr('Requesting WARP IP rotation...', 'Запрашиваем смену IP через WARP...'), 2500);
-  try {
-    let ok = false, newIp = null;
-    for (const ep of [hostUrl + '/rotate', nodeUrl + '/rotate']) {
-      try {
-        const resp = await O.extFetch(ep, { method: 'POST', timeout: 22000 });
-        if (resp.ok && resp.data && (resp.data.status === 'success' || resp.data.verified_ip)) {
-          ok = true;
-          newIp = resp.data.verified_ip || null;
-          break;
-        }
-      } catch (_) {}
-    }
-    if (ok) {
-      O.toast(O.tr('IP rotated successfully: ', 'IP успешно изменён: ') + (newIp || 'OK'), 3500);
-      return newIp || 'OK';
-    } else {
-      throw new Error(O.tr('Rotator /rotate endpoint unreachable', 'Конечная точка /rotate недоступна'));
-    }
-  } catch (e) {
-    O.toast(O.tr('Rotation error: ', 'Ошибка смены IP: ') + e.message, 4000);
-    return null;
-  }
-};
-
-function openIpRotator() {
+function openWarpSettings() {
   const body = h('div');
-  const s = sub(O.tr('OpenCode IP Rotator (Bypass 429)', 'OpenCode IP Rotator (обход лимитов)'), body, { full: true });
+  const MODES = [
+    { id: 'warp', label: 'Cloudflare WARP', sub: O.tr('Built-in non-root WARP tunnel (auto-registration)', 'Встроенный нерутовый WARP (авто-регистрация)') },
+    { id: 'warp_scan', label: 'WARP + Scanner', sub: O.tr('Scans clean Cloudflare WARP endpoints if blocked', 'Поиск рабочего WARP endpoint при блокировке') },
+    { id: 'warp_gool', label: 'WARP-in-WARP (Gool)', sub: O.tr('Double-hop Cloudflare tunnel', 'Двойной туннель Cloudflare') },
+    { id: 'wireguard', label: 'WireGuard (.conf)', sub: O.tr('Reserve · Use imported WireGuard .conf profiles', 'Резерв · Импорт и ротация по .conf файлам WireGuard') },
+    { id: 'proxy', label: 'HTTP / SOCKS5 Proxy', sub: O.tr('Reserve · Your HTTP/HTTPS/SOCKS5 proxy pool', 'Резерв · Список ваших прокси и Change-IP URL') },
+    { id: 'cfon', label: 'Psiphon (Reserve)', sub: O.tr('Fallback encrypted tunnel with country selection', 'Резервный обход с выбором страны, если WARP недоступен') },
+    { id: 'direct', label: O.tr('Direct (Disabled)', 'Отключён (Прямой)'), sub: O.tr('No proxy routing', 'Прямое подключение без смены IP') }
+  ];
+  const COUNTRIES = ['DE', 'NL', 'AT', 'US', 'GB', 'FR', 'SE', 'CH', 'FI', 'JP', 'SG'];
 
-  let enabled = O.store.get('rotator_enabled', false);
-  const rotUrlVal = O.store.get('rotator_url', 'http://127.0.0.1:8000/v1');
-  const rotNodeVal = O.store.get('rotator_node_url', 'http://127.0.0.1:8001');
+  let st = (O.native && O.native.warpStatus) ? O.native.warpStatus() : { mode: 'direct', activeMode: 'direct', status: 'idle' };
+  let proxyText = st.proxyList || '';
+  let rotateUrlVal = st.rotateUrl || '';
+  let wgNameVal = '';
+  let wgConfText = '';
+  let s = null;
 
-  const urlInp = h('input', { class: 'mono', value: rotUrlVal, placeholder: 'http://127.0.0.1:8000/v1' });
-  const nodeInp = h('input', { class: 'mono', value: rotNodeVal, placeholder: 'http://127.0.0.1:8001' });
-  const proxiesInp = h('textarea', { class: 'mono', rows: 3, placeholder: 'http://user:pass@host:port\nsocks5://host:port\n(по одному на строку)', style: { width: '100%', resize: 'vertical', fontSize: '12px' } });
-  proxiesInp.value = O.store.get('rotator_proxies', '');
+  const paint = () => {
+    if (s && s.root && !s.root.isConnected) return;
+    body.textContent = '';
+    const mode = st.mode || 'direct';
+    const actMode = st.activeMode || 'direct';
+    const status = st.status || 'idle';
+    const dotCls = status === 'connected' ? 'dot ok' : (status === 'error' ? 'dot err' : (status === 'connecting' || status === 'rotating' ? 'dot warn' : 'dot'));
+    const statusLbl = status === 'connected' ? O.tr('Connected', 'Подключён') :
+      status === 'connecting' ? O.tr('Connecting...', 'Подключение...') :
+      status === 'rotating' ? O.tr('Rotating IP...', 'Ротация IP...') :
+      status === 'error' ? O.tr('Tunnel Error', 'Ошибка туннеля') : O.tr('Direct / Idle', 'Прямое подключение');
+    const modeObj = MODES.find(m => m.id === actMode) || MODES.find(m => m.id === mode) || MODES[MODES.length - 1];
+    const cityCountry = [st.city, st.country].filter(Boolean).join(', ') || '—';
 
-  const statusCard = h('div', { class: 'settings-card', style: { padding: '12px', margin: '12px 0' } });
-  const statusLine = h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' } },
-    h('div', { style: { width: '10px', height: '10px', borderRadius: '50%', background: enabled ? 'var(--ok)' : 'var(--mut)' } }),
-    h('b', null, enabled ? O.tr('IP Rotator Active', 'IP Rotator включён') : O.tr('IP Rotator Disabled', 'IP Rotator отключён'))
-  );
-  const ipInfoLine = h('div', { class: 'mut s', style: { lineHeight: '1.5' } }, O.tr('Verified Public IP: Tap "Check Status"', 'Проверенный внешний IP: нажмите «Проверить статус»'));
-  statusCard.append(statusLine, ipInfoLine);
+    const statusCard = h('div', { class: 'settings-card', style: { padding: '14px' } },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' } },
+        h('span', { class: dotCls }),
+        h('b', { style: { fontSize: '14.5px', flex: '1' } }, statusLbl),
+        h('span', { class: 'recommended-badge' }, modeObj.label)
+      ),
+      h('div', { class: 'hud-metric-row' },
+        h('div', { class: 'hud-metric', style: { gridColumn: 'span 2', cursor: 'pointer', textAlign: 'left' }, onclick: () => { if (st.ip) O.native.copy(st.ip); } },
+          h('div', { class: 'hud-metric-lbl' }, O.tr('Current Exit IP (tap to copy)', 'Текущий IP (нажмите, чтобы скопировать)')),
+          h('div', { class: 'hud-metric-val', style: { fontSize: '13px', color: 'var(--fg)', wordBreak: 'break-all' } }, st.ip || '—')
+        ),
+        h('div', { class: 'hud-metric' },
+          h('div', { class: 'hud-metric-lbl' }, O.tr('Node / Rotations', 'Узел / Смены')),
+          h('div', { class: 'hud-metric-val', style: { fontSize: '12.5px', color: 'var(--fg)' } }, (st.colo ? st.colo + ' · ' : '') + (st.rotations || 0))
+        )
+      ),
+      h('div', { class: 'hud-metric-row', style: { gridTemplateColumns: '1fr 1fr', marginBottom: '8px' } },
+        h('div', { class: 'hud-metric', style: { textAlign: 'left' } },
+          h('div', { class: 'hud-metric-lbl' }, O.tr('City / Country', 'Город / Страна')),
+          h('div', { class: 'hud-metric-val', style: { fontSize: '12.5px', color: 'var(--fg)', fontFamily: 'inherit', fontWeight: '600' } }, cityCountry)
+        ),
+        h('div', { class: 'hud-metric', style: { textAlign: 'left' } },
+          h('div', { class: 'hud-metric-lbl' }, O.tr('ISP / Burned IPs', 'Провайдер / Сброс IP')),
+          h('div', { class: 'hud-metric-val', style: { fontSize: '12px', color: 'var(--mut)', fontFamily: 'inherit' } }, (st.isp || '—').slice(0, 22) + ' · ' + (st.burnedCount || 0))
+        )
+      ),
+      st.error ? h('div', { class: 'err s', style: { marginTop: '4px', lineHeight: '1.4' } }, st.error) :
+        (st.lastMessage ? h('div', { class: 'mut s', style: { marginTop: '4px', lineHeight: '1.4' } }, st.lastMessage) : null),
+      h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } },
+        h('button', { class: 'btn pri grow', disabled: !!st.rotating, onclick: () => {
+          O.toast(O.tr('Changing IP via WARP...', 'Меняем IP через WARP...'), 3000);
+          O.native.warpRotate(S.sid || '');
+        } }, O.icon('refresh'), st.rotating ? O.tr('Rotating...', 'Смена IP...') : O.tr('Change IP Now', 'Сменить IP')),
+        h('button', { class: 'btn grow', onclick: () => {
+          O.toast(O.tr('Checking current IP & geo...', 'Проверяем IP и страну...'), 1600);
+          O.native.warpRefreshGeo();
+        } }, O.icon('globe'), O.tr('Check IP', 'Проверить IP'))
+      )
+    );
+    body.append(statusCard);
 
-  const checkStatus = async () => {
-    ipInfoLine.textContent = O.tr('Checking server & IP...', 'Проверяем сервер и внешний IP...');
-    const baseUrl = urlInp.value.trim().replace(/\/+$/, '');
-    const hostUrl = baseUrl.replace(/\/v1$/, '');
-    const nodeUrl = nodeInp.value.trim().replace(/\/+$/, '');
-    try {
-      let verifiedIp = null, country = '', code = '', modelsCount = 0, proxyCount = 0, srvOk = false;
-      try {
-        const hResp = await O.extFetch(hostUrl + '/health', { method: 'GET', timeout: 5000 });
-        if (hResp.ok && hResp.data) {
-          srvOk = true;
-          if (hResp.data.verified_ip) verifiedIp = hResp.data.verified_ip;
-          if (hResp.data.discovered_models_count) modelsCount = hResp.data.discovered_models_count;
-          if (hResp.data.proxy_pool_count) proxyCount = hResp.data.proxy_pool_count;
-        }
-      } catch (_) {}
-      try {
-        const mMet = await O.extFetch(hostUrl + '/metrics', { method: 'GET', headers: { 'Accept': 'application/json' }, timeout: 5000 });
-        if (mMet.ok && mMet.data) {
-          srvOk = true;
-          if (mMet.data.verified_public_ip && mMet.data.verified_public_ip !== 'Unknown') verifiedIp = mMet.data.verified_public_ip;
-          if (mMet.data.location) {
-            if (mMet.data.location.country) country = mMet.data.location.country;
-            if (mMet.data.location.countryCode) code = mMet.data.location.countryCode;
+    body.append(h('div', { class: 'settings-section-title' }, O.tr('Tunnel Mode & Reserve', 'Режим и резерв (если WARP заблокирован)')));
+    const modeList = h('div', { class: 'dock-opts-list', style: { marginBottom: '14px' } });
+    MODES.forEach(m => {
+      const on = mode === m.id;
+      modeList.append(h('button', {
+        class: 'dock-opt-row' + (on ? ' on' : ''),
+        onclick: () => {
+          if (m.id === 'wireguard' && (!st.wgConfigs || !st.wgConfigs.length)) {
+            O.toast(O.tr('Import a WireGuard .conf below first', 'Сначала добавьте WireGuard .conf ниже'), 2500);
           }
-          if (Array.isArray(mMet.data.discovered_models) && mMet.data.discovered_models.length) modelsCount = mMet.data.discovered_models.length;
-          if (typeof mMet.data.proxy_pool_count === 'number') proxyCount = mMet.data.proxy_pool_count;
-        }
-      } catch (_) {}
-      try {
-        const sResp = await O.extFetch(nodeUrl + '/status', { method: 'GET', timeout: 4000 });
-        if (sResp.ok && sResp.data) {
-          if (sResp.data.current_ip) verifiedIp = sResp.data.current_ip;
-          if (sResp.data.history && sResp.data.history.length) {
-            const last = sResp.data.history[sResp.data.history.length - 1];
-            if (last.country) country = last.country;
-            if (last.flag && last.flag.length <= 4) code = last.flag;
+          if (m.id === 'proxy' && !proxyText.trim()) {
+            O.toast(O.tr('Add proxies below first', 'Сначала добавьте прокси в список ниже'), 2500);
           }
+          O.native.warpSetConfig({ mode: m.id });
+          O.toast(O.tr('Switching to ', 'Переключение на ') + m.label + '...', 2000);
         }
-      } catch (_) {}
-      try {
-        const mResp = await O.extFetch(baseUrl + '/models', { method: 'GET', timeout: 5000 });
-        if (mResp.ok && mResp.data) {
-          srvOk = true;
-          const list = Array.isArray(mResp.data) ? mResp.data : (mResp.data.data || mResp.data.models || []);
-          if (list.length) modelsCount = list.length;
-        }
-      } catch (_) {}
-      if (!verifiedIp && (O.native.isOnline ? O.native.isOnline() : true)) {
-        try {
-          const ipResp = await O.extFetch('https://api.ipify.org?format=json', { method: 'GET', timeout: 5000 });
-          if (ipResp.ok && ipResp.data && ipResp.data.ip) verifiedIp = ipResp.data.ip;
-        } catch (_) {}
-      }
+      },
+      h('div', { class: 'dock-opt-indicator' }),
+      h('div', { class: 'dock-opt-content' },
+        h('span', { class: 'dock-opt-label' }, m.label),
+        h('span', { class: 'dock-opt-desc' }, m.sub))));
+    });
+    body.append(modeList);
 
-      ipInfoLine.textContent = '';
-      if (srvOk || modelsCount > 0) {
-        ipInfoLine.append(
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--fg)', fontWeight: '600' } },
-            O.icon('globe'),
-            h('span', null, (code ? '[' + code + '] ' : '') + 'IP: '),
-            h('span', { class: 'mono' }, verifiedIp || 'Online'),
-            country ? h('span', { class: 'mut' }, ' (' + country + ')') : null
+    body.append(h('div', { class: 'settings-section-title' }, O.tr('Automatic Quota Bypass', 'Авто-обход квоты (opencode-infinite)')));
+    const autoCard = h('div', { class: 'settings-card' });
+    autoCard.append(
+      O.toggleRow('zap', O.tr('Auto-rotate IP on Quota / 429', 'Авто-смена IP при лимите квоты'), O.tr('Catch quota errors, rotate exit IP, and auto-continue chat', 'При ошибке квоты автоматически сменить IP и продолжить ответ'), st.autoRotate !== false, v => {
+        O.native.warpSetConfig({ autoRotate: v });
+      }),
+      O.toggleRow('shield', O.tr('Auto fallback chain', 'Резерв при блокировке WARP'), O.tr('Fall back to WARP Scan -> WireGuard -> Proxy -> Psiphon', 'Автоматически пробовать Scan -> WireGuard -> Proxy -> Psiphon'), st.autoFallback !== false, v => {
+        O.native.warpSetConfig({ autoFallback: v });
+      }),
+      O.listRow('trash', O.tr('Clear Burned IP History', 'Сбросить историю использованных IP'), O.tr('Remembered 24h IPs: ', 'Запомнено за 24 ч: ') + (st.burnedCount || 0), O.icon('chevR'), () => {
+        st = O.native.warpClearBurned();
+        O.toast(O.tr('Burned IPs cleared', 'История IP очищена'), 1500);
+        paint();
+      })
+    );
+    body.append(autoCard);
+
+    body.append(h('div', { class: 'settings-section-title' }, O.tr('WireGuard .conf Reserve', 'Резерв: WireGuard (.conf)')));
+    const wgCard = h('div', { class: 'settings-card', style: { padding: '12px 14px' } });
+    const wgConfigs = st.wgConfigs || [];
+    if (wgConfigs.length) {
+      const list = h('div', { style: { marginBottom: '10px' } });
+      wgConfigs.forEach(c => {
+        list.append(h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', borderBottom: '1px solid var(--line)' } },
+          h('button', { class: 'grow', style: { textAlign: 'left' }, onclick: () => {
+            st = O.native.warpSelectWg(c.id);
+            O.toast(O.tr('Selected WG profile: ', 'Выбран профиль: ') + c.name, 1500);
+            paint();
+          } },
+            h('div', { style: { fontWeight: '600', fontSize: '13.5px', color: c.active ? 'var(--fg)' : 'var(--mut)' } }, (c.active ? '● ' : '') + c.name),
+            h('div', { class: 'mut s mono' }, c.endpoint || '')
           ),
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', color: 'var(--ok)' } },
-            O.icon('check'),
-            h('span', null, 'Сервер отвечает · Моделей: ' + (modelsCount || 4) + (proxyCount ? (' · Прокси в пуле: ' + proxyCount) : ''))
-          )
-        );
-        O.toast(O.tr('Rotator server reachable!', 'Сервер ротатора доступен!'), 2000);
-      } else {
-        ipInfoLine.append(
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--err)', fontWeight: '600' } },
-            O.icon('alert'),
-            h('span', null, 'Сервер не отвечает на ' + baseUrl)
-          ),
-          h('div', { class: 'mut s', style: { marginTop: '4px' } }, 'Запустите сервер: bash scripts/run-ip-rotator.sh start или Docker.')
-        );
-        O.toast(O.tr('Rotator server unreachable', 'Сервер ротатора не отвечает'), 3500);
-      }
-    } catch (e) {
-      ipInfoLine.textContent = '';
-      ipInfoLine.append(h('span', { class: 'err' }, 'Ошибка: ' + e.message));
-      O.toast('Ошибка проверки: ' + e.message, 3500);
-    }
-  };
-
-  const doRotate = async () => {
-    const newIp = await O.rotateIpNow();
-    if (newIp) checkStatus();
-  };
-
-  const saveAndApply = async () => {
-    const baseUrl = urlInp.value.trim().replace(/\/+$/, '');
-    const hostUrl = baseUrl.replace(/\/v1$/, '');
-    const nodeUrl = nodeInp.value.trim().replace(/\/+$/, '');
-    const proxiesTxt = proxiesInp.value.trim();
-    O.store.set('rotator_url', baseUrl);
-    O.store.set('rotator_node_url', nodeUrl);
-    O.store.set('rotator_proxies', proxiesTxt);
-    O.store.set('rotator_enabled', enabled);
-
-    // Push proxy pool to running rotator backend and local file if available
-    const proxyList = proxiesTxt.split('\n').map(x => x.trim()).filter(Boolean);
-    try {
-      await O.extFetch(hostUrl + '/proxies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: { proxies: proxyList },
-        timeout: 4000
+          h('button', { class: 'ibtn s', title: O.tr('Delete', 'Удалить'), onclick: () => {
+            st = O.native.warpDeleteWg(c.id);
+            paint();
+          } }, O.icon('trash'))
+        ));
       });
-    } catch (_) {}
-    try {
-      if (S.dir) {
-        O.native.writeText(S.dir + '/rotator/data/proxies.txt', proxyList.join('\n') + (proxyList.length ? '\n' : ''));
-      }
-    } catch (_) {}
-
-    try {
-      await O.configureIpRotatorProvider(enabled, baseUrl);
-      O.toast(enabled ? O.tr('IP Rotator connected to OpenCode!', 'IP Rotator подключён к OpenCode!') : O.tr('IP Rotator disabled', 'IP Rotator отключён'), 2500);
-      s.close();
-    } catch (e) {
-      O.toast('Ошибка сохранения: ' + e.message, 4000);
+      wgCard.append(list);
+    } else {
+      wgCard.append(h('div', { class: 'mut s', style: { marginBottom: '10px' } }, O.tr('No WireGuard .conf imported yet. Paste config text or pick a .conf file.', 'Профили WireGuard не добавлены. Вставьте текст .conf или выберите файл на телефоне.')));
     }
+    const wgNameInp = h('input', { placeholder: O.tr('Profile name (optional)', 'Имя профиля (необязательно)'), value: wgNameVal, style: { marginBottom: '8px' }, oninput: e => { wgNameVal = e.target.value; } });
+    const wgTa = h('textarea', { rows: 4, class: 'mono', placeholder: '[Interface]\nPrivateKey = ...\nAddress = 10.0.0.2/32\n\n[Peer]\nPublicKey = ...\nEndpoint = host:51820\nAllowedIPs = 0.0.0.0/0', oninput: e => { wgConfText = e.target.value; } });
+    wgTa.value = wgConfText;
+    wgCard.append(
+      wgNameInp,
+      wgTa,
+      h('div', { style: { display: 'flex', gap: '8px', marginTop: '8px' } },
+        h('button', { class: 'btn pri grow', onclick: () => {
+          const res = O.native.warpImportWg(wgNameVal, wgTa.value);
+          if (res && res.ok) {
+            wgNameVal = ''; wgConfText = ''; wgTa.value = '';
+            if (res.status) st = res.status;
+            O.toast(res.message || O.tr('WireGuard imported', 'WireGuard сохранён'), 2000);
+            paint();
+          } else {
+            O.toast((res && res.message) || O.tr('Invalid WireGuard .conf', 'Неверный формат WireGuard .conf'), 3500);
+          }
+        } }, O.icon('plus'), O.tr('Save .conf', 'Сохранить .conf')),
+        h('button', { class: 'btn grow', onclick: () => {
+          if (window.OC && OC.pickFile) OC.pickFile('wgconf', '');
+          else O.toast(O.tr('File picker unavailable', 'Выбор файла недоступен'));
+        } }, O.icon('folder'), O.tr('Open File', 'Выбрать файл'))
+      )
+    );
+    body.append(wgCard);
+
+    body.append(h('div', { class: 'settings-section-title' }, O.tr('Proxy Pool & Psiphon Country', 'Пул прокси и страна Psiphon')));
+    const pxCard = h('div', { class: 'settings-card', style: { padding: '12px 14px' } });
+    const pxTa = h('textarea', { rows: 3, class: 'mono', placeholder: 'socks5://127.0.0.1:1080\nhttp://user:pass@proxy.example.com:8080', oninput: e => { proxyText = e.target.value; } });
+    pxTa.value = proxyText;
+    const rotUrlInp = h('input', { class: 'mono', placeholder: O.tr('Change-IP URL webhook (optional)', 'Change-IP URL для мобильных прокси (необязательно)'), style: { marginTop: '8px' }, oninput: e => { rotateUrlVal = e.target.value; } });
+    rotUrlInp.value = rotateUrlVal;
+    const countryBar = h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px' } });
+    COUNTRIES.forEach(cc => {
+      const on = (st.cfonCountry || 'DE') === cc;
+      countryBar.append(h('button', {
+        class: 'btn sm' + (on ? ' pri' : ''),
+        onclick: () => {
+          O.native.warpSetConfig({ cfonCountry: cc });
+          st.cfonCountry = cc;
+          O.toast('Psiphon: ' + cc, 1200);
+          paint();
+        }
+      }, cc));
+    });
+    pxCard.append(
+      h('label', { class: 'mut s', style: { display: 'block', marginBottom: '6px' } }, O.tr('HTTP / HTTPS / SOCKS5 proxies (one per line)', 'HTTP / HTTPS / SOCKS5 прокси (по одному на строку)')),
+      pxTa,
+      rotUrlInp,
+      h('button', { class: 'btn wide', style: { marginTop: '8px' }, onclick: () => {
+        O.native.warpSetConfig({ proxyList: proxyText, rotateUrl: rotateUrlVal });
+        O.toast(O.tr('Proxy pool saved', 'Список прокси сохранён'), 1800);
+      } }, O.icon('check'), O.tr('Save Proxy Pool', 'Сохранить прокси')),
+      h('label', { class: 'mut s', style: { display: 'block', marginTop: '12px', marginBottom: '4px' } }, O.tr('Psiphon fallback country', 'Страна для резервного Psiphon (--cfon)')),
+      countryBar
+    );
+    body.append(pxCard);
   };
 
-  body.append(
-    h('div', { class: 'note', style: { marginBottom: '12px' } },
-      O.tr(
-        'Automated Cloudflare WARP IP rotator & proxy for OpenCode Zen. Eliminates HTTP 429 rate limits on guest/free accounts by rotating outbound IP addresses.',
-        'Автоматический обход лимитов бесплатной квоты OpenCode (HTTP 429: FreeUsageLimitError) на гостевых аккаунтах с ротацией IP через Cloudflare WARP и прокси-пул.'
-      )
-    ),
-    O.toggleRow('zap', O.tr('Enable IP Rotator for Guest', 'Использовать IP Rotator для гостя'), O.tr('Route free model inference through rotating proxy', 'Маршрутизировать запросы бесплатных моделей через ротатор'), enabled, v => {
-      enabled = v;
-      statusLine.children[0].style.background = v ? 'var(--ok)' : 'var(--mut)';
-      statusLine.children[1].textContent = v ? O.tr('IP Rotator Active', 'IP Rotator включён') : O.tr('IP Rotator Disabled', 'IP Rotator отключён');
-    }),
-    statusCard,
-    h('div', { style: { display: 'flex', gap: '8px', marginBottom: '12px' } },
-      h('button', { class: 'btn grow', type: 'button', onclick: checkStatus }, O.icon('search'), O.tr('Check Status & IP', 'Проверить статус')),
-      h('button', { class: 'btn pri grow', type: 'button', onclick: doRotate }, O.icon('refresh'), O.tr('Rotate IP Now', 'Сменить IP'))
-    ),
-    h('div', { class: 'field' },
-      h('label', null, O.tr('Proxy Server Base URL', 'URL прокси-сервера (Base URL)')),
-      urlInp,
-      h('div', { style: { display: 'flex', gap: '6px', marginTop: '6px' } },
-        h('button', { class: 'btn sm', type: 'button', onclick: () => { urlInp.value = 'http://127.0.0.1:8000/v1'; } }, '127.0.0.1:8000'),
-        h('button', { class: 'btn sm', type: 'button', onclick: () => { urlInp.value = 'http://localhost:8000/v1'; } }, 'localhost:8000')
-      )
-    ),
-    h('div', { class: 'field', style: { marginTop: '10px' } },
-      h('label', null, O.tr('WARP Rotator Node URL', 'URL узла ротации WARP (Node)')),
-      nodeInp
-    ),
-    h('div', { class: 'field', style: { marginTop: '10px' } },
-      h('label', null, O.tr('Outbound Proxy Pool (proxies.txt)', 'Список исходящих прокси (опционально)')),
-      proxiesInp
-    ),
-    h('button', { class: 'btn pri wide', style: { marginTop: '14px' }, onclick: saveAndApply }, O.icon('check'), O.tr('Save & Apply to OpenCode', 'Сохранить и подключить к OpenCode')),
-    h('button', { class: 'btn wide', style: { marginTop: '8px' }, onclick: () => {
-      const host = urlInp.value.replace(/\/v1.*$/, '');
-      O.openUrl(host + '/dashboard');
-    } }, O.icon('globe'), O.tr('Open Web Dashboard', 'Открыть веб-панель (Dashboard)')),
-    h('details', { style: { marginTop: '16px' } },
-      h('summary', { class: 'mut s', style: { cursor: 'pointer', padding: '6px 0' } }, O.tr('How to run rotator server (Guide)', 'Инструкция: как запустить сервер на телефоне / ПК')),
-      h('div', { class: 'note s', style: { marginTop: '6px', lineHeight: '1.5' } },
-        h('b', null, 'Запуск на телефоне (Termux) или ПК (Docker):'), h('br'),
-        '1. Скриптом из репозитория OCM: ', h('code', { class: 'mono' }, 'bash scripts/run-ip-rotator.sh start'), h('br'),
-        '2. Либо через Docker: ', h('code', { class: 'mono' }, 'cd rotator && docker compose up -d'), h('br'),
-        '3. Репозиторий ротатора: ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); O.openUrl('https://github.com/alztrk/opencode-ip-rotator'); } }, 'github.com/alztrk/opencode-ip-rotator')
-      )
-    )
-  );
+  paint();
+  s = sub(O.tr('WARP & Bypass', 'WARP и обход лимитов'), body, { full: true });
+  if (O.native && O.native.warpRefreshGeo) O.native.warpRefreshGeo();
+
+  if (!O._warpListenerBound) {
+    O._warpListenerBound = true;
+    O.on('warp', d => {
+      if (!d) return;
+      if (O._warpActivePaint) O._warpActivePaint(d);
+    });
+    O.on('picked_wg', d => {
+      if (!d) return;
+      if (d.ok) {
+        O.toast(d.message || O.tr('WireGuard config imported', 'Профиль WireGuard импортирован'), 2200);
+        if (d.status && O._warpActivePaint) O._warpActivePaint(d.status);
+      } else {
+        O.toast(d.message || O.tr('Invalid WireGuard .conf', 'Ошибка .conf файла'), 3500);
+      }
+    });
+  }
+  O._warpActivePaint = nextSt => {
+    st = nextSt;
+    if (s && s.root && s.root.isConnected) paint();
+  };
 }
-O.openIpRotator = openIpRotator;
+O.openWarpSettings = openWarpSettings;
 
 })();
 

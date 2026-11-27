@@ -7,6 +7,7 @@ import android.speech.RecognizerIntent
 import android.widget.Toast
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -18,6 +19,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Base64
@@ -34,6 +36,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -95,6 +98,10 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WarpManager.init(this)
+        WarpManager.setOnChange { json ->
+            try { emit("warp", JSONObject(json)) } catch (_: Exception) {}
+        }
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.setFlags(
@@ -133,6 +140,10 @@ class MainActivity : ComponentActivity() {
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? {
                     val url = r.url
+                    if (url.host == "appassets.androidplatform.net" && url.path == "/_media/") {
+                        val rawPath = url.getQueryParameter("path") ?: ""
+                        serveMediaFile(rawPath)?.let { return it }
+                    }
                     if (url.host == "appassets.androidplatform.net" && url.path?.startsWith("/_preview/") == true) {
                         val relPath = url.path!!.removePrefix("/_preview/").ifEmpty { "index.html" }
                         val previewDir = File(cacheDir, "preview")
@@ -282,6 +293,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        WarpManager.setOnChange(null)
         ui.removeCallbacksAndMessages(null)
         Net.sseStop()
         web.destroy()
@@ -587,6 +599,17 @@ class MainActivity : ComponentActivity() {
             try {
                 val raw = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
                     ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "file.md"
+                if (kind == "wgconf") {
+                    val bytes = contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                    if (bytes.size > 131_072) {
+                        emit("picked_wg", JSONObject().put("ok", false).put("message", "Config file too large"))
+                        return@thread
+                    }
+                    val text = String(bytes, Charsets.UTF_8)
+                    val res = WarpManager.importWgConfig(this, raw.removeSuffix(".conf"), text)
+                    emit("picked_wg", JSONObject(res))
+                    return@thread
+                }
                 var name = raw.replace(Regex("[^A-Za-z0-9._-]"), "_")
                 val cfg = File(Runtime.home(this, uid()), ".config/opencode")
                 val dest = when (kind) {
@@ -1138,6 +1161,81 @@ class MainActivity : ComponentActivity() {
             return Runtime.isOnline(this@MainActivity)
         }
 
+        // --- WARP / WireGuard / Proxy Tunnel ---
+        @JavascriptInterface fun warpStatus(): String = WarpManager.statusJson()
+
+        @JavascriptInterface fun warpRefreshGeo() {
+            thread(name = "warp-geo") { WarpManager.refreshGeo(this@MainActivity) }
+        }
+
+        @JavascriptInterface fun warpSetConfig(json: String) {
+            WarpManager.applyConfigJson(this@MainActivity, json)
+        }
+
+        @JavascriptInterface fun warpRotate(sessionId: String) {
+            thread(name = "warp-rotate") {
+                val res = WarpManager.rotateNow(this@MainActivity)
+                res.put("sessionID", sessionId)
+                emit("warp_rotated", res)
+            }
+        }
+
+        @JavascriptInterface fun warpClearBurned(): String = WarpManager.clearBurned(this@MainActivity)
+
+        @JavascriptInterface fun warpImportWg(name: String, confText: String): String =
+            WarpManager.importWgConfig(this@MainActivity, name, confText)
+
+        @JavascriptInterface fun warpSelectWg(id: String): String =
+            WarpManager.selectWgConfig(this@MainActivity, id)
+
+        @JavascriptInterface fun warpDeleteWg(id: String): String =
+            WarpManager.deleteWgConfig(this@MainActivity, id)
+
+        // --- T2I Media Cache / Save / Share ---
+        @JavascriptInterface fun cacheMediaImage(id: String, src: String, filename: String) {
+            thread(name = "media-cache") {
+                try {
+                    val saved = cacheMediaBytes(src, filename)
+                    val encodedPath = Uri.encode(saved.absolutePath)
+                    emit("media_cached", JSONObject().apply {
+                        put("id", id)
+                        put("ok", true)
+                        put("path", saved.absolutePath)
+                        put("name", saved.name)
+                        put("url", "https://appassets.androidplatform.net/_media/?path=$encodedPath")
+                    })
+                } catch (e: Exception) {
+                    emit("media_cached", JSONObject().apply {
+                        put("id", id)
+                        put("ok", false)
+                        put("error", e.message ?: "cache failed")
+                    })
+                }
+            }
+        }
+
+        @JavascriptInterface fun saveMediaImage(src: String, filename: String) {
+            thread(name = "media-save") {
+                try {
+                    val name = saveMediaToDownloads(src, filename)
+                    emit("media_saved", JSONObject().put("ok", true).put("name", name))
+                } catch (e: Exception) {
+                    emit("media_saved", JSONObject().put("ok", false).put("error", e.message ?: "save failed"))
+                }
+            }
+        }
+
+        @JavascriptInterface fun shareImage(src: String, filename: String) {
+            thread(name = "media-share") {
+                try {
+                    shareMediaFile(src, filename)
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, e.message ?: "Share failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
 
         // --- OTA ---
         @JavascriptInterface fun checkUpdates() {
@@ -1177,6 +1275,131 @@ class MainActivity : ComponentActivity() {
                     restartServer()
                 } catch (e: Exception) { emit("update", JSONObject().put("error", e.message ?: "failed")) }
             }
+        }
+    }
+
+    // ---------- Media helpers for T2I image rendering/cache/save/share ----------
+
+    private fun imageMimeFromExt(ext: String): String? = when (ext.lowercase()) {
+        "png" -> "image/png"
+        "jpg", "jpeg" -> "image/jpeg"
+        "webp" -> "image/webp"
+        "gif" -> "image/gif"
+        "bmp" -> "image/bmp"
+        "avif" -> "image/avif"
+        "svg" -> "image/svg+xml"
+        else -> null
+    }
+
+    private fun extFromMime(mime: String): String = when {
+        mime.contains("png") -> "png"
+        mime.contains("webp") -> "webp"
+        mime.contains("gif") -> "gif"
+        mime.contains("svg") -> "svg"
+        mime.contains("jpeg") || mime.contains("jpg") -> "jpg"
+        else -> "png"
+    }
+
+    private fun resolveMediaFile(rawPath: String): File? {
+        val clean = rawPath.trim().removePrefix("file://")
+        if (clean.isEmpty()) return null
+        val candidate = if (clean.startsWith(filesDir.absolutePath) || clean.startsWith(cacheDir.absolutePath)) {
+            File(clean)
+        } else {
+            Runtime.hostPath(this, uid(), clean)
+        }
+        val canon = try { candidate.canonicalFile } catch (_: Exception) { return null }
+        val allowedRoots = listOf(filesDir, cacheDir, Environment.getExternalStorageDirectory()).mapNotNull {
+            try { it.canonicalPath } catch (_: Exception) { null }
+        }
+        if (allowedRoots.none { canon.path == it || canon.path.startsWith(it + File.separator) }) return null
+        if (!canon.isFile || canon.length() <= 0L || canon.length() > 30_000_000L) return null
+        return canon
+    }
+
+    private fun serveMediaFile(rawPath: String): WebResourceResponse? {
+        val f = resolveMediaFile(rawPath) ?: return null
+        val mime = imageMimeFromExt(f.extension) ?: return null
+        val headers = mapOf(
+            "Access-Control-Allow-Origin" to "*",
+            "Cache-Control" to "public, max-age=86400"
+        )
+        return WebResourceResponse(mime, null, 200, "OK", headers, f.inputStream())
+    }
+
+    private fun resolveImagePayload(src: String): Pair<ByteArray, String> {
+        val trimmed = src.trim()
+        if (trimmed.startsWith("data:image/", ignoreCase = true)) {
+            val comma = trimmed.indexOf(',')
+            require(comma > 0) { "Invalid data URL" }
+            val meta = trimmed.substring(5, comma)
+            val mime = meta.substringBefore(';').ifBlank { "image/png" }
+            val b64 = trimmed.substring(comma + 1).replace("\\s+".toRegex(), "")
+            return Base64.decode(b64, Base64.DEFAULT) to mime
+        }
+        if (trimmed.startsWith("https://appassets.androidplatform.net/_media/", ignoreCase = true)) {
+            val path = Uri.parse(trimmed).getQueryParameter("path") ?: ""
+            val f = resolveMediaFile(path) ?: error("Media file not found")
+            val mime = imageMimeFromExt(f.extension) ?: "image/png"
+            return f.readBytes() to mime
+        }
+        if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+            val req = okhttp3.Request.Builder().url(trimmed).build()
+            Net.externalClient().newCall(req).execute().use { r ->
+                require(r.isSuccessful) { "HTTP ${r.code}" }
+                val bytes = r.body?.bytes() ?: error("Empty image body")
+                val ct = r.header("Content-Type")?.substringBefore(';')?.trim()?.lowercase() ?: "image/png"
+                val mime = if (ct.startsWith("image/")) ct else "image/png"
+                return bytes to mime
+            }
+        }
+        val f = resolveMediaFile(trimmed) ?: error("Image file not accessible")
+        val mime = imageMimeFromExt(f.extension) ?: "image/png"
+        return f.readBytes() to mime
+    }
+
+    private fun cleanImageName(rawName: String, mime: String): String {
+        val base = rawName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "ocm_${System.currentTimeMillis()}" }
+        val ext = extFromMime(mime)
+        return if (Regex("\\.(png|jpg|jpeg|webp|gif|bmp|svg)$", RegexOption.IGNORE_CASE).containsMatchIn(base)) base else "$base.$ext"
+    }
+
+    private fun cacheMediaBytes(src: String, rawName: String): File {
+        val (bytes, mime) = resolveImagePayload(src)
+        val dir = File(filesDir, "media").apply { mkdirs() }
+        val name = cleanImageName(rawName.ifBlank { "t2i_${System.currentTimeMillis()}" }, mime)
+        val out = File(dir, name)
+        out.writeBytes(bytes)
+        return out
+    }
+
+    private fun saveMediaToDownloads(src: String, rawName: String): String {
+        val (bytes, mime) = resolveImagePayload(src)
+        val name = cleanImageName(rawName.ifBlank { "opencode_${System.currentTimeMillis()}" }, mime)
+        val cv = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/OpenCode")
+        }
+        val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv)
+            ?: error("Unable to create Downloads entry")
+        contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("Failed writing image")
+        return name
+    }
+
+    private fun shareMediaFile(src: String, rawName: String) {
+        val (bytes, mime) = resolveImagePayload(src)
+        val name = cleanImageName(rawName.ifBlank { "opencode_share" }, mime)
+        val dir = File(cacheDir, "share").apply { mkdirs() }
+        val file = File(dir, name)
+        file.writeBytes(bytes)
+        val uri = FileProvider.getUriForFile(this, "${packageName}.files", file)
+        runOnUiThread {
+            val send = Intent(Intent.ACTION_SEND)
+                .setType(mime)
+                .putExtra(Intent.EXTRA_STREAM, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivity(Intent.createChooser(send, null))
         }
     }
 

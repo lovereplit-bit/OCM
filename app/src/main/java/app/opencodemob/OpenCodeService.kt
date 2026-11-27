@@ -29,6 +29,7 @@ class OpenCodeService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "stop") { stopSelf(); return START_NOT_STICKY }
         Notifier.ensureChannels(this)
+        WarpManager.init(this)
         ServiceCompat.startForeground(
             this, 1, Notifier.runtime(this, "Запуск"),
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
@@ -118,8 +119,13 @@ class OpenCodeService : Service() {
             }
             type == "question.asked" || (type.startsWith("permission.") && (type.endsWith("updated") || type.endsWith("asked"))) ->
                 Notifier.event(this, Notifier.ACTION, "Требуется действие", "OpenCode ждёт вашего ответа или подтверждения.")
-            type == "session.error" && quotaRe.containsMatchIn(o.toString()) ->
-                Notifier.event(this, Notifier.QUOTA, "Квота исчерпана", "Лимит модели исчерпан. Подключите свой ключ: Настройки → Модели → Подключить провайдера.")
+            type == "session.error" && quotaRe.containsMatchIn(o.toString()) -> {
+                if (WarpManager.isAutoRotateEnabled() && WarpManager.isProxied()) {
+                    Notifier.event(this, Notifier.QUOTA, "Смена IP (WARP)", "Обнаружен лимит квоты. Выполняется ротация IP через WARP.")
+                } else {
+                    Notifier.event(this, Notifier.QUOTA, "Квота исчерпана", "Лимит модели исчерпан. Откройте Настройки → WARP / Обход лимитов или подключите свой ключ.")
+                }
+            }
         }
     }
 

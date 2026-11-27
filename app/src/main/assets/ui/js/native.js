@@ -1,8 +1,13 @@
 (function(){
 const O=window.OCM;
-const pend=new Map(),extPend=new Map();let seq=0;const L={};
+const pend=new Map(),extPend=new Map(),mediaPend=new Map();let seq=0;const L={};
 O.on=(n,f)=>{(L[n]=L[n]||[]).push(f)};
-window.OCEvent=(n,d)=>{if(n==='http'){finishHttp(d);return}if(n==='exthttp'){finishExtHttp(d);return}(L[n]||[]).forEach(f=>{try{f(d)}catch(e){console.error(n,e)}})};
+window.OCEvent=(n,d)=>{
+  if(n==='http'){finishHttp(d);return}
+  if(n==='exthttp'){finishExtHttp(d);return}
+  if(n==='media_cached'&&d&&d.id&&mediaPend.has(d.id)){const p=mediaPend.get(d.id);mediaPend.delete(d.id);p.res(d);return}
+  (L[n]||[]).forEach(f=>{try{f(d)}catch(e){console.error(n,e)}})
+};
 O.dir='';
 // api(method, path, body, {dir:false|string, timeout, raw})
 O.api=(method,path,body,opt)=>new Promise((res,rej)=>{opt=opt||{};
@@ -57,7 +62,24 @@ O.native={
   preparePreview:p=>(window.OC&&OC.preparePreview?OC.preparePreview(p):''),
   notify:(kind,title,text)=>{try{if(window.OC&&OC.notify)OC.notify(kind,title,text)}catch(_){}},
   state:()=>j(OC.state())||{},
-  isOnline:()=>{try{return window.OC&&OC.isOnline?Boolean(OC.isOnline()):navigator.onLine!==false}catch{return navigator.onLine!==false}}
+  isOnline:()=>{try{return window.OC&&OC.isOnline?Boolean(OC.isOnline()):navigator.onLine!==false}catch{return navigator.onLine!==false}},
+  warpStatus:()=>j(window.OC&&OC.warpStatus?OC.warpStatus():'{}')||{mode:'direct',activeMode:'direct',status:'idle',enabled:false},
+  warpRefreshGeo:()=>{try{if(window.OC&&OC.warpRefreshGeo)OC.warpRefreshGeo()}catch{}},
+  warpSetConfig:cfg=>{try{if(window.OC&&OC.warpSetConfig)OC.warpSetConfig(JSON.stringify(cfg||{}))}catch{}},
+  warpRotate:sid=>{try{if(window.OC&&OC.warpRotate)OC.warpRotate(sid||'')}catch{}},
+  warpClearBurned:()=>j(window.OC&&OC.warpClearBurned?OC.warpClearBurned():'{}')||{},
+  warpImportWg:(name,conf)=>j(window.OC&&OC.warpImportWg?OC.warpImportWg(name||'',conf||''):'{}')||{ok:false},
+  warpSelectWg:id=>j(window.OC&&OC.warpSelectWg?OC.warpSelectWg(id||''):'{}')||{},
+  warpDeleteWg:id=>j(window.OC&&OC.warpDeleteWg?OC.warpDeleteWg(id||''):'{}')||{},
+  cacheMedia:(src,filename)=>new Promise(res=>{
+    if(!window.OC||typeof OC.cacheMediaImage!=='function'){res({ok:true,url:src,name:filename||'image.png'});return}
+    const id='m'+(++seq)+'_'+Date.now().toString(36);
+    mediaPend.set(id,{res});
+    try{OC.cacheMediaImage(id,String(src||''),String(filename||'image.png'))}catch(e){mediaPend.delete(id);res({ok:false,error:e.message});return}
+    setTimeout(()=>{if(mediaPend.has(id)){mediaPend.delete(id);res({ok:false,error:'timeout'})}},25000);
+  }),
+  saveImage:(src,filename)=>{try{if(window.OC&&OC.saveMediaImage)OC.saveMediaImage(String(src||''),String(filename||''))}catch{}},
+  shareImage:(src,filename)=>{try{if(window.OC&&OC.shareImage)OC.shareImage(String(src||''),String(filename||''))}catch{}}
 };
 O.openUrl=u=>{if(/^https?:\/\//i.test(u)&&!/appassets\.androidplatform\.net/i.test(u))OC.openLink(u)};
 document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a[href]');if(!a)return;const u=a.getAttribute('href');e.preventDefault();if(/^https?:\/\//i.test(u))O.openUrl(u)});

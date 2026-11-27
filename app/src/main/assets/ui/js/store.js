@@ -2,7 +2,7 @@
 const O=window.OCM,api=O.api;
 const bus=O.bus={h:{},on(n,f){(this.h[n]=this.h[n]||[]).push(f)},emit(n,...a){(this.h[n]||[]).forEach(f=>{try{f(...a)}catch(e){console.error(n,e)}})}};
 const S=O.S={dir:'',sessions:[],childSessions:{},sid:null,status:{},unread:O.store.get('session_unread',{}),perms:[],questions:[],todos:{},diffs:{},
-  providers:[],agents:[],commands:[],cfg:{},agent:'build',model:null,variant:null,mcp:{},lsp:[],branch:'',
+  providers:[],defaults:{},agents:[],commands:[],cfg:{},agent:'build',model:null,variant:null,mcp:{},lsp:[],branch:'',
   offline:false,up:false,gstatus:{},account:{email:null,checked:false},opts:Object.assign({thinking:true,details:true,theme:'opencode',accent:'auto',fs:14},O.store.get('opts',{}))};
 const activeWork=new Set(),seenUnreadMsgs=new Map();
 const rootSid=sid=>{let cur=sid,seen=new Set();while(cur&&S.childSessions&&S.childSessions[cur]&&!seen.has(cur)){seen.add(cur);cur=S.childSessions[cur].parentID}return cur||sid};
@@ -448,4 +448,31 @@ O.replyPermission=async(p,r)=>{
   const tries=[()=>api('POST','/permission/'+p.id+'/reply',{reply:r}),()=>api('POST','/session/'+p.sessionID+'/permissions/'+p.id,{response:r}),()=>api('POST','/api/session/'+p.sessionID+'/permission/'+p.id+'/reply',{reply:r})];
   for(const t of tries){try{await t();S.perms=S.perms.filter(x=>x.id!==p.id);bus.emit('perm');return}catch(e){if(e.status!==404&&e.status!==405&&e.status!==400)throw e}}
   throw new Error('Ответ на разрешение не поддерживается этой версией сервера')};
+O.saveSessionMsgs=saveMsgs;
+O.isT2IModel=m=>{
+  if(!m)return false;
+  if(m.options&&m.options.t2i===true)return true;
+  if(m.capabilities&&m.capabilities.output&&m.capabilities.output.image===true)return true;
+  if(m.modalities){
+    if(Array.isArray(m.modalities.output)&&m.modalities.output.includes('image'))return true;
+    if(Array.isArray(m.modalities)&&m.modalities.includes('image_output'))return true;
+  }
+  const idStr=((m.id||'')+' '+(m.name||'')).toLowerCase();
+  return /\b(gpt-image|dall-e|imagen|flux|sdxl|sd3|stable-diffusion|midjourney|ideogram|recraft|seedream|wanx|qwen-image|gemini-.*image|nano-banana|grok-.*image|t2i)\b/.test(idStr);
+};
+O.isPureT2IModel=m=>{
+  if(!m)return false;
+  const idStr=((m.id||'')+' '+(m.name||'')).toLowerCase();
+  if(/\b(dall-e|imagen|flux|sdxl|sd3|stable-diffusion|midjourney|ideogram|recraft|seedream|gpt-image|grok-.*image)\b/.test(idStr))return true;
+  if(m.modalities&&Array.isArray(m.modalities.output)&&m.modalities.output.includes('image')&&!m.modalities.output.includes('text'))return true;
+  return false;
+};
+O.resolveMediaUrl=raw=>{
+  const s=String(raw||'').trim();
+  if(!s)return '';
+  if(/^(?:https?:|data:|blob:)/i.test(s))return s;
+  let p=s.replace(/^file:\/\//i,'');
+  if(!p.startsWith('/'))p=(S.dir||'/root').replace(/\/+$/,'')+'/'+p.replace(/^\.\//,'');
+  return 'https://appassets.androidplatform.net/_media/?path='+encodeURIComponent(p);
+};
 })();
