@@ -31,6 +31,9 @@ jobs:
         with:
           node-version: "20"
 
+      - name: UI unit checks
+        run: node tests/unit.js
+
       # setup-android@v3 is broken: it runs `sdkmanager tools` and Google removed
       # the legacy 'tools' package from the SDK repository ("Failed to find package 'tools'").
       # The ubuntu-24.04 runner already ships the SDK; we only accept licenses

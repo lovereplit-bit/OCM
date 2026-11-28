@@ -46,11 +46,8 @@ O.openSessions=()=>{
         ?h('span',{class:'spin sess-spin',title:O.tr('Running','В работе')})
         :(unread>0
           ?h('span',{class:'sess-dot unread',title:O.tr('Unseen agent response','Есть непросмотренный ответ агента')})
-          :(isCur
-            ?h('span',{class:'sess-dot current',title:O.tr('Current session','Текущий чат')})
-            :h('span',{class:'sess-ic'},O.icon('chat'))));
+          :h('span',{class:'sess-ic'},O.icon(isCur?'check':'chat')));
       const badges=[];
-      if(isCur)badges.push(h('span',{class:'sess-pill cur'},O.tr('Active','Текущий')));
       if(isBusy)badges.push(h('span',{class:'sess-pill busy'},O.tr('Working','Работает')));
       if(unread>0)badges.push(h('span',{class:'sess-pill unread'},unread>1?O.tr('New · '+unread,'Новое · '+unread):O.tr('New reply','Новый ответ')));
       const diffTxt=sm&&(sm.additions||sm.deletions)?('  +'+sm.additions+' -'+sm.deletions):'';

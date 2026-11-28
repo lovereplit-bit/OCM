@@ -67,3 +67,11 @@
 .mdl-opts > :first-child { border-top: 0; }
 .mdl-opts .settings-row { border: 0; }
 .mdl-opts .detached-card:active { background: var(--bg3); }
+
+/* success marks stay neutral; errors keep their own color */
+.ic.ok { color: var(--mut); }
+
+/* session rows: one icon column, current row marked by surface and check */
+.sess-row.on .sess-ic { color: var(--fg); }
+.sess-ic { width: 22px; display: inline-grid; place-items: center; flex: none; color: var(--mut); }
+.sess-main { align-items: center; gap: 12px; }
