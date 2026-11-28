@@ -610,7 +610,6 @@ You have the built-in skill to preview web projects directly inside OpenCode Mob
 - Attached files arrive as absolute paths in the message (for example \`@/sdcard/Download/report.pdf\`). Read them directly from disk; never ask the user to upload or re-send the file.
 - Do NOT generate images unless the user explicitly asks for a photo, illustration, chart, diagram, or screenshot.
 - For charts/diagrams, write code that renders a real PNG, then embed it: \`![description](/absolute/path/file.png)\`.
-- Only use \`t2i "<prompt>"\` when the user explicitly wants AI-generated art/photos. Never call it on your own.
 
 ## 6. Command Execution & Timeouts
 - Never let a command hang the session. Wrap slow commands: \`timeout 120 <cmd>\` (300 max unless the user asked for a build).

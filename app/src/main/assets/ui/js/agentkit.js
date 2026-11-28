@@ -99,7 +99,7 @@ description: Get oriented in an unfamiliar repository in a minute before editing
 
 - \`ls -la\`, \`git status -s | head\`, \`git log --oneline | head -5\`.
 - Read README and the manifest (\`package.json\`, \`pyproject.toml\`, \`go.mod\`, \`build.gradle*\`).
-- Find entry points and tests: \`rg --files | head -50\`, \`rg -n "TODO|FIXME" | head\`.
+- Find entry points and tests: \`rg --files | head -50\`, \`rg -n -i 'todo|fixme' | head\`.
 - Find the build and test commands before changing code, and run them once to get a baseline.
 `,
   'git-hygiene': `---

@@ -84,7 +84,7 @@ O.renderMediaCard=opts=>{
     });
   });
 
-  const label=caption||(!/^t2i_\d+/.test(fname)?fname:O.tr('Generated Photo','Сгенерированное фото'));
+  const label=caption||fname;
   const card=h('div',{class:'ocm-media-card'+(compact?' compact':'')},
     stage,
     h('div',{class:'ocm-media-bar'},
@@ -109,7 +109,7 @@ O.enhance=el=>{
     const wrap=h('div',{class:'codeblock'},h('div',{class:'code-bar'},h('span',null,lang||'текст'),h('button',{class:'ibtn s','data-copy':'1'},O.icon('copy'))));
     pre.replaceWith(wrap);wrap.append(pre)});
 
-  // Enhance Markdown images (including local /root or relative T2I files & data URLs) into unified grayscale photo cards
+  // Enhance Markdown images (local /root paths, relative files and data URLs) into unified photo cards
   const shownMedia=new Set();
   el.querySelectorAll('img').forEach(img=>{
     if(img.closest('.ocm-media-card'))return;

@@ -558,114 +558,6 @@ object Runtime {
                 echo "Opening web preview for ${S}TARGET..."
             """.trimIndent() + "\n"
 
-            val t2iContent = """
-                #!/usr/bin/env python3
-                import base64, json, os, re, sys, time, urllib.error, urllib.request
-
-                def load_provider():
-                    cfg_path = os.path.expanduser("~/.config/opencode/opencode.json")
-                    if not os.path.exists(cfg_path):
-                        return None
-                    try:
-                        cfg = json.load(open(cfg_path, encoding="utf-8"))
-                    except Exception:
-                        return None
-                    prov = cfg.get("provider") or {}
-                    req_model = sys.argv[3] if len(sys.argv) > 3 else os.environ.get("T2I_MODEL", "")
-                    req_pid = os.environ.get("T2I_PROVIDER", "")
-                    candidates = []
-                    for pid, p in prov.items():
-                        if not isinstance(p, dict):
-                            continue
-                        opts = p.get("options") or {}
-                        base = str(opts.get("baseURL") or "").rstrip("/")
-                        key = str(opts.get("apiKey") or "")
-                        if not base:
-                            continue
-                        models = p.get("models") or {}
-                        for mid, m in models.items():
-                            is_t2i = bool(isinstance(m, dict) and ((m.get("options") or {}).get("t2i") or "image" in ((m.get("modalities") or {}).get("output") or [])))
-                            if re.search(r"image|flux|dall-e|imagen|sdxl|midjourney|ideogram|seedream|nano-banana|t2i", mid, re.I):
-                                is_t2i = True
-                            score = 0
-                            if req_pid and pid == req_pid:
-                                score += 10
-                            if req_model and mid == req_model:
-                                score += 20
-                            if is_t2i:
-                                score += 5
-                            candidates.append((score, base, key, mid))
-                    candidates.sort(key=lambda x: x[0], reverse=True)
-                    return candidates[0] if candidates else None
-
-                def main():
-                    if len(sys.argv) < 2 or not sys.argv[1].strip():
-                        print("Usage: t2i <prompt> [out.png] [model_id]", file=sys.stderr)
-                        sys.exit(1)
-                    prompt = sys.argv[1].strip()
-                    out_path = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2].strip() else f"/root/.cache/opencode-mob/media/t2i_{int(time.time()*1000)}.png"
-                    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-                    pick = load_provider()
-                    if not pick:
-                        print("ERROR: No custom API provider with baseURL configured for T2I.", file=sys.stderr)
-                        sys.exit(2)
-                    _, base, key, model = pick
-                    if base.endswith("/v1"):
-                        img_ep = base + "/images/generations"
-                        chat_ep = base + "/chat/completions"
-                    else:
-                        img_ep = base + "/v1/images/generations"
-                        chat_ep = base + "/v1/chat/completions"
-                    hdr = {"Content-Type": "application/json"}
-                    if key:
-                        hdr["Authorization"] = "Bearer " + key
-                    img_bytes = None
-                    try:
-                        req = urllib.request.Request(img_ep, data=json.dumps({"model": model, "prompt": prompt, "n": 1}).encode("utf-8"), headers=hdr)
-                        with urllib.request.urlopen(req, timeout=90) as r:
-                            res = json.loads(r.read().decode("utf-8", "replace"))
-                        item = (res.get("data") or [{}])[0]
-                        if item.get("b64_json"):
-                            img_bytes = base64.b64decode(item["b64_json"])
-                        elif item.get("url"):
-                            with urllib.request.urlopen(item["url"], timeout=60) as ir:
-                                img_bytes = ir.read()
-                    except Exception:
-                        img_bytes = None
-                    if img_bytes is None:
-                        try:
-                            req = urllib.request.Request(chat_ep, data=json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}]}).encode("utf-8"), headers=hdr)
-                            with urllib.request.urlopen(req, timeout=90) as r:
-                                res = json.loads(r.read().decode("utf-8", "replace"))
-                            msg = ((res.get("choices") or [{}])[0].get("message") or {})
-                            imgs = msg.get("images") or []
-                            if imgs:
-                                u = (imgs[0].get("image_url") or {}).get("url") or imgs[0].get("url") or ""
-                                if u.startswith("data:image/"):
-                                    img_bytes = base64.b64decode(u.split(",", 1)[1])
-                                elif u.startswith("http"):
-                                    with urllib.request.urlopen(u, timeout=60) as ir:
-                                        img_bytes = ir.read()
-                            if img_bytes is None and isinstance(msg.get("content"), str):
-                                m = re.search(r"data:image/[a-zA-Z0-9+]+;base64,([A-Za-z0-9+/=]+)", msg["content"])
-                                if m:
-                                    img_bytes = base64.b64decode(m.group(1))
-                        except Exception as e:
-                            print(f"ERROR: T2I request failed: {e}", file=sys.stderr)
-                            sys.exit(3)
-                    if not img_bytes:
-                        print("ERROR: Model returned no image payload.", file=sys.stderr)
-                        sys.exit(4)
-                    with open(out_path, "wb") as f:
-                        f.write(img_bytes)
-                    abs_p = os.path.abspath(out_path)
-                    print(f"MEDIA_SAVED:{abs_p}")
-                    print(f"![Generated Image]({abs_p})")
-
-                if __name__ == "__main__":
-                    main()
-            """.trimIndent() + "\n"
-
             val appBins = listOf(
                 File(rootBin, "openapp"), File(rootBin, "open-app"),
                 File(rootUsrBin, "openapp"), File(homeBin, "openapp")
@@ -688,13 +580,6 @@ object Runtime {
                 } catch (_: Exception) {}
             }
 
-            val t2iBins = listOf(File(rootBin, "t2i"), File(rootUsrBin, "t2i"), File(homeBin, "t2i"))
-            for (f in t2iBins) {
-                try {
-                    f.writeText(t2iContent)
-                    Os.chmod(f.path, 0x1ED)
-                } catch (_: Exception) {}
-            }
 
             // Skills & Commands definitions
             val skillAppDir = File(cfg, "skills/open-android-app").apply { mkdirs() }
@@ -778,7 +663,7 @@ object Runtime {
 
                 Do not generate, draw, or attach an image unless the user explicitly asked for one (a photo, illustration, logo, chart, diagram, or screenshot).
 
-                - Never call `t2i` on your own initiative. Only use it when the user asks for AI art/photos.
+                - If your model cannot generate images, say so in one line and offer a detailed drawing made with code.
                 - For charts, plots, diagrams, UI mockups and similar, write code (Python + Pillow / matplotlib, HTML + screenshot, etc.), render it to a real `.png` file, then embed it:
                   `![description](/absolute/path/to/file.png)`
                 - Keep the image in the workspace (or `/root/.cache/opencode-mob/media/`). Never invent paths.
@@ -878,7 +763,7 @@ You can embed interactive buttons in your markdown responses (the app renders cl
 - Attached files arrive as absolute paths in the message (for example `@/sdcard/Download/report.pdf`). Read them directly from disk; never ask the user to upload or re-send the file.
 - Do NOT generate images unless the user explicitly asks for a photo, illustration, chart, diagram, or screenshot.
 - For charts/diagrams, write code that renders a real PNG, then embed it: `![description](/absolute/path/file.png)`.
-- Only use `t2i "<prompt>"` when the user explicitly wants AI-generated art/photos. Never call it on your own.
+- If your model cannot generate images, say so in one line and offer to draw a detailed picture with code. Never generate on your own initiative.
 
 ## 6. Command Execution & Timeouts
 - Never let a command hang the session. Wrap slow commands: `timeout 120 <cmd>` (300 max unless the user asked for a build).
@@ -905,7 +790,7 @@ For example:
 Мобильная среда разработки на Android (ARM64).
 
 ### Возможности
-- **Модели**: Облачные модели через OpenCode Zen, кастомные API-провайдеры и T2I генерация фото.
+- **Модели**: Облачные модели через OpenCode Zen и кастомные API-провайдеры.
 - **AmneziaWG**: Встроенный WARP-туннель с генерацией нового профиля при каждом подключении и авто-обновлением при лимитах.
 - **Linux-окружение**: Терминал, компиляторы, Python, Node.js, Git.
 - **Встроенный веб-предпросмотр**: Запуск сайтов и HTML/CSS/JS проектов прямо в приложении.

@@ -449,24 +449,6 @@ O.replyPermission=async(p,r)=>{
   for(const t of tries){try{await t();S.perms=S.perms.filter(x=>x.id!==p.id);bus.emit('perm');return}catch(e){if(e.status!==404&&e.status!==405&&e.status!==400)throw e}}
   throw new Error('Ответ на разрешение не поддерживается этой версией сервера')};
 O.saveSessionMsgs=saveMsgs;
-O.isT2IModel=m=>{
-  if(!m)return false;
-  if(m.options&&m.options.t2i===true)return true;
-  if(m.capabilities&&m.capabilities.output&&m.capabilities.output.image===true)return true;
-  if(m.modalities){
-    if(Array.isArray(m.modalities.output)&&m.modalities.output.includes('image'))return true;
-    if(Array.isArray(m.modalities)&&m.modalities.includes('image_output'))return true;
-  }
-  const idStr=((m.id||'')+' '+(m.name||'')).toLowerCase();
-  return /\b(gpt-image|dall-e|imagen|flux|sdxl|sd3|stable-diffusion|midjourney|ideogram|recraft|seedream|wanx|qwen-image|gemini-.*image|nano-banana|grok-.*image|t2i)\b/.test(idStr);
-};
-O.isPureT2IModel=m=>{
-  if(!m)return false;
-  const idStr=((m.id||'')+' '+(m.name||'')).toLowerCase();
-  if(/\b(dall-e|imagen|flux|sdxl|sd3|stable-diffusion|midjourney|ideogram|recraft|seedream|gpt-image|grok-.*image)\b/.test(idStr))return true;
-  if(m.modalities&&Array.isArray(m.modalities.output)&&m.modalities.output.includes('image')&&!m.modalities.output.includes('text'))return true;
-  return false;
-};
 O.resolveMediaUrl=raw=>{
   const s=String(raw||'').trim();
   if(!s)return '';

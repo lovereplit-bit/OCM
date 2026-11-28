@@ -1275,7 +1275,7 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun warpDeleteWg(id: String): String =
             WarpManager.deleteWgConfig(this@MainActivity, id)
 
-        // --- T2I Media Cache / Save / Share ---
+        // --- Media cache / save / share ---
         @JavascriptInterface fun cacheMediaImage(id: String, src: String, filename: String) {
             thread(name = "media-cache") {
                 try {
@@ -1362,7 +1362,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ---------- Media helpers for T2I image rendering/cache/save/share ----------
+    // ---------- Media helpers for image rendering/cache/save/share ----------
 
     private fun imageMimeFromExt(ext: String): String? = when (ext.lowercase()) {
         "png" -> "image/png"
@@ -1451,7 +1451,7 @@ class MainActivity : ComponentActivity() {
     private fun cacheMediaBytes(src: String, rawName: String): File {
         val (bytes, mime) = resolveImagePayload(src)
         val dir = File(filesDir, "media").apply { mkdirs() }
-        val name = cleanImageName(rawName.ifBlank { "t2i_${System.currentTimeMillis()}" }, mime)
+        val name = cleanImageName(rawName.ifBlank { "image_${System.currentTimeMillis()}" }, mime)
         val out = File(dir, name)
         out.writeBytes(bytes)
         return out
