@@ -19,7 +19,7 @@ O.termInit=root=>{
     h('button',{onclick:()=>{const t=OC.pasteText();if(t&&wsid)OC.wsSend(wsid,t)}},O.icon('copy')));
   sPane=h('div',{style:{display:'none',flexDirection:'column',flex:1,minHeight:0}},xwrap,keys);
   const tabs=h('div',{class:'tsub'},subBtns.agent=h('button',{class:'on',onclick:()=>setSub('agent')},'Агент'),subBtns.shell=h('button',{onclick:()=>setSub('shell')},'Shell'),h('span',{class:'grow'}),
-    h('button',{class:'ibtn s',onclick:restart},O.icon('refresh')));
+    h('button',{class:'ibtn s',title:'Очистить журнал',onclick:()=>{logEl.textContent='';logEls.clear();emptyMark()}},O.icon('trash')),h('button',{class:'ibtn s',onclick:restart},O.icon('refresh')));
   root.append(tabs,aPane,sPane);
   bus.on('open',rebuildLog);bus.on('part',(sid,m,p)=>{if(sid===S.sid&&p&&p.type==='tool'&&p.tool==='bash')upsertEntry(p)});
   O.on('ws',onWs);
@@ -27,14 +27,16 @@ O.termInit=root=>{
 function setSub(s){sub=s;subBtns.agent.classList.toggle('on',s==='agent');subBtns.shell.classList.toggle('on',s==='shell');
   aPane.style.display=s==='agent'?'flex':'none';sPane.style.display=s==='shell'?'flex':'none';if(s==='shell')startPty()}
 O.termShown=()=>{if(sub==='shell')setTimeout(doFit,60)};
-function rebuildLog(){logEl.textContent='';logEls.clear();if(!S.sid)return;
-  for(const m of O.visibleMsgs(S.sid))for(const p of m.parts)if(p.type==='tool'&&p.tool==='bash')upsertEntry(p,true)}
+function emptyMark(){if(!logEl.children.length)logEl.append(h('div',{class:'log-empty'},'Здесь появятся команды, которые запускает агент, и ваши собственные.'))}
+function rebuildLog(){logEl.textContent='';logEls.clear();if(!S.sid){emptyMark();return}
+  for(const m of O.visibleMsgs(S.sid))for(const p of m.parts)if(p.type==='tool'&&p.tool==='bash')upsertEntry(p,true);emptyMark()}
 function upsertEntry(p,quiet){const st=p.state||{},i=st.input||{},md=st.metadata||{};
   const out=O.stripAnsi(st.output!=null?st.output:(md.output||''));
   let e=logEls.get(p.id);const near=logEl.scrollHeight-logEl.scrollTop-logEl.clientHeight<80;
-  if(!e){e={cmd:h('div',{class:'cmd'}),out:h('div',{class:'out'}),meta:h('div',{class:'meta'})};logEls.set(p.id,e);logEl.append(e.cmd,e.out,e.meta)}
-  e.cmd.textContent='$ '+(i.command||'');if(e.out._t!==out){e.out._t=out;e.out.textContent=out.length>20000?out.slice(-20000):out}
+  if(!e){const em=logEl.querySelector('.log-empty');if(em)em.remove();e={cmd:h('div',{class:'cmd'}),out:h('div',{class:'out'}),meta:h('div',{class:'meta'})};logEls.set(p.id,e);logEl.append(e.cmd,e.out,e.meta)}
+  e.cmd.textContent=i.command||'';if(e.out._t!==out){e.out._t=out;e.out.textContent=out.length>20000?out.slice(-20000):out}
   e.meta.textContent=st.status==='running'?'выполняется...':(md.exit!=null?'код '+md.exit:'')+(st.status==='error'?' ошибка':'');
+  e.out.classList.toggle('bad',st.status==='error'||(md.exit!=null&&md.exit!==0));
   if(near&&!quiet)logEl.scrollTop=logEl.scrollHeight}
 function theme(){const c=getComputedStyle(document.documentElement),g=n=>c.getPropertyValue(n).trim();return{background:g('--code'),foreground:g('--fg'),cursor:g('--acc'),selectionBackground:g('--bg3')}}
 function doFit(){if(!fit||!term||!xhost.offsetParent)return;try{fit.fit()}catch{}

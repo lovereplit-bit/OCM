@@ -135,7 +135,7 @@ O.openModels=()=>{
       h('span',{style:{marginLeft:'6px'}},O.tr('Connect more providers','Подключить провайдеров (API ключи)'))),
     h('div',{class:'detached-card-right'},'›'));
 
-  const container=h('div',null,q,listEl,h('div',{style:{height:'10px'}}),swRow,effortCard,connectCard);
+  const container=h('div',null,q,listEl,h('div',{style:{height:'10px'}}),h('div',{class:'group-card mdl-opts'},swRow,effortCard,connectCard));
   const s=O.sheet(O.tr('Select model','Выбор модели'),container,{hud:true,full:true});
 
   function draw(){
@@ -187,7 +187,6 @@ O.openModels=()=>{
       const ctx=x.m&&x.m.limit&&x.m.limit.context,parts=[];
       parts.push(x.pname||x.pid);
       if(ctx)parts.push(O.fmtK(ctx)+' context');
-      if(O.isT2IModel&&O.isT2IModel(x.m))parts.push('T2I');
       const hasVision=x.m&&(x.m.attachment===true||(x.m.modalities&&((Array.isArray(x.m.modalities)&&x.m.modalities.includes('image'))||(Array.isArray(x.m.modalities.input)&&x.m.modalities.input.includes('image')))));
       if(hasVision)parts.push('Vision');
       if(x.m&&(x.m.reasoning||x.m.variants))parts.push('reasoning');
@@ -334,7 +333,6 @@ O.openCustomProvider=(parentSheet,editPid)=>{
   let foundModels=[];const sel=new Set();
   let curProto=(existingDef&&existingDef.npm)||'@ai-sdk/openai-compatible';
   let markFree=true;
-  let markT2i=Boolean(existingDef&&Object.values(existingDef.models||{}).some(m=>O.isT2IModel&&O.isT2IModel(m)));
 
   if(existingDef&&editPid){
     idInp.value=editPid;
@@ -367,7 +365,6 @@ O.openCustomProvider=(parentSheet,editPid)=>{
           urlInp.value=(def.options&&def.options.baseURL)||'';
           keyInp.value=(def.options&&def.options.apiKey&&def.options.apiKey!=='sk-local'&&def.options.apiKey!=='ollama')?def.options.apiKey:'';
           curProto=def.npm||'@ai-sdk/openai-compatible';
-          markT2i=Object.values(def.models||{}).some(m=>O.isT2IModel&&O.isT2IModel(m));
           updateProtoSeg();
           const ms=Object.keys(def.models||{});
           manualInp.value=ms.join(', ');
@@ -572,12 +569,6 @@ O.openCustomProvider=(parentSheet,editPid)=>{
     markFree,
     v=>{markFree=v}
   );
-  const t2iToggle=O.toggleRow('image',
-    O.tr('Image generation (T2I) models','Генерация фото (T2I) модели'),
-    O.tr('Enable inline T2I image generation & photo attachments in chat','Разрешить этим моделям генерировать и прикреплять фото в чат'),
-    markT2i,
-    v=>{markT2i=v}
-  );
 
   const RESERVED_PIDS=new Set(['opencode','openai','anthropic','google','openrouter','deepseek','groq','xai','mistral','together','fireworks','cerebras','nvidia','huggingface','github-copilot','azure','amazon-bedrock']);
 
@@ -603,8 +594,6 @@ O.openCustomProvider=(parentSheet,editPid)=>{
 
     const mo={};
     [...new Set(finalMids)].forEach(mid=>{
-      const autoT2i=O.isT2IModel&&O.isT2IModel({id:mid,name:mid});
-      const hasT2i=Boolean(markT2i||autoT2i);
       const entry={
         name:mid,
         attachment:true,
@@ -612,10 +601,6 @@ O.openCustomProvider=(parentSheet,editPid)=>{
         temperature:true,
         limit:{context:128000,output:8192}
       };
-      if(hasT2i){
-        entry.modalities={input:['text','image'],output:['text','image']};
-        entry.options={t2i:true};
-      }
       if(markFree){
         entry.cost={input:0,output:0};
       }
@@ -669,7 +654,7 @@ O.openCustomProvider=(parentSheet,editPid)=>{
     statusBox,
     modelList,
     h('div',{class:'field'},h('label',null,O.tr('Models (auto or comma-separated IDs)','Модели (через запятую, если /models недоступен)')),manualInp),
-    h('div',{class:'group-card'},freeToggle,t2iToggle),
+    h('div',{class:'group-card'},freeToggle),
     saveBtn),{hud:true,full:true});
 };
 

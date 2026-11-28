@@ -1,114 +1,49 @@
 <p align="center">
-  <img src="docs/logo.svg" alt="OpenCode logo" width="96">
+  <img src="docs/logo.svg" alt="OpenCode Mobile logo" width="96">
 </p>
-<p align="center">OpenCode on your Android phone. No root, no desktop required.</p>
+<p align="center">The open source AI coding agent, on your Android phone.</p>
 <p align="center">
   <a href="https://github.com/lovereplit-bit/OCM/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/lovereplit-bit/OCM?style=flat-square" /></a>
   <a href="https://github.com/lovereplit-bit/OCM/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/lovereplit-bit/OCM/build.yml?style=flat-square&branch=main" /></a>
-  <a href="https://t.me/OpenCodeMob"><img alt="Telegram" src="https://img.shields.io/badge/telegram-OpenCodeMob-26A5E4?style=flat-square&logo=telegram&logoColor=white" /></a>
 </p>
 
 ---
 
 ### Installation
 
-Download `OpenCode-<version>-<build>.apk` from
-[Releases](https://github.com/lovereplit-bit/OCM/releases/latest) and install.
+Download `OpenCode-<version>-<build>.apk` from [Releases](https://github.com/lovereplit-bit/OCM/releases/latest) and install it.
 
-- Android 11+, 64-bit ARM (arm64-v8a)
-- First launch unpacks the Linux environment (a couple of minutes, once)
-- Works immediately: free models respond without login
-- OTA updates: **Settings > Updates**
+- Android 11+, arm64-v8a
+- The first launch unpacks the Linux environment once
+- Free models work without login
+- Updates: **Settings > Updates**
 
-Current version: **2.3.0** (OpenCode core **1.x** line).
+### What it is
 
-### What's inside
+OpenCode Mobile bundles a Linux environment (proot), `opencode serve` 1.x and a native mobile interface. The agent runs on the phone and works with files on the phone.
 
-OpenCode Mobile is an Android app that bundles a full Linux environment (proot), `opencode serve` 1.x and
-a custom mobile UI. No website is opened, chats remain readable even without network.
-
-- All terminal agent commands work on the phone: `/init`, `/connect`, `/models`, `/undo`, `/share` etc.
-- MCP servers and plugins configured the same way as on desktop
-- Chat with the agent, live terminal output and project file tree
-- Portrait and landscape orientation
-- Sounds and notifications: task complete, agent waiting, quota exhausted
-- Background work via foreground service
-- Upload `AGENTS.md` and agent files from the phone file picker: **Settings > Agents**
-- Line statistics under agent replies: lines written and lines deleted
-- Access to `/storage/emulated/0` and `Download` from the Linux environment
-- **T2I photo attachments in chat:** models supporting image generation (`t2i`) render inline grayscale image cards with fullscreen lightbox zoom, Save to Downloads, and Android Share (`/imagine` or `T2I` toggle)
-
-### Custom API Providers
-
-- Add your own OpenAI-compatible API endpoint in **Settings > Models & Providers > Custom API**.
-- CORS-free: requests go through the native Android proxy (`extHttp`), no WebView fetch restrictions.
-- Auto-probes `/v1/models` for model discovery; manual model ID entry and T2I capability tagging supported.
-- Works with OpenRouter, Together, Groq, local servers (Ollama, LM Studio), and any OpenAI-compatible endpoint.
-
-### Session Drawer
-
-- Current chat highlighted with accent dot
-- Running/busy sessions shown with spinner and "Active" badge
-- Unread agent responses marked with green dot and "New reply" badge
-- Filter chips to show only Running or Unread sessions
-- Hamburger button shows dots when there are busy or unread sessions
-
-### Profiles: every guest gets their own
-
-- **Guest without login.** First launch: tap "Continue as guest" -- the app creates a
-  **random nick** (`Guest-7F3A`), **random password** and a separate profile with its own history, keys and free quota.
-- **Email without Google.** You can enter an email for a named profile on this phone.
-- **Switch profiles** in Settings; chats and files stay on the phone.
-- Isolation: each profile has its own HOME, random port and random local server password.
-
-### OpenCode account: personal Zen quota
-
-Login via Google/GitHub through `opencode console login` (device flow) connects your personal OpenCode Zen quota.
-After login the app mirrors the account into the opencode credential store, so models work under your quota.
-Logout anytime: Settings > OpenCode Account.
-
-### WARP & Bypass (opencode-infinite, HTTP 429 bypass)
-
-To bypass IP rate limits and HTTP 429 quota errors, the app integrates **WARP & Bypass** inspired by `opencode-infinite`:
-- Non-root **AmneziaWG / Cloudflare WARP** (`bropines/awg-wireproxy` bundled as `libawg.so`) with on-demand profiles, routed through a local SOCKS5 upstream for both `opencode` runtime and WebView `extHttp`
-- A **fresh profile per connect** (keys, endpoint, obfuscation); the old profile is deleted and a new WARP identity is registered on rotation
-- Automatic **HTTP 429 / quota error capture**: renews the profile, changes the exit IP, and resumes the chat
-- Live status in **Settings > AmneziaWG**: current exit **IP**, **Location**, **Endpoint**, and manual **Change IP**
-
-### Attachments, images & terminal
-
-- Attach a file from the phone picker by **real path** (no base64 upload); removable chips sit above the composer.
-- Images are generated only on explicit request; charts and diagrams are rendered by code and attached by path.
-- The boot screen shows a rotating ASCII Earth while the Linux environment unpacks.
-- Agent watchdog: after 8 minutes of silence a banner offers **Wait** or **Interrupt**.
+- Chat, terminal and file tree in one app
+- All opencode commands: `/init`, `/connect`, `/models`, `/undo`, `/share`
+- MCP servers and plugins, configured as on desktop
+- Your own OpenAI-compatible, Anthropic or Ollama providers
+- Attach files by path: the model gets the path, not the content
+- Built-in AmneziaWG tunnel; an exhausted WARP config is replaced automatically
+- Line statistics under agent replies, with a diff view
+- Watchdog: a silent agent is nudged after 500 seconds
+- Notifications and a foreground service for long tasks
 
 ### Agents
 
-Two built-in agents, switchable in the input field:
+Built-in agents are **build** (full access, default) and **plan** (read-only). Edit `AGENTS.md` and agent files in **Settings > Agents**. Skills live in `~/.config/opencode/skills/<name>/SKILL.md`.
 
-- **build** -- main, full access, for coding
-- **plan** -- read-only, for analysis and planning
+### Building
 
-Sub-agent **general** for complex searches via `@general`.
+```bash
+bash scripts/build-runtime.sh   # Linux runtime and tunnel binary
+bash scripts/fetch-ui-deps.sh   # UI dependencies
+./gradlew assembleRelease
+```
 
-### For developers
+### Resources
 
-- `tests/run.sh` -- e2e UI tests in headless Chromium against the opencode mock server (74 checks).
-- `tests/check-bridge.py` -- static check: every `OC.*` from UI exists as `@JavascriptInterface` in Kotlin and in the mock.
-- `scripts/build-runtime.sh` -- proot as native libs, Ubuntu arm64, latest stable `v1.*` opencode.
-- `scripts/fetch-ui-deps.sh` -- marked, DOMPurify, highlight.js, xterm.js (pinned versions) vendored into APK.
-- Build is fully in GitHub Actions: push to `main` publishes APK in Releases. `docs/SETUP.md` -- one-time setup.
-
-### Contributing
-
-PRs welcome. Run `bash tests/run.sh` before pushing -- CI checks must pass.
-News and discussion: [Telegram](https://t.me/OpenCodeMob).
-
-### Building on OpenCode
-
-OpenCode Mobile is an independent project: not created by or affiliated with the OpenCode team. Inside is their MIT-licensed
-1.x release. OpenCode as a CLI agent is also available at Warp -- [docs.warp.dev/agents/cli-agents/opencode](https://docs.warp.dev/agents/cli-agents/opencode/).
-
----
-
-**Community:** [Telegram -- @OpenCodeMob](https://t.me/OpenCodeMob)
+- [Telegram channel](https://t.me/OpenCodeMob)

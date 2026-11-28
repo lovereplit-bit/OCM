@@ -1,8 +1,8 @@
 (function(){
 const O=window.OCM,h=O.h,S=O.S,api=O.api,bus=O.bus;
-let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,t2iChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn,nokeyEl,comp,projChip,vcsChip,projTxt,vcsTxt,footerPrompt,chatRoot;
+let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn,nokeyEl,comp,projChip,vcsChip,projTxt,vcsTxt,footerPrompt,chatRoot;
 const msgEls=new Map(),partEls=new Map(),open=new Set(),timers=new Map();
-let atts=[],pathAtts=[],mentions=[],stick=true,revKey='',trail=[],t2iOn=false,lastModelKey='',pendingResumeSid='',lastAutoRotateAt=0,warpWaiter=null;
+let atts=[],pathAtts=[],mentions=[],stick=true,revKey='',trail=[],lastModelKey='',wdNudges=0,pendingResumeSid='',lastAutoRotateAt=0,warpWaiter=null;
 O.rel=p=>{p=String(p||'');return S.dir&&p.startsWith(S.dir+'/')?p.slice(S.dir.length+1):p};
 const cur=()=>S.sessions.find(x=>x.id===S.sid)||O.child(S.sid);
 const modelStr=()=>S.model?S.model.providerID+'/'+S.model.modelID:undefined;
@@ -27,10 +27,9 @@ O.chatInit=root=>{
   }},O.icon('plus'));
   agentChip=h('button',{class:'hud-pill agent-pill',onclick:()=>O.openAgents()},h('span',null,'Build'),O.icon('chevD'));
   modelChip=h('button',{class:'hud-pill model-pill',onclick:()=>O.openModels()},h('span',null,O.tr('Select model','Выбрать модель')),O.icon('chevD'));
-  t2iChip=h('button',{class:'hud-pill t2i-pill hide',title:O.tr('Toggle T2I photo generation mode','Режим генерации фото (T2I)'),onclick:()=>{t2iOn=!t2iOn;t2iChip.classList.toggle('on',t2iOn);updateChips()}},O.icon('image'),h('span',null,'T2I'));
   const micBtn=h('button',{class:'hud-icon-btn mic-btn',onclick:onMic},O.icon('mic'));
   sendBtn=h('button',{id:'send',onclick:onSend},O.icon('send'));
-  const cbarLeft=h('div',{class:'cbar-left'},plusBtn,agentChip,modelChip,t2iChip);
+  const cbarLeft=h('div',{class:'cbar-left'},plusBtn,agentChip,modelChip);
   const cbarRight=h('div',{class:'cbar-right'},micBtn,sendBtn);
   const cbarRow=h('div',{class:'cbar-row'},cbarLeft,cbarRight);
   comp=h('div',{id:'composer'},popEl,h('div',{class:'cbox'},nokeyEl,attsEl,ta,cbarRow),fileIn);
@@ -46,17 +45,33 @@ O.chatInit=root=>{
   bus.on('session',()=>{const k=revisionKey();if(k!==revKey)renderAll();else renderRevert()});
   bus.on('sessions',()=>{renderRevert()});
   let lastAct=Date.now(),stuckEl=null;
-  ['msg','part','status','perm','todo','session','sessions','meta'].forEach(n=>bus.on(n,()=>{lastAct=Date.now();if(stuckEl){stuckEl.remove();stuckEl=null}}));
+  const clearStuck=()=>{if(stuckEl){stuckEl.remove();stuckEl=null}};
+  ['msg','part','status','perm','todo','session','sessions','meta'].forEach(n=>bus.on(n,()=>{lastAct=Date.now();clearStuck()}));
+  // After 500 s without any event the run is interrupted and the agent is told to check its last command.
+  const nudgeAgent=async sid=>{
+    try{await api('POST','/session/'+sid+'/abort',{})}catch(e){}
+    await new Promise(r=>setTimeout(r,1500));
+    const text='[watchdog] No output for more than 8 minutes. The last command most likely hung or failed. Check it: if a process is still running, find it with ps and kill it, read its exit code or log, report in one line what happened, then continue with a non-interactive command that has an explicit timeout.';
+    const mid=O.mid();
+    const m=O.upsertMsg({id:mid,sessionID:sid,role:'user',time:{created:Date.now()},agent:S.agent,model:S.model});m.local=true;
+    m.parts=[{id:'prt_local0',sessionID:sid,messageID:mid,type:'text',text}];bus.emit('msg',sid,m);scrollEnd(true);
+    await api('POST','/session/'+sid+'/prompt_async',{messageID:mid,agent:S.agent,model:S.model,variant:S.variant||undefined,parts:[{type:'text',text}]},{timeout:30000});
+  };
   setInterval(()=>{
-    if(!busy()){lastAct=Date.now();if(stuckEl){stuckEl.remove();stuckEl=null}return}
+    if(!busy()){lastAct=Date.now();clearStuck();return}
     if(stuckEl||Date.now()-lastAct<500000)return;
-    stuckEl=h('div',{class:'stuck-banner'},
-      h('div',{class:'stuck-ic'},O.icon('alert')),
-      h('div',{class:'grow'},h('b',null,O.tr('The agent has been silent for 8+ minutes','Агент молчит больше 8 минут')),
-        h('span',{class:'mut s'},O.tr('A command may be hanging.','Возможно, команда зависла.'))),
-      h('button',{class:'btn sm',onclick:()=>{lastAct=Date.now();if(stuckEl){stuckEl.remove();stuckEl=null}}},O.tr('Wait','Ждать')),
-      h('button',{class:'btn sm dng',onclick:async()=>{try{await api('POST','/session/'+S.sid+'/abort',{})}catch(e){O.toast(e.message)}lastAct=Date.now();if(stuckEl){stuckEl.remove();stuckEl=null}}},O.tr('Interrupt','Прервать')));
+    const sid=S.sid;
+    if(wdNudges>=2){
+      stuckEl=h('div',{class:'stuck-banner'},h('div',{class:'stuck-ic'},O.icon('alert')),
+        h('div',{class:'grow'},h('b',null,O.tr('The agent is still silent','Агент по-прежнему молчит')),h('span',{class:'mut s'},O.tr('It was already nudged twice.','Его уже дважды дёргали.'))),
+        h('button',{class:'btn sm dng',onclick:async()=>{try{await api('POST','/session/'+sid+'/abort',{})}catch(e){O.toast(e.message)}lastAct=Date.now();clearStuck()}},O.tr('Interrupt','Прервать')));
+      comp.insertBefore(stuckEl,comp.firstChild);return}
+    wdNudges++;
+    stuckEl=h('div',{class:'stuck-banner'},h('div',{class:'stuck-ic'},O.icon('alert')),
+      h('div',{class:'grow'},h('b',null,O.tr('Silent for 8+ minutes','Тишина больше 8 минут')),h('span',{class:'mut s'},O.tr('The run was interrupted and the agent is checking its command.','Запуск прерван, агент проверяет свою команду.'))));
     comp.insertBefore(stuckEl,comp.firstChild);
+    nudgeAgent(sid).catch(e=>O.toast(e.message,4000));
+    setTimeout(()=>{lastAct=Date.now();clearStuck()},6000);
   },5000);
   bus.on('meta',updateChips);bus.on('conn',updateChips);
   O.on('picked_path',d=>{if(!d)return;if(!d.ok){O.toast(d.error||O.tr('Could not attach file','Не удалось прикрепить файл'),3500);return}O.attachPath(d.path,d.name);O.toast(O.tr('Attached: ','Прикреплено: ')+(d.name||O.basename(d.path)),1800)});
@@ -143,7 +158,7 @@ function fillPart(el,p,m,fresh){
   el._p=p;
   switch(p.type){
   case'text':
-    if(m.info.role==='user'){el.className='part p-user';if(el._t!==p.text){el._t=p.text;el.textContent=p.text}}
+    if(m.info.role==='user'){el.className='part p-user';if(el._t!==p.text){el._t=p.text;O.renderUserText(el,p.text)}}
     else{el.className='part p-text';if(fresh)render(el);else sched(p.id,()=>render(el))}break;
   case'reasoning':{el.className='part think';
     if(!el._d){el._d=h('details',null,h('summary',null,'Размышления'),h('div',{class:'p-text'}));el.append(el._d)}
@@ -242,6 +257,16 @@ O.showMessageDiff=async m=>{
   let items=collect(m&&m.parts);
   if(!items.length&&m&&m.id){
     try{const r=await api('GET','/session/'+(m.sessionID||S.sid)+'/message/'+m.id);items=collect(r&&r.parts)}catch(e){}
+  }
+  if(!items.length&&m){
+    try{
+      const sid=m.sessionID||S.sid;
+      const r=await api('GET','/session/'+sid+'/diff'+(m.id?'?messageID='+encodeURIComponent(m.id):''));
+      (Array.isArray(r)?r:[]).forEach(f=>{
+        if(!f||(typeof f.before!=='string'&&typeof f.after!=='string'))return;
+        items.push({name:f.file||'file',ops:O.diffOps(f.before||'',f.after||'')});
+      });
+    }catch(e){}
   }
   if(!items.length){O.toast(O.tr('Server did not return the diff for this message','Сервер не вернул изменения для этого сообщения'),3000);return}
   const body=h('div');
@@ -591,20 +616,12 @@ function updateChips(){
   const spanMo=modelChip.querySelector('span');
   if(spanMo)spanMo.textContent=mName;
   const mk=m?(m.providerID+'/'+m.modelID):'';
-  const hasT2i=Boolean(mi&&O.isT2IModel&&O.isT2IModel(mi));
-  const pureT2i=Boolean(mi&&O.isPureT2IModel&&O.isPureT2IModel(mi));
-  if(mk!==lastModelKey){lastModelKey=mk;t2iOn=false}
-  if(t2iChip){
-    t2iChip.classList.toggle('hide',!hasT2i);
-    t2iChip.classList.toggle('on',hasT2i&&t2iOn);
-  }
+  lastModelKey=mk;
   const nokey=!m&&S.up;
   nokeyEl.classList.toggle('hide',!nokey);
   ta.disabled=!S.up;
   if(ta.disabled){
     ta.placeholder=O.tr('Waiting for the local runtime...','Ожидание локального сервера...');
-  }else if(hasT2i&&t2iOn){
-    ta.placeholder=O.tr('Describe image to generate...','Опишите изображение для генерации...');
   }else{
     ta.placeholder=O.tr('Chat with OpenCode...','Чат с OpenCode...');
   }
@@ -622,7 +639,6 @@ function autosize(){
   ta.style.height=Math.min(ta.scrollHeight,180)+'px';
 }
 const BUILTINS=[
- {n:'imagine',get d(){return O.tr('Generate image in chat (T2I)','Сгенерировать фото в чате (T2I)')},i:'image',run:arg=>{if(arg&&arg.trim())O.generateImagePrompt(arg.trim());else{ta.value='/imagine ';onInput();ta.focus()}}},
  {n:'new',d:'Начать новую сессию',i:'plus',run:()=>O.newSession()},
  {n:'sessions',d:'Переключить сессию',i:'list',run:()=>O.openSessions()},
  {n:'models',d:'Выбрать модель',i:'cpu',run:()=>O.openModels()},
@@ -677,14 +693,20 @@ O.subagents=()=>(S.agents||[]).filter(a=>a.mode==='subagent'||a.mode==='all');
 function insertMention(tok,part,from,to){ta.value=ta.value.slice(0,from)+tok+' '+ta.value.slice(to);const p=from+tok.length+1;ta.setSelectionRange(p,p);mentions.push({tok,part});hidePop();ta.focus();onInput()}
 O.addMention=(path,isDir)=>{const rel=O.rel(path);const tok='@'+rel;const abs=path.startsWith('/')?path:S.dir+'/'+path;
   ta.value=(ta.value?ta.value+' ':'')+tok+' ';mentions.push({tok,part:{type:'file',mime:isDir?'application/x-directory':'text/plain',url:'file://'+abs,filename:O.basename(path),source:{type:'file',path:abs,text:{value:tok,start:0,end:0}}}});O.setTab('chat');ta.focus();onInput()};
+const PATH_HEAD='Attached files (paths on the phone, content not included):';
+const PATH_RE=/\n*Attached files \(paths on the phone[^)]*\):\n((?:- [^\n]+\n?)+)/;
 O.attachPath=(path,name)=>{if(!path)return;const abs=String(path).startsWith('/')?String(path):'/'+path;
-  const nm=name||O.basename(abs);const ext=O.ext(nm);const mime=ext==='png'||ext==='jpg'||ext==='jpeg'||ext==='webp'||ext==='gif'?'image/'+(ext==='jpg'?'jpeg':ext):'text/plain';
-  const tok='@'+O.rel(abs);
   if(pathAtts.some(a=>a.path===abs))return;
-  pathAtts.push({path:abs,name:nm,mime});
-  ta.value=(ta.value?ta.value+' ':'')+tok+' ';
-  mentions.push({tok,part:{type:'file',mime,url:'file://'+abs,filename:nm,source:{type:'file',path:abs,text:{value:tok,start:0,end:0}}}});
-  renderAtts();onInput();ta.focus()};
+  pathAtts.push({path:abs,name:name||O.basename(abs),size:null});
+  renderAtts();updateSend();ta.focus()};
+O.renderUserText=(el,text)=>{
+  el.textContent='';const m=PATH_RE.exec(text||'');
+  if(!m){el.textContent=text||'';return}
+  const before=(text.slice(0,m.index)).trim();
+  if(before)el.append(h('div',{class:'att-text'},before));
+  el.append(h('div',{class:'att-row'},m[1].split('\n').map(x=>x.replace(/^- /,'').trim()).filter(Boolean).map(pp=>{
+    const nm=O.basename(pp);
+    return h('button',{class:'att-chip',title:pp,onclick:()=>O.native.copy(pp)},O.fileBadge?O.fileBadge(nm,false):O.fileIcon(nm),h('span',null,nm))})))};
 O.insertText=t=>{ta.value=t;onInput();ta.focus()};
 function onFiles(){const files=[...fileIn.files];fileIn.value='';for(const f of files){
   const mi=S.model&&O.modelInfo(S.model.providerID,S.model.modelID);
@@ -693,47 +715,11 @@ function onFiles(){const files=[...fileIn.files];fileIn.value='';for(const f of 
   const r=new FileReader();r.onload=()=>{atts.push({type:'file',mime:f.type||'application/octet-stream',filename:f.name,url:r.result});renderAtts()};r.readAsDataURL(f)}}
 function renderAtts(){attsEl.textContent='';attsEl.classList.toggle('hide',!atts.length&&!pathAtts.length);
   atts.forEach((a,i)=>attsEl.append(h('span',{class:'chip'},a.mime.startsWith('image/')?h('img',{src:a.url,style:{height:'22px',borderRadius:'4px'}}):O.fileIcon(a.filename),h('span',null,a.filename),h('button',{onclick:()=>{atts.splice(i,1);renderAtts();updateSend()}},O.icon('x')))));
-  pathAtts.forEach((a,i)=>attsEl.append(h('span',{class:'chip path-chip',title:a.path},O.fileIcon(a.name),h('span',null,a.name),h('button',{onclick:()=>{const tok='@'+O.rel(a.path);pathAtts.splice(i,1);mentions=mentions.filter(m=>m.tok!==tok);ta.value=ta.value.split(tok).join('').replace(/[ \t]{2,}/g,' ').trim();onInput();renderAtts()}},O.icon('x')))));
+  pathAtts.forEach((a,i)=>attsEl.append(h('span',{class:'chip path-chip',title:a.path},
+    O.fileBadge?O.fileBadge(a.name,false):O.fileIcon(a.name),
+    h('span',{class:'pc-txt'},h('b',null,a.name),h('i',null,O.dirname(a.path).replace(/^\/storage\/emulated\/0/,'/sdcard').replace(/^\/root/,'~'))),
+    h('button',{'aria-label':'remove',onclick:()=>{pathAtts.splice(i,1);renderAtts()}},O.icon('x')))));
   updateSend()}
-function resolveT2iEndpoint(){
-  const cfg=O.readCfgObj?O.readCfgObj():{provider:{}};
-  let authObj={};
-  try{
-    const ar=O.native&&O.native.readText?O.native.readText('/root/.local/share/opencode/auth.json'):null;
-    if(ar&&ar.ok&&ar.text)authObj=JSON.parse(ar.text||'{}')||{};
-  }catch(_){}
-  const KNOWN_URLS={
-    openai:'https://api.openai.com/v1',
-    openrouter:'https://openrouter.ai/api/v1',
-    xai:'https://api.x.ai/v1',
-    togetherai:'https://api.together.xyz/v1',
-    fireworks:'https://api.fireworks.ai/inference/v1'
-  };
-  const lookup=(pid,mid)=>{
-    if(!pid||!mid)return null;
-    const cp=(cfg.provider&&cfg.provider[pid])||{};
-    const mp=(S.providers||[]).find(p=>p.id===pid)||{};
-    const rawUrl=(cp.options&&cp.options.baseURL)||(mp.options&&mp.options.baseURL)||mp.api||KNOWN_URLS[pid]||'';
-    const baseURL=String(rawUrl||'').trim().replace(/\/+$/,'');
-    if(!baseURL)return null;
-    const rawKey=(cp.options&&cp.options.apiKey)||(mp.options&&mp.options.apiKey)||(authObj[pid]&&(authObj[pid].key||authObj[pid].access||authObj[pid].token))||'';
-    const headers=Object.assign({},(mp.options&&mp.options.headers)||{},(cp.options&&cp.options.headers)||{});
-    return{providerID:pid,modelID:mid,baseURL,apiKey:String(rawKey||''),headers};
-  };
-  if(S.model){
-    const curEp=lookup(S.model.providerID,S.model.modelID);
-    if(curEp)return curEp;
-  }
-  for(const [pid,pdef] of Object.entries(cfg.provider||{})){
-    const mods=pdef&&pdef.models?Object.entries(pdef.models):[];
-    for(const [mid,mdef] of mods){
-      if(O.isT2IModel&&O.isT2IModel(Object.assign({id:mid},mdef||{}))){
-        const ep=lookup(pid,mid);if(ep)return ep;
-      }
-    }
-  }
-  return null;
-}
 
 function parseT2iImages(data){
   const imgs=[];let text='';
@@ -790,109 +776,6 @@ function parseT2iImages(data){
   return{imgs,text};
 }
 
-O.generateImagePrompt=async(promptText)=>{
-  const prompt=String(promptText||'').trim();
-  if(!prompt)return;
-  const ep=resolveT2iEndpoint();
-  if(!ep){
-    O.toast(O.tr('Connect a Custom API / OpenAI-compatible provider with a T2I model first','Сначала подключите Custom API провайдер с T2I-моделью'),4000);
-    if(O.openConnect)O.openConnect();
-    return;
-  }
-  let sid;
-  try{sid=await sess()}catch(e){O.toast(e.message||'Session error');return}
-  const uid=O.mid(),amid=O.mid();
-  const userM=O.upsertMsg({id:uid,sessionID:sid,role:'user',time:{created:Date.now()},agent:S.agent,model:{providerID:ep.providerID,modelID:ep.modelID}});
-  userM.local=true;
-  userM.parts=[{id:'prt_u_'+uid,sessionID:sid,messageID:uid,type:'text',text:prompt}];
-  bus.emit('msg',sid,userM);
-  const assistM=O.upsertMsg({id:amid,sessionID:sid,role:'assistant',time:{created:Date.now()},agent:S.agent,providerID:ep.providerID,modelID:ep.modelID});
-  assistM.local=true;
-  assistM.parts=[{id:'prt_a_wait_'+amid,sessionID:sid,messageID:amid,type:'text',text:O.tr('_Generating image via '+ep.modelID+'..._','_Генерирую фото через '+ep.modelID+'..._')}];
-  bus.emit('msg',sid,assistM);scrollEnd(true);
-
-  const base=ep.baseURL;
-  const vBase=/\/v\d+(?:alpha|beta)?(?:\/openai)?$/i.test(base)?base:(base+'/v1');
-  const imgEp=vBase+'/images/generations';
-  const chatEp=vBase+'/chat/completions';
-  const hdrs=Object.assign({'Content-Type':'application/json'},ep.headers||{});
-  if(ep.apiKey&&ep.apiKey!=='sk-local')hdrs['Authorization']='Bearer '+ep.apiKey;
-
-  const isQuotaErr=(status,msg)=>status===429||/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|balance|funds|\b429\b/i.test(String(msg||''));
-  const callApiOnce=async()=>{
-    let lastStatus=0,lastMsg='';
-    // 1. Standard /images/generations endpoint
-    let r=await O.extFetch(imgEp,{method:'POST',headers:hdrs,body:{model:ep.modelID,prompt,n:1,response_format:'b64_json'},timeout:95000});
-    if(!r.ok&&r.status===400&&/response_format/i.test(r.text||'')){
-      r=await O.extFetch(imgEp,{method:'POST',headers:hdrs,body:{model:ep.modelID,prompt,n:1},timeout:95000});
-    }
-    if(r.ok){
-      const parsed=parseT2iImages(r.data);
-      if(parsed.imgs.length)return parsed;
-    }else{
-      lastStatus=r.status;
-      lastMsg=(r.data&&r.data.error&&r.data.error.message)||(r.data&&r.data.message)||r.text||('HTTP '+r.status);
-      if(lastStatus===401||lastStatus===403||isQuotaErr(lastStatus,lastMsg))throw Object.assign(new Error(lastMsg),{status:lastStatus});
-    }
-    // 2. Fallback /chat/completions for multimodal image models
-    let rc=await O.extFetch(chatEp,{method:'POST',headers:hdrs,body:{model:ep.modelID,messages:[{role:'user',content:prompt}],modalities:['image','text']},timeout:95000});
-    if(!rc.ok&&rc.status===400&&/modalit/i.test(rc.text||'')){
-      rc=await O.extFetch(chatEp,{method:'POST',headers:hdrs,body:{model:ep.modelID,messages:[{role:'user',content:prompt}]},timeout:95000});
-    }
-    if(rc.ok){
-      const parsed=parseT2iImages(rc.data);
-      if(parsed.imgs.length)return parsed;
-      throw new Error(parsed.text||O.tr('Model returned text without an image','Модель вернула ответ без изображения'));
-    }
-    const cMsg=(rc.data&&rc.data.error&&rc.data.error.message)||(rc.data&&rc.data.message)||rc.text||lastMsg||('HTTP '+(rc.status||lastStatus));
-    throw Object.assign(new Error(cMsg),{status:rc.status||lastStatus});
-  };
-
-  try{
-    let result;
-    try{
-      result=await callApiOnce();
-    }catch(e){
-      const wst=O.native&&O.native.warpStatus?O.native.warpStatus():{};
-      if(isQuotaErr(e.status,e.message)&&wst.autoRotate&&(wst.enabled||wst.autoFallback)&&O.native&&O.native.warpRotate){
-        O.toast(O.tr('Quota limit reached — rotating WARP IP...','Лимит квоты — меняем IP через WARP...'),3200);
-        await new Promise(resolve=>{
-          const tm=setTimeout(()=>{warpWaiter=null;resolve()},25000);
-          warpWaiter=()=>{clearTimeout(tm);resolve()};
-          O.native.warpRotate('');
-        });
-        result=await callApiOnce();
-      }else throw e;
-    }
-
-    const parts=[];
-    if(result.text)parts.push({id:'prt_t_'+amid,sessionID:sid,messageID:amid,type:'text',text:result.text});
-    for(let i=0;i<result.imgs.length;i++){
-      const rawSrc=result.imgs[i];
-      const fname='t2i_'+Date.now()+'_'+(i+1)+'.png';
-      let finalUrl=rawSrc,finalName=fname;
-      if(O.native&&O.native.cacheMedia){
-        const cached=await O.native.cacheMedia(rawSrc,fname);
-        if(cached&&cached.ok&&cached.url){finalUrl=cached.url;finalName=cached.name||fname}
-      }
-      parts.push({id:'prt_img_'+amid+'_'+i,sessionID:sid,messageID:amid,type:'file',mime:'image/png',url:finalUrl,filename:finalName,description:prompt});
-    }
-    assistM.info.time={created:assistM.info.time.created,completed:Date.now()};
-    assistM.parts=parts;
-    bus.emit('msg',sid,assistM);scrollEnd(true);
-    if(O.saveSessionMsgs)O.saveSessionMsgs(sid);
-  }catch(e){
-    assistM.info.time={created:assistM.info.time.created,completed:Date.now()};
-    assistM.parts=[{id:'prt_err_'+amid,sessionID:sid,messageID:amid,type:'text',text:'**T2I Error:** '+String(e.message||'Request failed')}];
-    bus.emit('msg',sid,assistM);
-    if(isQuotaErr(e.status,e.message)){
-      O.notifyLimit(O.tr('Limit Reached','Лимит исчерпан'),O.tr('Free quota limit reached.','Бесплатные лимиты закончились.'));
-      O.showQuotaAccountModal(e.message);
-    }else{
-      O.toast(e.message||'T2I error',4000);
-    }
-  }
-};
 
 async function onSend(){
   if(busy()&&!ta.value.trim()&&!atts.length&&!pathAtts.length){try{await api('POST','/session/'+S.sid+'/abort',{})}catch(e){O.toast(e.message)}return}
@@ -903,13 +786,6 @@ async function onSend(){
     if(sc){if(!S.model)return O.openConnect();clear();try{const sid=await sess();api('POST','/session/'+sid+'/command',{command:sc.name,arguments:cm[2]||'',agent:S.agent,model:modelStr()},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}}
 
   if(!S.model){O.toast('Подключите провайдера, чтобы выбрать модель');O.openConnect();return}
-  const curMi=O.modelInfo(S.model.providerID,S.model.modelID);
-  if(text&&!atts.length&&!pathAtts.length&&curMi&&O.isPureT2IModel&&O.isPureT2IModel(curMi)){
-    O.toast(O.tr('This is an image model. Use /imagine <prompt>.','Это модель изображений. Используйте /imagine <запрос>.'),4000);return;
-  }
-  if(text&&!atts.length&&!pathAtts.length&&curMi&&O.isT2IModel&&O.isT2IModel(curMi)&&t2iOn){
-    clear();await O.generateImagePrompt(text);return;
-  }
   if(text.startsWith('!')){const cmd=text.slice(1).trim();
     if(/^opencode(\s+tui)?\s*$/i.test(cmd)){O.toast('Приложение уже является интерфейсом OpenCode. TUI — во вкладке «Терминал» → Shell, агент — во вкладке «Чат»',6000);clear();return}
     clear();try{const sid=await sess();api('POST','/session/'+sid+'/shell',{agent:S.agent,model:S.model,command:cmd},{timeout:3600000}).catch(e=>O.toast(e.message))}catch(e){O.toast(e.message)}return}
@@ -917,7 +793,9 @@ async function onSend(){
   if(O.updateReadmeForModel && S.model && S.model.modelID){
     O.updateReadmeForModel(S.model.modelID);
   }
-  if(text)parts.push({type:'text',text});
+  const sendText=pathAtts.length?(text?text+'\n\n':'')+PATH_HEAD+'\n'+pathAtts.map(a=>'- '+a.path).join('\n'):text;
+  const savedPaths=pathAtts.slice();
+  if(sendText)parts.push({type:'text',text:sendText});
   mentions.filter(m=>text.includes(m.tok)).forEach(m=>{const p=JSON.parse(JSON.stringify(m.part));if(p.source&&p.source.text){p.source.text.start=text.indexOf(m.tok);p.source.text.end=p.source.text.start+m.tok.length}parts.push(p)});
   atts.forEach(a=>parts.push(a));
   const mid=O.mid();clear();
@@ -933,8 +811,8 @@ async function onSend(){
     }else{
       O.toast(e.message,4000);
     }
-    ta.value=text;onInput();
+    ta.value=text;pathAtts=savedPaths;renderAtts();onInput();
   }}
-function clear(){ta.value='';atts=[];pathAtts=[];mentions=[];renderAtts();autosize();hidePop();updateSend()}
+function clear(){wdNudges=0;ta.value='';atts=[];pathAtts=[];mentions=[];renderAtts();autosize();hidePop();updateSend()}
 O.chat={renderAll,sess,focus:()=>ta&&ta.focus()};
 })();

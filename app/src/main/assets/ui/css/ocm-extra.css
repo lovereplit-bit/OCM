@@ -1,0 +1,69 @@
+/* Extra styles: file badges, attachment chips, boot animation. */
+
+/* ---- file badge ---- */
+.fb { display: inline-flex; flex: none; width: 30px; height: 30px; color: var(--mut); }
+.fb svg { width: 100%; height: 100%; display: block; }
+.fb-arc, .fb-code, .fb-data, .fb-doc, .fb-img, .fb-aud, .fb-vid, .fb-bin { color: var(--mut); }
+.fb-dir { color: var(--fg); opacity: .75; }
+
+/* ---- attachment chips above the input ---- */
+.atts .path-chip { display: inline-flex; align-items: center; gap: 9px; max-width: 78%; min-width: 150px; padding: 7px 6px 7px 8px; border-radius: 14px; background: var(--bg2); border: 1px solid var(--line); }
+.atts .path-chip .fb { width: 28px; height: 28px; }
+.pc-txt { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; text-align: left; }
+.pc-txt b { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-txt i { font-style: normal; font-size: 11px; color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- attached files inside a sent message ---- */
+.att-text { white-space: pre-wrap; word-break: break-word; }
+.att-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.att-row:first-child { margin-top: 0; }
+.att-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px 4px 5px; border-radius: 11px; background: var(--bg2); border: 1px solid var(--line); font-size: 12.5px; color: var(--fg); }
+.att-chip .fb { width: 22px; height: 22px; }
+.att-chip span:not(.fb) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-chip:active { background: var(--bg3); }
+
+/* ---- boot animation ---- */
+.bootfx-wrap { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bootfx {
+  margin: 0; padding: 10px 6px; width: 100%; max-width: 440px; overflow: hidden;
+  background: #050506; color: #f4f4f5; border: 1px solid var(--line); border-radius: 16px;
+  font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace; letter-spacing: 0;
+  white-space: pre; text-align: left; user-select: none; -webkit-user-select: none; font-variant-ligatures: none;
+}
+.bootfx-cap { font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--mut); min-height: 14px; }
+
+.atts:has(.path-chip) { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.atts:has(.path-chip)::-webkit-scrollbar { display: none; }
+.atts .path-chip { flex: 0 0 auto; }
+
+/* ---- Files header: quiet, no white call-to-action ---- */
+.files-path-bar { padding: 2px 4px 2px 12px; border-radius: 12px; }
+.files-path-bar > .ic { width: 15px; height: 15px; color: var(--mut); flex: none; }
+.files-path-bar .btn.pri { background: transparent; color: var(--mut); border: 1px solid var(--line); font-weight: 500; }
+.files-path-bar .btn.pri:active { background: var(--bg3); color: var(--fg); }
+.files-search-wrap { background: var(--bg2); border-color: var(--line); }
+.files-search-inp { color: var(--fg); }
+.files-search-inp::placeholder { color: var(--mut); }
+
+/* ---- Terminal: gray, one accent for failures only ---- */
+#agentlog .cmd { color: var(--fg); }
+#agentlog .out.bad { border-color: var(--line2, var(--mut)); }
+#agentlog .out.bad + .meta { color: var(--fg); }
+#agentlog .log-empty { color: var(--mut); font-family: inherit; font-size: 12.5px; text-align: center; padding: 40px 24px; line-height: 1.5; }
+.cmdline input { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.cmdline .btn.pri { background: var(--bg3); color: var(--fg); border: 1px solid var(--line); width: 44px; padding: 0; display: grid; place-items: center; border-radius: 12px; }
+.cmdline .btn.pri:active { background: var(--fg); color: var(--bg); }
+
+/* ---- Neutral surfaces: no tinted badges, icon tiles or side bars ---- */
+.badge-free { background: var(--bg3); color: var(--fg); border: 1px solid var(--line2); }
+.badge-custom { background: transparent; color: var(--mut); border: 1px solid var(--line2); }
+.settings-row-icon.green, .settings-row-icon.blue { background: var(--bg3); color: var(--mut); }
+.note { border-left: 1px solid var(--line); background: var(--bg2); }
+.p-text blockquote { border-left: 2px solid var(--line2); background: transparent; }
+.model-row-custom { border-left: 0; }
+
+/* ---- model picker options: one card, flat rows ---- */
+.mdl-opts .detached-card { margin: 0; border: 0; border-radius: 0; background: transparent; border-top: 1px solid var(--line); width: 100%; }
+.mdl-opts > :first-child { border-top: 0; }
+.mdl-opts .settings-row { border: 0; }
+.mdl-opts .detached-card:active { background: var(--bg3); }
