@@ -63,15 +63,7 @@ O.native={
   notify:(kind,title,text)=>{try{if(window.OC&&OC.notify)OC.notify(kind,title,text)}catch(_){}},
   state:()=>j(OC.state())||{},
   isOnline:()=>{try{return window.OC&&OC.isOnline?Boolean(OC.isOnline()):navigator.onLine!==false}catch{return navigator.onLine!==false}},
-  warpStatus:()=>j(window.OC&&OC.warpStatus?OC.warpStatus():'{}')||{mode:'direct',activeMode:'direct',status:'idle',enabled:false},
   pickPath:()=>{try{if(window.OC&&OC.pickPath)OC.pickPath()}catch{}},
-  warpRefreshGeo:()=>{try{if(window.OC&&OC.warpRefreshGeo)OC.warpRefreshGeo()}catch{}},
-  warpSetConfig:cfg=>{try{if(window.OC&&OC.warpSetConfig)OC.warpSetConfig(JSON.stringify(cfg||{}))}catch{}},
-  warpRotate:sid=>{try{if(window.OC&&OC.warpRotate)OC.warpRotate(sid||'')}catch{}},
-  warpClearBurned:()=>j(window.OC&&OC.warpClearBurned?OC.warpClearBurned():'{}')||{},
-  warpImportWg:(name,conf)=>j(window.OC&&OC.warpImportWg?OC.warpImportWg(name||'',conf||''):'{}')||{ok:false},
-  warpSelectWg:id=>j(window.OC&&OC.warpSelectWg?OC.warpSelectWg(id||''):'{}')||{},
-  warpDeleteWg:id=>j(window.OC&&OC.warpDeleteWg?OC.warpDeleteWg(id||''):'{}')||{},
   cacheMedia:(src,filename)=>new Promise(res=>{
     if(!window.OC||typeof OC.cacheMediaImage!=='function'){res({ok:true,url:src,name:filename||'image.png'});return}
     const id='m'+(++seq)+'_'+Date.now().toString(36);

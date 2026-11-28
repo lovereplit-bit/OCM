@@ -27,7 +27,6 @@ OpenCode Mobile bundles a Linux environment (proot), `opencode serve` 1.x and a 
 - MCP servers and plugins, configured as on desktop
 - Your own OpenAI-compatible, Anthropic or Ollama providers
 - Attach files by path: the model gets the path, not the content
-- Built-in AmneziaWG tunnel; an exhausted WARP config is replaced automatically
 - Line statistics under agent replies, with a diff view
 - Watchdog: a silent agent is nudged after 500 seconds
 - Notifications and a foreground service for long tasks

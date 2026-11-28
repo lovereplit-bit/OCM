@@ -55,7 +55,6 @@
 .cmdline .btn.pri:active { background: var(--fg); color: var(--bg); }
 
 /* ---- Neutral surfaces: no tinted badges, icon tiles or side bars ---- */
-.badge-free { background: var(--bg3); color: var(--fg); border: 1px solid var(--line2); }
 .badge-custom { background: transparent; color: var(--mut); border: 1px solid var(--line2); }
 .settings-row-icon.green, .settings-row-icon.blue { background: var(--bg3); color: var(--mut); }
 .note { border-left: 1px solid var(--line); background: var(--bg2); }

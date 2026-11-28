@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds everything the APK embeds:
-#   jniLibs/arm64-v8a/{libproot.so,libproot-loader.so,libtalloc.so,libandroid-shmem.so,libawg.so}
+#   jniLibs/arm64-v8a/{libproot.so,libproot-loader.so,libtalloc.so,libandroid-shmem.so}
 #   assets/rootfs.tar.xz + rootfs.id                                  Ubuntu 24.04 arm64 with opencode 1.x inside
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,7 +10,7 @@ WORK="$(mktemp -d)"
 mkdir -p "$LIBS" "$ASSETS"
 sudo apt-get update -qq && sudo apt-get install -y -qq patchelf xz-utils >/dev/null
 
-echo "== 1/4 proot from Termux packages =="
+echo "== 1/3 proot from Termux packages =="
 REPO=https://packages.termux.dev/apt/termux-main
 curl -fsSL "$REPO/dists/stable/main/binary-aarch64/Packages" -o "$WORK/Packages"
 fetch_deb() {
@@ -53,21 +53,7 @@ for n in $(patchelf --print-needed "$LIBS/libproot.so"); do
   esac
 done
 
-echo "== 2/4 awg-wireproxy (AmneziaWG userspace client, android-arm64) =="
-AWG_TAG="v2.1.0"
-curl -fsSL "https://github.com/bropines/awg-wireproxy/releases/download/$AWG_TAG/awg-wireproxy_${AWG_TAG#v}_linux_arm64.tar.gz" -o "$WORK/awg.tgz"
-mkdir -p "$WORK/awg"
-tar -xzf "$WORK/awg.tgz" -C "$WORK/awg" wireproxy
-test -f "$WORK/awg/wireproxy"
-install -m755 "$WORK/awg/wireproxy" "$LIBS/libawg.so"
-for n in $(patchelf --print-needed "$LIBS/libawg.so" 2>/dev/null || true); do
-  case "$n" in
-    libc.so|libdl.so|libm.so|liblog.so) ;;
-    *) echo "libawg has an unexpected dependency: $n"; exit 1 ;;
-  esac
-done
-
-echo "== 3/4 opencode: newest stable v1.* =="
+echo "== 2/3 opencode: newest stable v1.* =="
 TAG="${OPENCODE_TAG:-}"
 if [ -z "$TAG" ]; then
   AUTH=()
@@ -86,7 +72,7 @@ curl -fsSL "https://github.com/anomalyco/opencode/releases/download/$TAG/opencod
 test -f "$WORK/oc/opencode"
 echo "$TAG" > "$WORK/oc/version"
 
-echo "== 4/4 rootfs (Ubuntu 24.04 arm64) =="
+echo "== 3/3 rootfs (Ubuntu 24.04 arm64) =="
 docker rm -f ocroot >/dev/null 2>&1 || true
 docker run --platform linux/arm64 --name ocroot -v "$WORK/oc:/oc:ro" ubuntu:24.04 bash -euc '
   export DEBIAN_FRONTEND=noninteractive

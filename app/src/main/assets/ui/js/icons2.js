@@ -2,7 +2,6 @@
 (function () {
 const O = window.OCM;
 const X = {
-  warp: '<path d="M12 3l7 3v5.5c0 4.3-2.9 7.6-7 9.5-4.1-1.9-7-5.2-7-9.5V6l7-3z"/><path d="M8.5 12.5c1.2-1.6 2.3-1.6 3.5 0s2.3 1.6 3.5 0"/>',
   filePlus: '<path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5M12 11.5v5M9.5 14h5"/>',
   upDir: '<path d="M12 19V6M6.5 11.5L12 6l5.5 5.5"/>',
   home: '<path d="M4 11l8-7 8 7v8a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1z"/>',

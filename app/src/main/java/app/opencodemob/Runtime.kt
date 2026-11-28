@@ -791,7 +791,6 @@ For example:
 
 ### Возможности
 - **Модели**: Облачные модели через OpenCode Zen и кастомные API-провайдеры.
-- **AmneziaWG**: Встроенный WARP-туннель с генерацией нового профиля при каждом подключении и авто-обновлением при лимитах.
 - **Linux-окружение**: Терминал, компиляторы, Python, Node.js, Git.
 - **Встроенный веб-предпросмотр**: Запуск сайтов и HTML/CSS/JS проектов прямо в приложении.
 - **Интеграция с Android**: Открытие приложений агентом (`openapp telegram`).
@@ -853,15 +852,12 @@ For example:
         stopActiveServer()
         ensureDefaults(c, uid)
         updateDns(c)
-        WarpManager.init(c)
         val lib = c.applicationInfo.nativeLibraryDir
         val ptmp = File(c.filesDir, "proot-tmp").apply { mkdirs() }
 
         val a = prootBase(c, uid)
         a += listOf("/usr/local/bin/opencode", "serve", "--hostname", "127.0.0.1", "--port", port.toString())
 
-        val gateUrl = "http://127.0.0.1:${WarpManager.GATE_PORT}"
-        val noProxy = "127.0.0.1,localhost,::1"
         val pb = ProcessBuilder(a).redirectErrorStream(true).directory(c.filesDir)
         pb.environment().apply {
             clear()
@@ -872,9 +868,6 @@ For example:
             put("HOME", "/root"); put("USER", "root"); put("SHELL", "/bin/bash")
             put("LANG", "C.UTF-8"); put("TERM", "xterm-256color"); put("TMPDIR", "/tmp")
             put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-            put("HTTP_PROXY", gateUrl); put("HTTPS_PROXY", gateUrl)
-            put("http_proxy", gateUrl); put("https_proxy", gateUrl)
-            put("NO_PROXY", noProxy); put("no_proxy", noProxy)
             put("OPENCODE_SERVER_USERNAME", "opencode")
             put("OPENCODE_SERVER_PASSWORD", password)
             put("OPENCODE_DISABLE_AUTOUPDATE", "1") // stay on 1.x: no `upgrade --major` behind our back

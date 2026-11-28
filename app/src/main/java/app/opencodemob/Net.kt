@@ -26,12 +26,7 @@ object Net {
     private val extHttp = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS).writeTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true).followSslRedirects(true).build()
-    private val proxiedExtHttp by lazy {
-        extHttp.newBuilder()
-            .proxy(java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress("127.0.0.1", WarpManager.GATE_PORT)))
-            .build()
-    }
-    fun externalClient(): OkHttpClient = if (WarpManager.isProxied()) proxiedExtHttp else extHttp
+    fun externalClient(): OkHttpClient = extHttp
     private val stream = http.newBuilder().readTimeout(0, TimeUnit.SECONDS).pingInterval(20, TimeUnit.SECONDS).build()
     private val pool = Executors.newCachedThreadPool()
     private val sockets = ConcurrentHashMap<String, WebSocket>()

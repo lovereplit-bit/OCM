@@ -221,7 +221,16 @@ O.bootfx.create = function (maxWidth) {
     cols = Math.max(48, Math.min(72, Math.floor((w - 14) / 4.4)));
     rows = Math.floor(cols / 2);
     const charW = (w - 14) / cols;
-    pre.style.fontSize = (charW / 0.6).toFixed(2) + 'px';
+    let glyph = 0.6;
+    try {
+      const cv = document.createElement('canvas').getContext('2d');
+      if (cv) {
+        cv.font = '100px ' + getComputedStyle(pre).fontFamily;
+        const measured = cv.measureText('M@.').width / 3;
+        if (measured > 0) glyph = measured / 100;
+      }
+    } catch (_) {}
+    pre.style.fontSize = (charW / glyph).toFixed(2) + 'px';
     pre.style.lineHeight = (charW * 2).toFixed(2) + 'px';
     pre.style.height = (rows * charW * 2 + 20).toFixed(1) + 'px';
   };

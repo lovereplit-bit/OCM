@@ -93,7 +93,6 @@ jobs:
             echo "Core: opencode $(grep opencode_core runtime-info.txt | cut -d= -f2) (1.x line) + Linux rootfs proot"
             echo
             echo "What's new in v2.3.0:"
-            echo "- AmneziaWG tunnel: fresh WARP profile per connect, automatic renewal on quota/429, old profile deleted"
             echo "- Attach files by real path from the phone picker (no base64 upload), with removable chips above the composer"
             echo "- Images are generated only on explicit request; code-rendered PNGs are attached by path"
             echo "- Boot screen: detailed rotating ASCII Earth while the Linux environment unpacks"

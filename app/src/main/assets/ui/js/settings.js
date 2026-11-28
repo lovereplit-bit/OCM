@@ -16,8 +16,16 @@ O.openSettings=()=>{
   const searchInp=h('input',{class:'settings-search-inp',type:'search',placeholder:O.tr('Search settings...','Поиск по настройкам...'),oninput:()=>applyFilter(searchInp.value)});
   const noRes=h('div',{class:'settings-no-results hide'},O.icon('search'),h('span',null,O.tr('Nothing found','Ничего не найдено')));
   const searchBar=h('div',{class:'settings-search'},O.icon('search'),searchInp,
-    h('button',{class:'ibtn s',onclick:()=>{searchInp.value='';applyFilter('');searchInp.focus()}},O.icon('x')));
+    h('button',{class:'ibtn s',onclick:()=>{searchInp.value='';applyFilter('');searchBar.classList.remove('hide');searchInp.focus()}},O.icon('x')));
   body.append(searchBar,noRes);
+  let lastTop=0;
+  s.body.addEventListener('scroll',()=>{
+    const top=s.body.scrollTop;
+    if(searchInp.value.trim()){lastTop=top;searchBar.classList.remove('hide');return}
+    if(top>lastTop+6&&top>60)searchBar.classList.add('hide');
+    else if(top<lastTop-6)searchBar.classList.remove('hide');
+    lastTop=top;
+  },{passive:true});
   const applyFilter=q=>{
     q=(q||'').trim().toLowerCase();
     O.$$('.settings-card',body).forEach(card=>{
@@ -114,20 +122,12 @@ O.openSettings=()=>{
   );
   body.append(agentCard);
 
-  // 6. Jailbreaks, Plugins & WARP Tunnel
-  body.append(h('div',{class:'settings-section-title'},O.tr('Extensions & Bypass','Расширения и обход лимитов')));
-  const warpSt=(O.native&&O.native.warpStatus)?O.native.warpStatus():{enabled:false,mode:'direct'};
-  const warpLoc=[warpSt.city,warpSt.country].filter(Boolean).join(', ');
-  const warpSub=warpSt.enabled
-    ?(['AmneziaWG',warpSt.ip,warpLoc].filter(Boolean).join(' · '))
-    :O.tr('Built-in WARP tunnel with fresh profiles','Встроенный WARP-туннель с новыми профилями');
+  // 6. Extensions
+  body.append(h('div',{class:'settings-section-title'},O.tr('Extensions','Расширения')));
   const jbCard=h('div',{class:'settings-card'});
-  const warpRow=O.listRow('zap','AmneziaWG',warpSub,O.icon('chevR'),()=>openWarpSettings());
-  warpRow.dataset.kw='warp vpn amnezia туннель обход ip cloudflare';
   jbCard.append(
     O.listRow('shield',O.tr('Custom Jailbreaks','Пользовательские джейлбрейки'),O.tr('Presets for Zen models, upload & toggle','Пресеты для моделей Zen, загрузка и отключение'),O.icon('chevR'),()=>openJailbreaks()),
-    O.listRow('plug',O.tr('Custom Plugins','Пользовательские плагины'),O.tr('Marketplace, upload custom plugins','Каталог и загрузка пользовательских плагинов'),O.icon('chevR'),()=>openCustomPlugins()),
-    warpRow
+    O.listRow('plug',O.tr('Custom Plugins','Пользовательские плагины'),O.tr('Marketplace, upload custom plugins','Каталог и загрузка пользовательских плагинов'),O.icon('chevR'),()=>openCustomPlugins())
   );
   body.append(jbCard);
 
@@ -1453,108 +1453,6 @@ O.syncAllCommunity=async()=>{
 setTimeout(()=>{try{O.syncAllCommunity()}catch(_){}},1000);
 
 
-// ---- WARP, WireGuard & Proxy Rotation (opencode-infinite) ----
-O.warpRotateAndRetry = (sid) => {
-  O.toast(O.tr('Rotating IP via WARP...', 'Меняем IP через WARP...'), 3000);
-  if (O.native && O.native.warpRotate) O.native.warpRotate(sid || S.sid || '');
-};
-
-function openWarpSettings() {
-  const body = h('div');
-  let st = (O.native && O.native.warpStatus) ? O.native.warpStatus() : { mode: 'direct', activeMode: 'direct', status: 'idle' };
-  let s = null;
-
-  const paint = () => {
-    if (s && s.root && !s.root.isConnected) return;
-    body.textContent = '';
-    const enabled = (st.mode || 'direct') !== 'direct';
-    const status = st.status || 'idle';
-    const dotCls = status === 'connected' ? 'dot ok' : (status === 'error' ? 'dot err' : (status === 'connecting' || status === 'rotating' ? 'dot warn' : 'dot'));
-    const statusLbl = status === 'connected' ? O.tr('Connected', 'Подключено') :
-      status === 'connecting' ? O.tr('Connecting...', 'Подключение...') :
-      status === 'rotating' ? O.tr('Renewing profile...', 'Обновление профиля...') :
-      status === 'error' ? O.tr('Tunnel error', 'Ошибка туннеля') : O.tr('Disabled', 'Отключено');
-    const cityCountry = [st.city, st.country].filter(Boolean).join(', ') || '—';
-
-    const statusCard = h('div', { class: 'settings-card', style: { padding: '14px' } },
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' } },
-        h('span', { class: dotCls }),
-        h('b', { style: { fontSize: '14.5px', flex: '1' } }, statusLbl),
-        h('span', { class: 'recommended-badge' }, 'AmneziaWG')
-      ),
-      h('div', { class: 'hud-metric-row', style: { gridTemplateColumns: '1fr 1fr', marginBottom: '8px' } },
-        h('div', { class: 'hud-metric', style: { textAlign: 'left', cursor: st.ip ? 'pointer' : 'default' }, onclick: () => { if (st.ip) O.native.copy(st.ip); } },
-          h('div', { class: 'hud-metric-lbl' }, O.tr('Exit IP', 'Выходной IP')),
-          h('div', { class: 'hud-metric-val', style: { fontSize: '12.5px', color: 'var(--fg)', fontFamily: 'inherit' } }, st.ip || '—')
-        ),
-        h('div', { class: 'hud-metric', style: { textAlign: 'left' } },
-          h('div', { class: 'hud-metric-lbl' }, O.tr('Location', 'Локация')),
-          h('div', { class: 'hud-metric-val', style: { fontSize: '12.5px', color: 'var(--fg)', fontFamily: 'inherit' } }, cityCountry)
-        )
-      ),
-      h('div', { class: 'hud-metric-row', style: { gridTemplateColumns: '1fr 1fr', marginBottom: '8px' } },
-        h('div', { class: 'hud-metric', style: { textAlign: 'left' } },
-          h('div', { class: 'hud-metric-lbl' }, O.tr('Endpoint', 'Endpoint')),
-          h('div', { class: 'hud-metric-val mono', style: { fontSize: '11px', color: 'var(--mut)' } }, st.endpoint || '—')
-        ),
-        h('div', { class: 'hud-metric', style: { textAlign: 'left' } },
-          h('div', { class: 'hud-metric-lbl' }, O.tr('Profile renewals', 'Обновлений профиля')),
-          h('div', { class: 'hud-metric-val', style: { fontSize: '12.5px', color: 'var(--fg)', fontFamily: 'inherit' } }, String(st.rotations || 0))
-        )
-      ),
-      st.error ? h('div', { class: 'err s', style: { marginTop: '4px', lineHeight: '1.4' } }, st.error) :
-        (st.lastMessage ? h('div', { class: 'mut s', style: { marginTop: '4px', lineHeight: '1.4' } }, st.lastMessage) : null),
-      h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } },
-        h('button', { class: 'btn pri grow', disabled: !!st.rotating, onclick: () => {
-          O.toast(O.tr('Generating a fresh AmneziaWG profile...', 'Создаём новый профиль AmneziaWG...'), 3000);
-          O.native.warpRotate(S.sid || '');
-        } }, O.icon('refresh'), st.rotating ? O.tr('Renewing...', 'Обновление...') : O.tr('Change IP', 'Сменить IP')),
-        h('button', { class: 'btn grow', onclick: () => {
-          O.toast(O.tr('Checking current IP...', 'Проверяем IP...'), 1600);
-          O.native.warpRefreshGeo();
-        } }, O.icon('globe'), O.tr('Check IP', 'Проверить IP'))
-      )
-    );
-    body.append(statusCard);
-
-    body.append(h('div', { class: 'settings-section-title' }, O.tr('Tunnel', 'Туннель')));
-    const mainCard = h('div', { class: 'settings-card' });
-    mainCard.append(
-      O.toggleRow('shield', 'AmneziaWG', O.tr('Built-in non-root WARP tunnel', 'Встроенный нерутовый WARP-туннель'), enabled, v => {
-        O.native.warpSetConfig({ mode: v ? 'amnezia' : 'direct' });
-        O.toast(v ? O.tr('Connecting...', 'Подключение...') : O.tr('Tunnel disabled', 'Туннель отключён'), 1800);
-      }),
-      O.toggleRow('zap', O.tr('Auto-renew on quota / 429', 'Авто-обновление при квоте / 429'), O.tr('Generate a new profile and continue automatically', 'Создать новый профиль и продолжить автоматически'), st.autoRotate !== false, v => {
-        O.native.warpSetConfig({ autoRotate: v });
-      })
-    );
-    body.append(mainCard);
-
-    body.append(h('div', { class: 'settings-section-title' }, O.tr('How it works', 'Как это работает')));
-    body.append(h('div', { class: 'note', style: { lineHeight: '1.55' } },
-      O.tr(
-        'The profile (keys, endpoint, obfuscation) is generated on demand and the previous one is deleted. Renewing registers a new WARP identity, so the exit IP changes.',
-        'Профиль (ключи, endpoint, обфускация) создаётся по запросу, старый удаляется. Обновление регистрирует новую личность WARP, поэтому выходной IP меняется.'
-      )));
-  };
-
-  paint();
-  s = sub(O.tr('AmneziaWG', 'AmneziaWG'), body, { full: true });
-  if (O.native && O.native.warpRefreshGeo) O.native.warpRefreshGeo();
-
-  if (!O._warpListenerBound) {
-    O._warpListenerBound = true;
-    O.on('warp', d => {
-      if (!d) return;
-      if (O._warpActivePaint) O._warpActivePaint(d);
-    });
-  }
-  O._warpActivePaint = nextSt => {
-    st = nextSt;
-    if (s && s.root && s.root.isConnected) paint();
-  };
-}
-O.openWarpSettings = openWarpSettings;
 
 })();
 

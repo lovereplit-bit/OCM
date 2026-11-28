@@ -100,10 +100,6 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WarpManager.init(this)
-        WarpManager.setOnChange { json ->
-            try { emit("warp", JSONObject(json)) } catch (_: Exception) {}
-        }
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.setFlags(
@@ -295,7 +291,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        WarpManager.setOnChange(null)
         ui.removeCallbacksAndMessages(null)
         Net.sseStop()
         web.destroy()
@@ -601,17 +596,6 @@ class MainActivity : ComponentActivity() {
             try {
                 val raw = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
                     ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "file.md"
-                if (kind == "wgconf") {
-                    val bytes = contentResolver.openInputStream(uri)!!.use { it.readBytes() }
-                    if (bytes.size > 131_072) {
-                        emit("picked_wg", JSONObject().put("ok", false).put("message", "Config file too large"))
-                        return@thread
-                    }
-                    val text = String(bytes, Charsets.UTF_8)
-                    val res = WarpManager.importWgConfig(this, raw.removeSuffix(".conf"), text)
-                    emit("picked_wg", JSONObject(res))
-                    return@thread
-                }
                 var name = raw.replace(Regex("[^A-Za-z0-9._-]"), "_")
                 val cfg = File(Runtime.home(this, uid()), ".config/opencode")
                 val dest = when (kind) {
@@ -1244,36 +1228,6 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun isOnline(): Boolean {
             return Runtime.isOnline(this@MainActivity)
         }
-
-        // --- WARP / WireGuard / Proxy Tunnel ---
-        @JavascriptInterface fun warpStatus(): String = WarpManager.statusJson()
-
-        @JavascriptInterface fun warpRefreshGeo() {
-            thread(name = "warp-geo") { WarpManager.refreshGeo(this@MainActivity) }
-        }
-
-        @JavascriptInterface fun warpSetConfig(json: String) {
-            WarpManager.applyConfigJson(this@MainActivity, json)
-        }
-
-        @JavascriptInterface fun warpRotate(sessionId: String) {
-            thread(name = "warp-rotate") {
-                val res = WarpManager.rotateNow(this@MainActivity)
-                res.put("sessionID", sessionId)
-                emit("warp_rotated", res)
-            }
-        }
-
-        @JavascriptInterface fun warpClearBurned(): String = WarpManager.clearBurned(this@MainActivity)
-
-        @JavascriptInterface fun warpImportWg(name: String, confText: String): String =
-            WarpManager.importWgConfig(this@MainActivity, name, confText)
-
-        @JavascriptInterface fun warpSelectWg(id: String): String =
-            WarpManager.selectWgConfig(this@MainActivity, id)
-
-        @JavascriptInterface fun warpDeleteWg(id: String): String =
-            WarpManager.deleteWgConfig(this@MainActivity, id)
 
         // --- Media cache / save / share ---
         @JavascriptInterface fun cacheMediaImage(id: String, src: String, filename: String) {

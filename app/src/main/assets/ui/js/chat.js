@@ -2,7 +2,7 @@
 const O=window.OCM,h=O.h,S=O.S,api=O.api,bus=O.bus;
 let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn,nokeyEl,comp,projChip,vcsChip,projTxt,vcsTxt,footerPrompt,chatRoot;
 const msgEls=new Map(),partEls=new Map(),open=new Set(),timers=new Map();
-let atts=[],pathAtts=[],mentions=[],stick=true,revKey='',trail=[],lastModelKey='',wdNudges=0,pendingResumeSid='',lastAutoRotateAt=0,warpWaiter=null;
+let atts=[],pathAtts=[],mentions=[],stick=true,revKey='',trail=[],lastModelKey='',wdNudges=0;
 O.rel=p=>{p=String(p||'');return S.dir&&p.startsWith(S.dir+'/')?p.slice(S.dir.length+1):p};
 const cur=()=>S.sessions.find(x=>x.id===S.sid)||O.child(S.sid);
 const modelStr=()=>S.model?S.model.providerID+'/'+S.model.modelID:undefined;
@@ -75,41 +75,10 @@ O.chatInit=root=>{
   },5000);
   bus.on('meta',updateChips);bus.on('conn',updateChips);
   O.on('picked_path',d=>{if(!d)return;if(!d.ok){O.toast(d.error||O.tr('Could not attach file','Не удалось прикрепить файл'),3500);return}O.attachPath(d.path,d.name);O.toast(O.tr('Attached: ','Прикреплено: ')+(d.name||O.basename(d.path)),1800)});
-  O.on('warp_rotated',async d=>{
-    if(!d)return;
-    if(warpWaiter){const fn=warpWaiter;warpWaiter=null;fn(d);return}
-    const loc=[d.city,d.country].filter(Boolean).join(', ');
-    if(d.ok){
-      O.toast(O.tr('New IP: ','Новый IP: ')+(d.ip||'WARP')+(loc?(' ('+loc+')'):''),3000);
-      const targetSid=pendingResumeSid||d.sessionID||'';
-      pendingResumeSid='';
-      if(targetSid&&targetSid===S.sid&&S.model&&!busy()){
-        try{
-          await api('POST','/session/'+targetSid+'/prompt_async',{
-            messageID:O.mid(),agent:S.agent,model:S.model,variant:S.variant||undefined,
-            parts:[{type:'text',synthetic:true,text:'The previous IP/quota limit has cleared after switching exit IP via WARP. Continue cleanly from where you left off without repeating completed work.'}]
-          },{timeout:30000});
-        }catch(_){}
-      }
-    }else if(pendingResumeSid||d.sessionID){
-      pendingResumeSid='';
-      O.toast(d.message||O.tr('WARP IP rotation failed','Не удалось сменить IP через WARP'),3500);
-    }
-  });
   bus.on('serror',p=>{if(p&&(!p.sessionID||p.sessionID===S.sid)){const e=p.error;const t=e&&(e.data&&e.data.message||e.name);if(t&&e.name!=='MessageAbortedError'){
     if(/quota|usage.?limit|rate.?limit|limit\s+reached|insufficient|exceeded|credit|balance|funds|\b429\b/i.test(String(t))){
-      const wst=O.native&&O.native.warpStatus?O.native.warpStatus():null;
-      const now=Date.now();
-      if(wst&&wst.autoRotate&&(wst.enabled||wst.autoFallback)&&!wst.rotating&&(now-lastAutoRotateAt>5000)){
-        lastAutoRotateAt=now;
-        pendingResumeSid=p.sessionID||S.sid||'';
-        O.notifyLimit(O.tr('Rotating IP via WARP','Смена IP через WARP'),O.tr('Quota reached, switching IP and resuming...','Лимит квоты — меняем IP через WARP и продолжаем...'));
-        O.toast(O.tr('Quota limit reached — rotating WARP IP...','Лимит квоты — меняем IP через WARP...'),3200);
-        if(O.native&&O.native.warpRotate)O.native.warpRotate(pendingResumeSid);
-      }else{
-        O.notifyLimit(O.tr('Limit Reached','Лимит исчерпан'),O.tr('Free quota limit reached.','Бесплатные лимиты закончились.'));
-        O.showQuotaAccountModal(t);
-      }
+      O.notifyLimit(O.tr('Limit Reached','Лимит исчерпан'),O.tr('Free quota limit reached.','Бесплатные лимиты закончились.'));
+      O.showQuotaAccountModal(t);
     }
     else O.toast(t,4000)}}});
   O.on('voice',d=>{if(d&&d.text){ta.value=(ta.value?ta.value+' ':'')+d.text;onInput();ta.focus()}});
@@ -568,20 +537,6 @@ O.showQuotaAccountModal=msg=>{
         'Вы используете общую квоту без авторизации, которая временно исчерпана.\n\nВойдите через Google или GitHub, чтобы получить персональную бесплатную квоту OpenCode, либо подключите собственный API ключ.'
       )
     ),
-    h('button',{class:'btn pri wide',style:{marginBottom:'10px'},onclick:()=>{
-      s.close();
-      const wst=O.native&&O.native.warpStatus?O.native.warpStatus():{};
-      if((wst.enabled||wst.autoFallback)&&O.warpRotateAndRetry){
-        O.warpRotateAndRetry(S.sid);
-      }else if(O.openWarpSettings){
-        O.openWarpSettings();
-      }
-    }},O.icon('refresh'),(()=>{
-      const wst=O.native&&O.native.warpStatus?O.native.warpStatus():{};
-      return (wst.enabled||wst.autoFallback)
-        ?O.tr('Rotate IP via WARP & Retry','Сменить IP через WARP и повторить')
-        :O.tr('Bypass Limit with WARP / Proxy','Обойти лимит через WARP / Proxy');
-    })()),
     h('button',{class:'btn wide',style:{marginBottom:'10px'},onclick:()=>{s.close();O.openAccount()}},O.icon('user'),O.tr('Sign in with Google / GitHub','Войти через Google / GitHub')),
     h('button',{class:'btn wide',style:{marginBottom:'10px'},onclick:()=>{s.close();O.openConnect()}},O.icon('key'),O.tr('Connect own API key','Подключить свой API ключ')),
     h('button',{class:'btn wide',onclick:()=>s.close()},O.tr('Later','Позже'))
