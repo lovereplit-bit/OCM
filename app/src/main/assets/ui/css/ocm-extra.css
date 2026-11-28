@@ -75,3 +75,6 @@
 .sess-row.on .sess-ic { color: var(--fg); }
 .sess-ic { width: 22px; display: inline-grid; place-items: center; flex: none; color: var(--mut); }
 .sess-main { align-items: center; gap: 12px; }
+
+/* empty line inside sub-screens */
+.empty-line { margin: 0 0 14px; padding: 14px 16px; border: 1px dashed var(--line); border-radius: 14px; color: var(--mut); font-size: 13px; text-align: center; }

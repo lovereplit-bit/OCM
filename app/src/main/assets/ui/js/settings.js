@@ -147,18 +147,47 @@ O.openSettings=()=>{
 // ---- agents / rules upload ----
 function openAgents(){
   if(O.updateReadmeForModel) O.updateReadmeForModel();
-  const list=h('div');
-  const up=(t,sbt,kind,dir)=>O.listRow('up',t,sbt,null,()=>OC.pickFile(kind,dir||''));
-  const s=sub('Агенты и правила',h('div',null,
-    O.listRow('doc','Инструкции и README (AGENTS.md)','Текущие инструкции и джейлбрейк для активной модели',null,()=>editFile(CFG+'/AGENTS.md','Инструкции и README (AGENTS.md)')),
-    O.listRow('edit','Глобальный README.md','Текущие инструкции и джейлбрейк в README.md',null,()=>editFile(CFG+'/README.md','Глобальный README.md')),
-    up('Глобальные правила (AGENTS.md)','Выберите файл — действует для всех проектов','rules'),
-    up('Правила проекта (AGENTS.md)','Сохраняются в текущую папку','project',S.dir),
-    up('Файл навыка (.md)','Добавляет навык для агента','skill'),
-    up('Файл агента (.md)','Добавляется в список ваших агентов','agent'),up('Файл команды (.md)','Добавляет /команду','command'),list));
-  const draw=()=>{list.textContent='';[['skills','Навыки'],['agents','Агенты'],['commands','Команды']].forEach(([d,t])=>{const r=O.native.ls(CFG+'/'+d);if(r.items&&r.items.length){list.append(h('div',{class:'grp'},t));
-    r.items.filter(x=>!x.dir).forEach(x=>list.append(O.listRow('doc',x.name,'',h('button',{class:'ibtn s',onclick:async e=>{e.stopPropagation();if(await O.confirm('Удалить '+x.name+'?','','Удалить',true)){O.native.fs('delete',CFG+'/'+d+'/'+x.name);draw();O.loadMeta()}}},O.icon('trash')),()=>editFile(CFG+'/'+d+'/'+x.name,x.name))))}})};
-  draw();O.on('picked',()=>{if(s.root.isConnected)draw()})}
+  const T=t=>h('div',{class:'settings-section-title'},t);
+  const card=(...rows)=>h('div',{class:'settings-card'},...rows);
+  const up=(t,sbt,kind,dir)=>O.listRow('up',t,sbt,O.icon('chevR'),()=>OC.pickFile(kind,dir||''));
+  const lists=h('div');
+  const body=h('div',null,
+    T('Инструкции'),
+    card(
+      O.listRow('doc','AGENTS.md','Инструкции для активной модели',O.icon('chevR'),()=>editFile(CFG+'/AGENTS.md','AGENTS.md')),
+      O.listRow('edit','README.md','Копия инструкций для агента',O.icon('chevR'),()=>editFile(CFG+'/README.md','README.md'))),
+    T('Добавить файл'),
+    card(
+      up('Глобальные правила','AGENTS.md, действует во всех проектах','rules'),
+      up('Правила проекта','AGENTS.md в текущей папке','project',S.dir),
+      up('Навык','Файл .md с описанием навыка','skill'),
+      up('Агент','Файл .md, появится в списке агентов','agent'),
+      up('Команда','Файл .md, появится как /команда','command')),
+    lists);
+  const s=sub('Агенты и правила',body);
+  const KINDS=[['skills','Навыки','Загруженных навыков пока нет'],['agents','Агенты','Своих агентов пока нет'],['commands','Команды','Своих команд пока нет']];
+  const draw=()=>{
+    lists.textContent='';
+    KINDS.forEach(([d,t,empty])=>{
+      const r=O.native.ls(CFG+'/'+d);
+      const items=(r&&r.items)||[];
+      lists.append(T(t));
+      if(!items.length){lists.append(h('div',{class:'empty-line'},empty));return}
+      const rows=items.map(x=>{
+        // a skill can be a folder with SKILL.md: open that file, no delete (built-in skills are rewritten at start)
+        if(x.dir){
+          const f=CFG+'/'+d+'/'+x.name+'/SKILL.md';
+          return O.listRow('doc',x.name,'Папка навыка',O.icon('chevR'),()=>editFile(f,x.name));
+        }
+        const del=h('button',{class:'ibtn s',onclick:async e=>{e.stopPropagation();if(await O.confirm('Удалить '+x.name+'?','','Удалить',true)){O.native.fs('delete',CFG+'/'+d+'/'+x.name);draw();O.loadMeta()}}},O.icon('trash'));
+        return O.listRow('doc',x.name,'',del,()=>editFile(CFG+'/'+d+'/'+x.name,x.name));
+      });
+      lists.append(card(...rows));
+    });
+  };
+  draw();
+  O.on('picked',()=>{if(s.root.isConnected)draw()});
+}
 function editFile(path,title){const r=O.native.readText(path);const ta=h('textarea',{class:'mono',rows:18});ta.value=r.ok?r.text:'';
   const s=O.sheet(title,h('div',null,ta,h('button',{class:'btn pri wide',style:{marginTop:'8px'},onclick:()=>{const w=O.native.fs('mkdir',O.dirname(path));const x=O.native.writeText(path,ta.value);if(x.ok){O.toast('Сохранено',1200);s.close();O.loadMeta()}else O.toast(x.err||'Не удалось')}},'Сохранить')),{full:true})}
 
@@ -847,10 +876,10 @@ function openJailbreaks(){
     const filtered=all.filter(j=>!q||(j.title||'').toLowerCase().includes(q)||(j.desc||'').toLowerCase().includes(q));
 
     if(!filtered.length){
-      list.append(h('div',{class:'mut',style:{padding:'24px 16px',textAlign:'center'}},
+      list.append(h('div',{class:'empty-line'},
         q
           ? O.tr('No jailbreaks found for this query.','Джейлбрейки по запросу не найдены.')
-          : O.tr('No community jailbreaks yet. Tap «Publish Custom Jailbreak» below.','В каталоге сообщества пока нет джейлбрейков. Нажмите «Опубликовать свой джейлбрейк» ниже, чтобы добавить его для всех.')
+          : O.tr('No community jailbreaks yet. Tap «Publish Custom Jailbreak» below.','В каталоге пока нет джейлбрейков. Добавьте свой кнопкой ниже.')
       ));
     }else{
       filtered.forEach(jb=>{
@@ -1047,18 +1076,15 @@ function openJailbreaks(){
     }
   };
 
-  const uploadBtn=h('button',{class:'btn pri wide',style:{marginTop:'16px'},onclick:()=>{openUploadJailbreakModal(()=>{draw()})}},
+  const uploadBtn=h('button',{class:'btn wide',style:{marginTop:'12px'},onclick:()=>{openUploadJailbreakModal(()=>{draw()})}},
     O.icon('plus'),O.tr('Upload Custom Jailbreak','Опубликовать свой джейлбрейк'));
 
   const syncRow=h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',padding:'6px 2px'}},
-    h('div',{class:'mut s'},'Облачный каталог сообщества: для всех пользователей'),
-    h('div',{style:{display:'flex',gap:'8px'}},
-      h('button',{class:'btn sm',type:'button',onclick:async()=>{O.toast('Синхронизация...');await syncCloud();O.toast('Синхронизировано',1200)}},O.icon('refresh'),'Обновить')
-    )
+    h('div',{class:'mut s'},'Общий каталог пресетов: виден всем пользователям'),
+    h('button',{class:'ibtn s',type:'button',title:'Обновить',onclick:async()=>{O.toast('Синхронизация...');await syncCloud();O.toast('Синхронизировано',1200)}},O.icon('refresh'))
   );
 
   body.append(
-    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Community jailbreaks are available to all users across all devices. Enable presets to apply them to your chat models.','Общий каталог пресетов сообщества: все загруженные джейлбрейки видны всем пользователям на любых телефонах.')),
     syncRow,
     searchInp,
     list,
@@ -1235,7 +1261,7 @@ function openCustomPlugins(){
     const enabledIds=new Set(O.store.get('enabled_plugins',[]));
 
     if(!all.length){
-      list.append(h('div',{class:'mut',style:{padding:'24px 16px',textAlign:'center'}},'В каталоге сообщества пока нет плагинов. Нажмите «Опубликовать плагин» ниже, чтобы добавить его для всех.'));
+      list.append(h('div',{class:'empty-line'},'В каталоге пока нет плагинов. Добавьте свой кнопкой ниже.'));
     }else{
       all.forEach(p=>{
         const isEnabled=enabledIds.has(p.id);
@@ -1291,18 +1317,15 @@ function openCustomPlugins(){
     }
   };
 
-  const addBtn=h('button',{class:'btn pri wide',style:{marginTop:'16px'},onclick:()=>{openUploadPluginModal(()=>{draw()})}},
+  const addBtn=h('button',{class:'btn wide',style:{marginTop:'12px'},onclick:()=>{openUploadPluginModal(()=>{draw()})}},
     O.icon('plus'),O.tr('Upload Custom Plugin','Опубликовать свой плагин'));
 
   const syncRow=h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',padding:'6px 2px'}},
-    h('div',{class:'mut s'},'Облачный каталог сообщества и авто-бэкап'),
-    h('div',{style:{display:'flex',gap:'8px'}},
-      h('button',{class:'btn sm',type:'button',onclick:async()=>{O.toast('Синхронизация...');await syncCloudPlugins();O.toast('Синхронизировано',1200)}},O.icon('refresh'),'Обновить')
-    )
+    h('div',{class:'mut s'},'Общий каталог плагинов, копия хранится на устройстве'),
+    h('button',{class:'ibtn s',type:'button',title:'Обновить',onclick:async()=>{O.toast('Синхронизация...');await syncCloudPlugins();O.toast('Синхронизировано',1200)}},O.icon('refresh'))
   );
 
   body.append(
-    h('div',{class:'note',style:{marginBottom:'12px'}},O.tr('Community plugins are shared with all users and automatically backed up across app updates.','Плагины автоматически сохраняются на диск и восстанавливаются при обновлениях приложения.')),
     syncRow,
     list,
     addBtn);

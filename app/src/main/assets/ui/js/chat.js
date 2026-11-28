@@ -331,7 +331,22 @@ function metaUpdate(el,m){
     else if(i.error)meta.append(h('span',{class:'warn'},'прервано'))}
   meta.append(h('span',{class:'grow'}),h('button',{class:'ibtn s',onclick:()=>msgActions(m)},O.icon('dots')))}
 function msgText(m){return m.parts.filter(p=>p.type==='text'&&!p.synthetic).map(p=>p.text).join('\n')}
-function msgActions(m){O.actions(m.info.role==='user'?'Сообщение':'Ответ',[
+// Put a sent user message back into the composer; attached paths return as chips, not as text.
+function reuseUserText(m){
+  const raw=msgText(m),mm=PATH_RE.exec(raw);
+  const body=mm?raw.slice(0,mm.index).trim():raw;
+  if(mm)mm[1].split('\n').map(x=>x.replace(/^- /,'').trim()).filter(Boolean).forEach(pth=>O.attachPath(pth,O.basename(pth)));
+  ta.value=body;onInput();ta.focus();
+}
+function prevUserMsg(m){
+  const list=O.visibleMsgs(S.sid),i=list.findIndex(x=>x.info.id===m.info.id);
+  for(let k=i-1;k>=0;k--)if(list[k].info.role==='user')return list[k];
+  return null;
+}
+function msgActions(m){
+  const isUser=m.info.role==='user',src=isUser?m:prevUserMsg(m);
+  O.actions(isUser?'Сообщение':'Ответ',[
+  src?{label:isUser?'Вставить в поле ввода':'Повторить запрос',sub:isUser?'Изменить и отправить заново':'Вернуть вопрос в поле ввода',icon:isUser?'edit':'refresh',fn:()=>reuseUserText(src)}:null,
   {label:'Копировать текст',icon:'copy',fn:()=>O.native.copy(msgText(m))},
   {label:'Экспорт сессии в Markdown',icon:'doc',fn:()=>exportSessionMd()},
   m.info.role==='user'?{label:'Отменить отсюда',sub:'Откатить это сообщение и всё после него',icon:'undo',fn:()=>revertTo(m)}:null,
