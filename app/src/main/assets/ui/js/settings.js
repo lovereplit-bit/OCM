@@ -18,13 +18,46 @@ O.openSettings=()=>{
   const searchBar=h('div',{class:'settings-search'},O.icon('search'),searchInp,
     h('button',{class:'ibtn s',onclick:()=>{searchInp.value='';applyFilter('');searchBar.classList.remove('hide');searchInp.focus()}},O.icon('x')));
   body.append(searchBar,noRes);
-  let lastTop=0;
+  let lastTop=s.body.scrollTop;
+  let scrollDirection=0;
+  let directionDistance=0;
+  let searchVisible=true;
+  searchBar.style.transition='transform .18s ease, opacity .18s ease';
+  searchBar.style.willChange='transform';
+  const setSearchVisible=visible=>{
+    if(searchVisible===visible)return;
+    searchVisible=visible;
+    searchBar.style.transform=visible?'translate3d(0,0,0)':'translate3d(0,-110%,0)';
+    searchBar.style.opacity=visible?'1':'0';
+    searchBar.style.pointerEvents=visible?'':'none';
+  };
   s.body.addEventListener('scroll',()=>{
     const top=s.body.scrollTop;
-    if(searchInp.value.trim()){lastTop=top;searchBar.classList.remove('hide');return}
-    if(top>lastTop+6&&top>60)searchBar.classList.add('hide');
-    else if(top<lastTop-6)searchBar.classList.remove('hide');
+    if(searchInp.value.trim()){
+      lastTop=top;
+      scrollDirection=0;
+      directionDistance=0;
+      setSearchVisible(true);
+      return;
+    }
+    const delta=top-lastTop;
     lastTop=top;
+    if(top<=60){
+      scrollDirection=0;
+      directionDistance=0;
+      setSearchVisible(true);
+      return;
+    }
+    if(Math.abs(delta)<2)return;
+    const nextDirection=delta>0?1:-1;
+    if(nextDirection!==scrollDirection){
+      scrollDirection=nextDirection;
+      directionDistance=0;
+    }
+    directionDistance+=Math.abs(delta);
+    if(directionDistance<20)return;
+    setSearchVisible(nextDirection<0);
+    directionDistance=0;
   },{passive:true});
   const applyFilter=q=>{
     q=(q||'').trim().toLowerCase();
