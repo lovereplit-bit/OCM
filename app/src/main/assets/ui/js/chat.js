@@ -187,7 +187,6 @@ function countOps(ops){
 function getMsgDiff(m){
   let patchA=0,patchD=0,patchFound=false;
   let toolA=0,toolD=0,toolFound=false;
-  let textA=0,textD=0,textFound=false;
   for(const p of m.parts){
     if(p.type==='patch'){
       patchFound=true;
@@ -213,43 +212,43 @@ function getMsgDiff(m){
       else if((p.tool==='patch'||p.tool==='apply_patch')&&typeof i.patch==='string'){const c=countDiffLines(i.patch);toolA+=c.a;toolD+=c.d;counted=true}
       if(counted)toolFound=true;
     }
-    if(p.type==='text'&&p.text){
-      const mMatch=p.text.match(/(?:^|\n)\s*([+]\d+)\s+([-]\d+)\s*(?:$|\n)/);
-      if(mMatch){
-        textA=parseInt(mMatch[1].replace('+',''),10)||0;
-        textD=parseInt(mMatch[2].replace('-',''),10)||0;
-        textFound=true;
-      }
-    }
   }
   if(patchFound&&(patchA>0||patchD>0||!toolFound))return{added:patchA,deleted:patchD,found:patchFound};
   if(toolFound)return{added:toolA,deleted:toolD,found:true};
-  if(textFound)return{added:textA,deleted:textD,found:textFound};
   return{added:0,deleted:0,found:false};
 }
 
-O.showMessageDiff=m=>{
-  const items=[];
-  for(const p of (m&&m.parts)||[]){
-    if(p.type==='patch'){
-      if(typeof p.diff==='string'&&p.diff.trim())items.push({name:(p.files&&p.files[0]&&(p.files[0].file||p.files[0].filename))||'patch',diff:p.diff});
-      else if(Array.isArray(p.files))p.files.forEach(f=>{
-        if(typeof f.before==='string'||typeof f.after==='string')items.push({name:f.file||f.filename||'file',ops:O.diffOps(f.before||'',f.after||'')});
-      });
-    }else if(p.type==='tool'){
-      const st=p.state||{},md=st.metadata||p.metadata||{},i=st.input||{};
-      const diff=md.diff||p.diff;
-      if(typeof diff==='string'&&diff.trim())items.push({name:i.filePath||i.path||i.filename||p.tool||'diff',diff});
-      else if(p.tool==='edit'&&i.oldString!=null)items.push({name:i.filePath||i.path||'edit',ops:O.diffOps(String(i.oldString),String(i.newString||''))});
-      else if(p.tool==='write'&&typeof i.content==='string')items.push({name:i.filePath||i.path||'write',ops:O.diffOps('',String(i.content))});
-      else if((p.tool==='patch'||p.tool==='apply_patch')&&typeof i.patch==='string')items.push({name:i.filePath||'patch',diff:i.patch});
+O.showMessageDiff=async m=>{
+  const collect=parts=>{
+    const items=[];
+    for(const p of parts||[]){
+      if(p.type==='patch'){
+        if(typeof p.diff==='string'&&p.diff.trim())items.push({name:(p.files&&p.files[0]&&(p.files[0].file||p.files[0].filename))||'patch',diff:p.diff});
+        else if(Array.isArray(p.files))p.files.forEach(f=>{
+          if(typeof f.before==='string'||typeof f.after==='string')items.push({name:f.file||f.filename||'file',ops:O.diffOps(f.before||'',f.after||'')});
+          else if(typeof f.additions==='number'||typeof f.deletions==='number')items.push({name:f.file||f.filename||'file',note:(f.additions?'+'+f.additions+' ':'')+(f.deletions?'-'+f.deletions:'')});
+        });
+      }else if(p.type==='tool'){
+        const st=p.state||{},md=st.metadata||p.metadata||{},i=st.input||{};
+        const diff=md.diff||p.diff;
+        if(typeof diff==='string'&&diff.trim())items.push({name:i.filePath||i.path||i.filename||p.tool||'diff',diff});
+        else if(p.tool==='edit'&&i.oldString!=null)items.push({name:i.filePath||i.path||'edit',ops:O.diffOps(String(i.oldString),String(i.newString||''))});
+        else if(p.tool==='write'&&typeof i.content==='string')items.push({name:i.filePath||i.path||'write',ops:O.diffOps('',String(i.content))});
+        else if((p.tool==='patch'||p.tool==='apply_patch')&&typeof i.patch==='string')items.push({name:i.filePath||'patch',diff:i.patch});
+      }
     }
+    return items;
+  };
+  let items=collect(m&&m.parts);
+  if(!items.length&&m&&m.id){
+    try{const r=await api('GET','/session/'+(m.sessionID||S.sid)+'/message/'+m.id);items=collect(r&&r.parts)}catch(e){}
   }
-  if(!items.length){O.toast(O.tr('No code changes in this message','В этом сообщении нет изменений кода'),2500);return}
+  if(!items.length){O.toast(O.tr('Server did not return the diff for this message','Сервер не вернул изменения для этого сообщения'),3000);return}
   const body=h('div');
   items.forEach(it=>{
     body.append(h('div',{class:'diff-file-head'},O.fileIcon(O.basename(it.name)),h('b',null,O.basename(it.name)),h('span',{class:'mut s'},O.dirname(it.name)==='.'?'':O.dirname(it.name))));
-    body.append(it.diff!=null?O.unifiedEl(it.diff):O.diffEl(it.ops,3));
+    if(it.note)body.append(h('div',{class:'mut s',style:{padding:'2px 2px 8px'}},it.note));
+    else body.append(it.diff!=null?O.unifiedEl(it.diff):O.diffEl(it.ops,3));
   });
   O.sheet(O.tr('Changes in this message','Изменения в этом сообщении'),body,{full:true});
 };
