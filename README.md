@@ -20,7 +20,7 @@ Download `OpenCode-<version>-<build>.apk` from
 - Works immediately: free models respond without login
 - OTA updates: **Settings > Updates**
 
-Current version: **2.2.1** (OpenCode core **1.x** line).
+Current version: **2.3.0** (OpenCode core **1.x** line).
 
 ### What's inside
 
@@ -70,10 +70,17 @@ Logout anytime: Settings > OpenCode Account.
 ### WARP & Bypass (opencode-infinite, HTTP 429 bypass)
 
 To bypass IP rate limits and HTTP 429 quota errors, the app integrates **WARP & Bypass** inspired by `opencode-infinite`:
-- Non-root **Cloudflare WARP** (`bepass-org/warp-plus` bundled as `libwarp.so`) routed via local `ProxyGate` (`127.0.0.1:18120`) for both `opencode` runtime and WebView `extHttp`
-- Automatic **HTTP 429 / quota error capture**: rotates the exit IP and avoids recently burned IPs (24h memory)
-- **Reserve fallback chain** if native WARP is blocked: `WARP Scan`, `WARP-in-WARP (Gool)`, imported `WireGuard .conf`, `HTTP/HTTPS/SOCKS5` proxy pool, and `Psiphon (--cfon)`
-- Live status in **Settings > WARP & Bypass**: displays current exit **IP**, **City**, and **Country**, with manual **Change IP (WARP)** rotation and `.conf` import
+- Non-root **AmneziaWG / Cloudflare WARP** (`bropines/awg-wireproxy` bundled as `libawg.so`) with on-demand profiles, routed through a local SOCKS5 upstream for both `opencode` runtime and WebView `extHttp`
+- A **fresh profile per connect** (keys, endpoint, obfuscation); the old profile is deleted and a new WARP identity is registered on rotation
+- Automatic **HTTP 429 / quota error capture**: renews the profile, changes the exit IP, and resumes the chat
+- Live status in **Settings > AmneziaWG**: current exit **IP**, **Location**, **Endpoint**, and manual **Change IP**
+
+### Attachments, images & terminal
+
+- Attach a file from the phone picker by **real path** (no base64 upload); removable chips sit above the composer.
+- Images are generated only on explicit request; charts and diagrams are rendered by code and attached by path.
+- The boot screen shows a rotating ASCII Earth while the Linux environment unpacks.
+- Agent watchdog: after 8 minutes of silence a banner offers **Wait** or **Interrupt**.
 
 ### Agents
 

@@ -19,6 +19,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { onPicked(it) }
+    private val pathPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { onPathPicked(it) }
     private val notifPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { emit("perms", JSONObject()) }
     private val chooser = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         fileCb?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(r.resultCode, r.data)); fileCb = null
@@ -631,6 +633,84 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ---------- attach a file by real path (no base64 upload) ----------
+
+    private fun queryDisplayName(uri: Uri): String? =
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0) else null }
+
+    private fun querySize(uri: Uri): Long =
+        contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
+            ?.use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else -1L } ?: -1L
+
+    private fun externalGuestPath(f: File): String? {
+        val root = Environment.getExternalStorageDirectory().absolutePath
+        val p = f.absolutePath
+        return when {
+            p == root -> "/sdcard"
+            p.startsWith("$root/") -> "/sdcard" + p.removePrefix(root)
+            else -> null
+        }
+    }
+
+    private fun resolveDocumentPath(uri: Uri): File? {
+        if (uri.scheme == "file") return uri.path?.let { File(it) }
+        return try {
+            val id = DocumentsContract.getDocumentId(uri)
+            when {
+                uri.authority == "com.android.externalstorage.documents" -> {
+                    val parts = id.split(":", limit = 2)
+                    if (parts.size != 2) return null
+                    val base = if (parts[0].equals("primary", true)) Environment.getExternalStorageDirectory()
+                    else File("/storage/${parts[0]}")
+                    File(base, parts[1])
+                }
+                id.startsWith("raw:") -> File(id.removePrefix("raw:"))
+                else -> null
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private fun uniqueDest(dir: File, name: String): File {
+        val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "file" }
+        var f = File(dir, safe)
+        if (!f.exists()) return f
+        val dot = safe.lastIndexOf('.')
+        val base = if (dot > 0) safe.substring(0, dot) else safe
+        val ext = if (dot > 0) safe.substring(dot) else ""
+        var i = 1
+        while (true) { f = File(dir, "$base-$i$ext"); if (!f.exists()) return f; i++ }
+    }
+
+    private fun onPathPicked(uri: Uri?) {
+        if (uri == null) return
+        thread {
+            try {
+                val name = queryDisplayName(uri) ?: "file"
+                val size = querySize(uri)
+                if (size > 200L * 1024 * 1024) {
+                    emit("picked_path", JSONObject().put("ok", false).put("error", "File is larger than 200 MB"))
+                    return@thread
+                }
+                val real = resolveDocumentPath(uri)
+                val guest = real?.let { externalGuestPath(it) }
+                if (guest != null && real != null && real.canRead()) {
+                    emit("picked_path", JSONObject().put("ok", true).put("path", guest)
+                        .put("name", name).put("size", size).put("copied", false))
+                    return@thread
+                }
+                val dir = Runtime.hostPath(this, uid(), "/root/attachments").apply { mkdirs() }
+                val dest = uniqueDest(dir, name)
+                contentResolver.openInputStream(uri)!!.use { i -> dest.outputStream().use { o -> i.copyTo(o) } }
+                emit("picked_path", JSONObject().put("ok", true)
+                    .put("path", "/root/attachments/${dest.name}")
+                    .put("name", dest.name).put("size", dest.length()).put("copied", true))
+            } catch (e: Exception) {
+                emit("picked_path", JSONObject().put("ok", false).put("error", e.message ?: "failed"))
+            }
+        }
+    }
+
     // ---------- OpenApp & Web Preview helpers ----------
 
     private fun checkOpenAppTrigger() {
@@ -1133,6 +1213,10 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface fun pickFile(kind: String, dir: String) {
             runOnUiThread { pendingKind = kind; pendingDir = dir; picker.launch(arrayOf("*/*")) }
+        }
+
+        @JavascriptInterface fun pickPath() {
+            runOnUiThread { pathPicker.launch(arrayOf("*/*")) }
         }
 
         // --- clipboard / share / links ---

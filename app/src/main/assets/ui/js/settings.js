@@ -12,6 +12,36 @@ O.openSettings=()=>{
   const st=O.native.state(),fl=st.flags||{};
   const body=h('div');
   const s=O.sheet(O.tr('Settings','Настройки'),body,{hud:true});
+
+  const searchInp=h('input',{class:'settings-search-inp',type:'search',placeholder:O.tr('Search settings...','Поиск по настройкам...'),oninput:()=>applyFilter(searchInp.value)});
+  const noRes=h('div',{class:'settings-no-results hide'},O.icon('search'),h('span',null,O.tr('Nothing found','Ничего не найдено')));
+  const searchBar=h('div',{class:'settings-search'},O.icon('search'),searchInp,
+    h('button',{class:'ibtn s',onclick:()=>{searchInp.value='';applyFilter('');searchInp.focus()}},O.icon('x')));
+  body.append(searchBar,noRes);
+  const applyFilter=q=>{
+    q=(q||'').trim().toLowerCase();
+    O.$$('.settings-card',body).forEach(card=>{
+      const rows=O.$$('.settings-row',card);
+      if(rows.length){
+        let any=false;
+        rows.forEach(row=>{
+          const t=(row.textContent+' '+(row.dataset.kw||'')).toLowerCase();
+          const hit=!q||t.includes(q);
+          row.classList.toggle('hide',!hit);
+          if(hit)any=true;
+        });
+        card.classList.toggle('hide',!!q&&!any);
+      }else{
+        card.classList.toggle('hide',!!q&&!card.textContent.toLowerCase().includes(q));
+      }
+    });
+    O.$$('.settings-section-title',body).forEach(title=>{
+      let n=title.nextElementSibling,vis=false;
+      while(n&&!n.classList.contains('settings-section-title')){if(!n.classList.contains('hide')&&!n.classList.contains('settings-no-results'))vis=true;n=n.nextElementSibling}
+      title.classList.toggle('hide',!!q&&!vis);
+    });
+    noRes.classList.toggle('hide',!q||O.$$('.settings-card:not(.hide)',body).length>0);
+  };
   
   // 1. Profile & Account
   body.append(h('div',{class:'settings-section-title'},O.tr('Profile & Account','Профиль и аккаунт')));
@@ -89,13 +119,15 @@ O.openSettings=()=>{
   const warpSt=(O.native&&O.native.warpStatus)?O.native.warpStatus():{enabled:false,mode:'direct'};
   const warpLoc=[warpSt.city,warpSt.country].filter(Boolean).join(', ');
   const warpSub=warpSt.enabled
-    ?([String(warpSt.activeMode||warpSt.mode||'WARP').toUpperCase(),warpSt.ip,warpLoc].filter(Boolean).join(' · '))
-    :O.tr('WARP, WireGuard & proxy IP rotation (Bypass 429)','WARP, WireGuard и прокси-ротация IP (обход лимитов)');
+    ?(['AmneziaWG',warpSt.ip,warpLoc].filter(Boolean).join(' · '))
+    :O.tr('Built-in WARP tunnel with fresh profiles','Встроенный WARP-туннель с новыми профилями');
   const jbCard=h('div',{class:'settings-card'});
+  const warpRow=O.listRow('zap','AmneziaWG',warpSub,O.icon('chevR'),()=>openWarpSettings());
+  warpRow.dataset.kw='warp vpn amnezia туннель обход ip cloudflare';
   jbCard.append(
     O.listRow('shield',O.tr('Custom Jailbreaks','Пользовательские джейлбрейки'),O.tr('Presets for Zen models, upload & toggle','Пресеты для моделей Zen, загрузка и отключение'),O.icon('chevR'),()=>openJailbreaks()),
     O.listRow('plug',O.tr('Custom Plugins','Пользовательские плагины'),O.tr('Marketplace, upload custom plugins','Каталог и загрузка пользовательских плагинов'),O.icon('chevR'),()=>openCustomPlugins()),
-    O.listRow('zap',O.tr('WARP & Bypass (opencode-infinite)','WARP и обход лимитов'),warpSub,O.icon('chevR'),()=>openWarpSettings())
+    warpRow
   );
   body.append(jbCard);
 
@@ -515,7 +547,7 @@ O.getActiveJailbreak=()=>{
   return jbs[0]||null;
 };
 
-const BASE_SYSTEM_INSTRUCTIONS = `# OpenCode Mobile Environment & Instructions (v2.2.1)
+const BASE_SYSTEM_INSTRUCTIONS = `# OpenCode Mobile Environment & Instructions (v2.3.0)
 
 You are running inside **OpenCode Mobile** directly on native Android (ARM64 / aarch64 architecture).
 You have full access to a complete Linux userspace environment, terminal tools, and native Android integrations.
@@ -547,15 +579,18 @@ You have the built-in skill to preview web projects directly inside OpenCode Mob
 - \`<button data-action="files">Открыть Файлы</button>\`
 - \`<button data-action="term">Терминал</button>\`
 
-## 5. Core Skill: Attaching & Generating Photos (T2I)
-The OpenCode Mobile chat renders inline grayscale image cards with fullscreen zoom, Downloads save, and Android share!
-- If the user asks you to generate a photo or you are a coding/tool model generating an image via the configured Custom API:
-  run \`/usr/local/bin/t2i "<prompt>"\` in bash (or generate a local image file).
-- To attach ANY generated or local photo in chat, output a markdown image link pointing to the absolute path or image URL:
-  \`![Generated image](/path/to/image.png)\`
-  or output a \`MEDIA_SAVED:/path/to/image.png\` marker from your script/command.
+## 5. Images & Attachments
+- Attached files arrive as absolute paths in the message (for example \`@/sdcard/Download/report.pdf\`). Read them directly from disk; never ask the user to upload or re-send the file.
+- Do NOT generate images unless the user explicitly asks for a photo, illustration, chart, diagram, or screenshot.
+- For charts/diagrams, write code that renders a real PNG, then embed it: \`![description](/absolute/path/file.png)\`.
+- Only use \`t2i "<prompt>"\` when the user explicitly wants AI-generated art/photos. Never call it on your own.
 
-## 6. Diff Statistics Reporting (MANDATORY)
+## 6. Command Execution & Timeouts
+- Never let a command hang the session. Wrap slow commands: \`timeout 120 <cmd>\` (300 max unless the user asked for a build).
+- Check exit codes; \`124\` means timeout. Use non-interactive flags, and start servers with \`nohup ... &\`, then poll the port.
+- If there is no output for a long time, kill the process and explain what was tried.
+
+## 7. Diff Statistics Reporting (MANDATORY)
 At the very end of EVERY response, you MUST output a separate line with line additions and deletions:
 +N -M
 (If no files were edited, output: +0 -0)`;
@@ -1406,206 +1441,85 @@ O.warpRotateAndRetry = (sid) => {
 
 function openWarpSettings() {
   const body = h('div');
-  const MODES = [
-    { id: 'warp', label: 'Cloudflare WARP', sub: O.tr('Built-in non-root WARP tunnel (auto-registration)', 'Встроенный нерутовый WARP (авто-регистрация)') },
-    { id: 'warp_scan', label: 'WARP + Scanner', sub: O.tr('Scans clean Cloudflare WARP endpoints if blocked', 'Поиск рабочего WARP endpoint при блокировке') },
-    { id: 'warp_gool', label: 'WARP-in-WARP (Gool)', sub: O.tr('Double-hop Cloudflare tunnel', 'Двойной туннель Cloudflare') },
-    { id: 'wireguard', label: 'WireGuard (.conf)', sub: O.tr('Reserve · Use imported WireGuard .conf profiles', 'Резерв · Импорт и ротация по .conf файлам WireGuard') },
-    { id: 'proxy', label: 'HTTP / SOCKS5 Proxy', sub: O.tr('Reserve · Your HTTP/HTTPS/SOCKS5 proxy pool', 'Резерв · Список ваших прокси и Change-IP URL') },
-    { id: 'cfon', label: 'Psiphon (Reserve)', sub: O.tr('Fallback encrypted tunnel with country selection', 'Резервный обход с выбором страны, если WARP недоступен') },
-    { id: 'direct', label: O.tr('Direct (Disabled)', 'Отключён (Прямой)'), sub: O.tr('No proxy routing', 'Прямое подключение без смены IP') }
-  ];
-  const COUNTRIES = ['DE', 'NL', 'AT', 'US', 'GB', 'FR', 'SE', 'CH', 'FI', 'JP', 'SG'];
-
   let st = (O.native && O.native.warpStatus) ? O.native.warpStatus() : { mode: 'direct', activeMode: 'direct', status: 'idle' };
-  let proxyText = st.proxyList || '';
-  let rotateUrlVal = st.rotateUrl || '';
-  let wgNameVal = '';
-  let wgConfText = '';
   let s = null;
 
   const paint = () => {
     if (s && s.root && !s.root.isConnected) return;
     body.textContent = '';
-    const mode = st.mode || 'direct';
-    const actMode = st.activeMode || 'direct';
+    const enabled = (st.mode || 'direct') !== 'direct';
     const status = st.status || 'idle';
     const dotCls = status === 'connected' ? 'dot ok' : (status === 'error' ? 'dot err' : (status === 'connecting' || status === 'rotating' ? 'dot warn' : 'dot'));
-    const statusLbl = status === 'connected' ? O.tr('Connected', 'Подключён') :
+    const statusLbl = status === 'connected' ? O.tr('Connected', 'Подключено') :
       status === 'connecting' ? O.tr('Connecting...', 'Подключение...') :
-      status === 'rotating' ? O.tr('Rotating IP...', 'Ротация IP...') :
-      status === 'error' ? O.tr('Tunnel Error', 'Ошибка туннеля') : O.tr('Direct / Idle', 'Прямое подключение');
-    const modeObj = MODES.find(m => m.id === actMode) || MODES.find(m => m.id === mode) || MODES[MODES.length - 1];
+      status === 'rotating' ? O.tr('Renewing profile...', 'Обновление профиля...') :
+      status === 'error' ? O.tr('Tunnel error', 'Ошибка туннеля') : O.tr('Disabled', 'Отключено');
     const cityCountry = [st.city, st.country].filter(Boolean).join(', ') || '—';
 
     const statusCard = h('div', { class: 'settings-card', style: { padding: '14px' } },
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' } },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' } },
         h('span', { class: dotCls }),
         h('b', { style: { fontSize: '14.5px', flex: '1' } }, statusLbl),
-        h('span', { class: 'recommended-badge' }, modeObj.label)
+        h('span', { class: 'recommended-badge' }, 'AmneziaWG')
       ),
-      h('div', { class: 'hud-metric-row' },
-        h('div', { class: 'hud-metric', style: { gridColumn: 'span 2', cursor: 'pointer', textAlign: 'left' }, onclick: () => { if (st.ip) O.native.copy(st.ip); } },
-          h('div', { class: 'hud-metric-lbl' }, O.tr('Current Exit IP (tap to copy)', 'Текущий IP (нажмите, чтобы скопировать)')),
-          h('div', { class: 'hud-metric-val', style: { fontSize: '13px', color: 'var(--fg)', wordBreak: 'break-all' } }, st.ip || '—')
+      h('div', { class: 'hud-metric-row', style: { gridTemplateColumns: '1fr 1fr', marginBottom: '8px' } },
+        h('div', { class: 'hud-metric', style: { textAlign: 'left', cursor: st.ip ? 'pointer' : 'default' }, onclick: () => { if (st.ip) O.native.copy(st.ip); } },
+          h('div', { class: 'hud-metric-lbl' }, O.tr('Exit IP', 'Выходной IP')),
+          h('div', { class: 'hud-metric-val', style: { fontSize: '12.5px', color: 'var(--fg)', fontFamily: 'inherit' } }, st.ip || '—')
         ),
-        h('div', { class: 'hud-metric' },
-          h('div', { class: 'hud-metric-lbl' }, O.tr('Node / Rotations', 'Узел / Смены')),
-          h('div', { class: 'hud-metric-val', style: { fontSize: '12.5px', color: 'var(--fg)' } }, (st.colo ? st.colo + ' · ' : '') + (st.rotations || 0))
+        h('div', { class: 'hud-metric', style: { textAlign: 'left' } },
+          h('div', { class: 'hud-metric-lbl' }, O.tr('Location', 'Локация')),
+          h('div', { class: 'hud-metric-val', style: { fontSize: '12.5px', color: 'var(--fg)', fontFamily: 'inherit' } }, cityCountry)
         )
       ),
       h('div', { class: 'hud-metric-row', style: { gridTemplateColumns: '1fr 1fr', marginBottom: '8px' } },
         h('div', { class: 'hud-metric', style: { textAlign: 'left' } },
-          h('div', { class: 'hud-metric-lbl' }, O.tr('City / Country', 'Город / Страна')),
-          h('div', { class: 'hud-metric-val', style: { fontSize: '12.5px', color: 'var(--fg)', fontFamily: 'inherit', fontWeight: '600' } }, cityCountry)
+          h('div', { class: 'hud-metric-lbl' }, O.tr('Endpoint', 'Endpoint')),
+          h('div', { class: 'hud-metric-val mono', style: { fontSize: '11px', color: 'var(--mut)' } }, st.endpoint || '—')
         ),
         h('div', { class: 'hud-metric', style: { textAlign: 'left' } },
-          h('div', { class: 'hud-metric-lbl' }, O.tr('ISP / Burned IPs', 'Провайдер / Сброс IP')),
-          h('div', { class: 'hud-metric-val', style: { fontSize: '12px', color: 'var(--mut)', fontFamily: 'inherit' } }, (st.isp || '—').slice(0, 22) + ' · ' + (st.burnedCount || 0))
+          h('div', { class: 'hud-metric-lbl' }, O.tr('Profile renewals', 'Обновлений профиля')),
+          h('div', { class: 'hud-metric-val', style: { fontSize: '12.5px', color: 'var(--fg)', fontFamily: 'inherit' } }, String(st.rotations || 0))
         )
       ),
       st.error ? h('div', { class: 'err s', style: { marginTop: '4px', lineHeight: '1.4' } }, st.error) :
         (st.lastMessage ? h('div', { class: 'mut s', style: { marginTop: '4px', lineHeight: '1.4' } }, st.lastMessage) : null),
       h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } },
         h('button', { class: 'btn pri grow', disabled: !!st.rotating, onclick: () => {
-          O.toast(O.tr('Changing IP via WARP...', 'Меняем IP через WARP...'), 3000);
+          O.toast(O.tr('Generating a fresh AmneziaWG profile...', 'Создаём новый профиль AmneziaWG...'), 3000);
           O.native.warpRotate(S.sid || '');
-        } }, O.icon('refresh'), st.rotating ? O.tr('Rotating...', 'Смена IP...') : O.tr('Change IP Now', 'Сменить IP')),
+        } }, O.icon('refresh'), st.rotating ? O.tr('Renewing...', 'Обновление...') : O.tr('Change IP', 'Сменить IP')),
         h('button', { class: 'btn grow', onclick: () => {
-          O.toast(O.tr('Checking current IP & geo...', 'Проверяем IP и страну...'), 1600);
+          O.toast(O.tr('Checking current IP...', 'Проверяем IP...'), 1600);
           O.native.warpRefreshGeo();
         } }, O.icon('globe'), O.tr('Check IP', 'Проверить IP'))
       )
     );
     body.append(statusCard);
 
-    body.append(h('div', { class: 'settings-section-title' }, O.tr('Tunnel Mode & Reserve', 'Режим и резерв (если WARP заблокирован)')));
-    const modeList = h('div', { class: 'dock-opts-list', style: { marginBottom: '14px' } });
-    MODES.forEach(m => {
-      const on = mode === m.id;
-      modeList.append(h('button', {
-        class: 'dock-opt-row' + (on ? ' on' : ''),
-        onclick: () => {
-          if (m.id === 'wireguard' && (!st.wgConfigs || !st.wgConfigs.length)) {
-            O.toast(O.tr('Import a WireGuard .conf below first', 'Сначала добавьте WireGuard .conf ниже'), 2500);
-          }
-          if (m.id === 'proxy' && !proxyText.trim()) {
-            O.toast(O.tr('Add proxies below first', 'Сначала добавьте прокси в список ниже'), 2500);
-          }
-          O.native.warpSetConfig({ mode: m.id });
-          O.toast(O.tr('Switching to ', 'Переключение на ') + m.label + '...', 2000);
-        }
-      },
-      h('div', { class: 'dock-opt-indicator' }),
-      h('div', { class: 'dock-opt-content' },
-        h('span', { class: 'dock-opt-label' }, m.label),
-        h('span', { class: 'dock-opt-desc' }, m.sub))));
-    });
-    body.append(modeList);
-
-    body.append(h('div', { class: 'settings-section-title' }, O.tr('Automatic Quota Bypass', 'Авто-обход квоты (opencode-infinite)')));
-    const autoCard = h('div', { class: 'settings-card' });
-    autoCard.append(
-      O.toggleRow('zap', O.tr('Auto-rotate IP on Quota / 429', 'Авто-смена IP при лимите квоты'), O.tr('Catch quota errors, rotate exit IP, and auto-continue chat', 'При ошибке квоты автоматически сменить IP и продолжить ответ'), st.autoRotate !== false, v => {
+    body.append(h('div', { class: 'settings-section-title' }, O.tr('Tunnel', 'Туннель')));
+    const mainCard = h('div', { class: 'settings-card' });
+    mainCard.append(
+      O.toggleRow('shield', 'AmneziaWG', O.tr('Built-in non-root WARP tunnel', 'Встроенный нерутовый WARP-туннель'), enabled, v => {
+        O.native.warpSetConfig({ mode: v ? 'amnezia' : 'direct' });
+        O.toast(v ? O.tr('Connecting...', 'Подключение...') : O.tr('Tunnel disabled', 'Туннель отключён'), 1800);
+      }),
+      O.toggleRow('zap', O.tr('Auto-renew on quota / 429', 'Авто-обновление при квоте / 429'), O.tr('Generate a new profile and continue automatically', 'Создать новый профиль и продолжить автоматически'), st.autoRotate !== false, v => {
         O.native.warpSetConfig({ autoRotate: v });
-      }),
-      O.toggleRow('shield', O.tr('Auto fallback chain', 'Резерв при блокировке WARP'), O.tr('Fall back to WARP Scan -> WireGuard -> Proxy -> Psiphon', 'Автоматически пробовать Scan -> WireGuard -> Proxy -> Psiphon'), st.autoFallback !== false, v => {
-        O.native.warpSetConfig({ autoFallback: v });
-      }),
-      O.listRow('trash', O.tr('Clear Burned IP History', 'Сбросить историю использованных IP'), O.tr('Remembered 24h IPs: ', 'Запомнено за 24 ч: ') + (st.burnedCount || 0), O.icon('chevR'), () => {
-        st = O.native.warpClearBurned();
-        O.toast(O.tr('Burned IPs cleared', 'История IP очищена'), 1500);
-        paint();
       })
     );
-    body.append(autoCard);
+    body.append(mainCard);
 
-    body.append(h('div', { class: 'settings-section-title' }, O.tr('WireGuard .conf Reserve', 'Резерв: WireGuard (.conf)')));
-    const wgCard = h('div', { class: 'settings-card', style: { padding: '12px 14px' } });
-    const wgConfigs = st.wgConfigs || [];
-    if (wgConfigs.length) {
-      const list = h('div', { style: { marginBottom: '10px' } });
-      wgConfigs.forEach(c => {
-        list.append(h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', borderBottom: '1px solid var(--line)' } },
-          h('button', { class: 'grow', style: { textAlign: 'left' }, onclick: () => {
-            st = O.native.warpSelectWg(c.id);
-            O.toast(O.tr('Selected WG profile: ', 'Выбран профиль: ') + c.name, 1500);
-            paint();
-          } },
-            h('div', { style: { fontWeight: '600', fontSize: '13.5px', color: c.active ? 'var(--fg)' : 'var(--mut)' } }, (c.active ? '● ' : '') + c.name),
-            h('div', { class: 'mut s mono' }, c.endpoint || '')
-          ),
-          h('button', { class: 'ibtn s', title: O.tr('Delete', 'Удалить'), onclick: () => {
-            st = O.native.warpDeleteWg(c.id);
-            paint();
-          } }, O.icon('trash'))
-        ));
-      });
-      wgCard.append(list);
-    } else {
-      wgCard.append(h('div', { class: 'mut s', style: { marginBottom: '10px' } }, O.tr('No WireGuard .conf imported yet. Paste config text or pick a .conf file.', 'Профили WireGuard не добавлены. Вставьте текст .conf или выберите файл на телефоне.')));
-    }
-    const wgNameInp = h('input', { placeholder: O.tr('Profile name (optional)', 'Имя профиля (необязательно)'), value: wgNameVal, style: { marginBottom: '8px' }, oninput: e => { wgNameVal = e.target.value; } });
-    const wgTa = h('textarea', { rows: 4, class: 'mono', placeholder: '[Interface]\nPrivateKey = ...\nAddress = 10.0.0.2/32\n\n[Peer]\nPublicKey = ...\nEndpoint = host:51820\nAllowedIPs = 0.0.0.0/0', oninput: e => { wgConfText = e.target.value; } });
-    wgTa.value = wgConfText;
-    wgCard.append(
-      wgNameInp,
-      wgTa,
-      h('div', { style: { display: 'flex', gap: '8px', marginTop: '8px' } },
-        h('button', { class: 'btn pri grow', onclick: () => {
-          const res = O.native.warpImportWg(wgNameVal, wgTa.value);
-          if (res && res.ok) {
-            wgNameVal = ''; wgConfText = ''; wgTa.value = '';
-            if (res.status) st = res.status;
-            O.toast(res.message || O.tr('WireGuard imported', 'WireGuard сохранён'), 2000);
-            paint();
-          } else {
-            O.toast((res && res.message) || O.tr('Invalid WireGuard .conf', 'Неверный формат WireGuard .conf'), 3500);
-          }
-        } }, O.icon('plus'), O.tr('Save .conf', 'Сохранить .conf')),
-        h('button', { class: 'btn grow', onclick: () => {
-          if (window.OC && OC.pickFile) OC.pickFile('wgconf', '');
-          else O.toast(O.tr('File picker unavailable', 'Выбор файла недоступен'));
-        } }, O.icon('folder'), O.tr('Open File', 'Выбрать файл'))
-      )
-    );
-    body.append(wgCard);
-
-    body.append(h('div', { class: 'settings-section-title' }, O.tr('Proxy Pool & Psiphon Country', 'Пул прокси и страна Psiphon')));
-    const pxCard = h('div', { class: 'settings-card', style: { padding: '12px 14px' } });
-    const pxTa = h('textarea', { rows: 3, class: 'mono', placeholder: 'socks5://127.0.0.1:1080\nhttp://user:pass@proxy.example.com:8080', oninput: e => { proxyText = e.target.value; } });
-    pxTa.value = proxyText;
-    const rotUrlInp = h('input', { class: 'mono', placeholder: O.tr('Change-IP URL webhook (optional)', 'Change-IP URL для мобильных прокси (необязательно)'), style: { marginTop: '8px' }, oninput: e => { rotateUrlVal = e.target.value; } });
-    rotUrlInp.value = rotateUrlVal;
-    const countryBar = h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px' } });
-    COUNTRIES.forEach(cc => {
-      const on = (st.cfonCountry || 'DE') === cc;
-      countryBar.append(h('button', {
-        class: 'btn sm' + (on ? ' pri' : ''),
-        onclick: () => {
-          O.native.warpSetConfig({ cfonCountry: cc });
-          st.cfonCountry = cc;
-          O.toast('Psiphon: ' + cc, 1200);
-          paint();
-        }
-      }, cc));
-    });
-    pxCard.append(
-      h('label', { class: 'mut s', style: { display: 'block', marginBottom: '6px' } }, O.tr('HTTP / HTTPS / SOCKS5 proxies (one per line)', 'HTTP / HTTPS / SOCKS5 прокси (по одному на строку)')),
-      pxTa,
-      rotUrlInp,
-      h('button', { class: 'btn wide', style: { marginTop: '8px' }, onclick: () => {
-        O.native.warpSetConfig({ proxyList: proxyText, rotateUrl: rotateUrlVal });
-        O.toast(O.tr('Proxy pool saved', 'Список прокси сохранён'), 1800);
-      } }, O.icon('check'), O.tr('Save Proxy Pool', 'Сохранить прокси')),
-      h('label', { class: 'mut s', style: { display: 'block', marginTop: '12px', marginBottom: '4px' } }, O.tr('Psiphon fallback country', 'Страна для резервного Psiphon (--cfon)')),
-      countryBar
-    );
-    body.append(pxCard);
+    body.append(h('div', { class: 'settings-section-title' }, O.tr('How it works', 'Как это работает')));
+    body.append(h('div', { class: 'note', style: { lineHeight: '1.55' } },
+      O.tr(
+        'The profile (keys, endpoint, obfuscation) is generated on demand and the previous one is deleted. Renewing registers a new WARP identity, so the exit IP changes.',
+        'Профиль (ключи, endpoint, обфускация) создаётся по запросу, старый удаляется. Обновление регистрирует новую личность WARP, поэтому выходной IP меняется.'
+      )));
   };
 
   paint();
-  s = sub(O.tr('WARP & Bypass', 'WARP и обход лимитов'), body, { full: true });
+  s = sub(O.tr('AmneziaWG', 'AmneziaWG'), body, { full: true });
   if (O.native && O.native.warpRefreshGeo) O.native.warpRefreshGeo();
 
   if (!O._warpListenerBound) {
@@ -1613,15 +1527,6 @@ function openWarpSettings() {
     O.on('warp', d => {
       if (!d) return;
       if (O._warpActivePaint) O._warpActivePaint(d);
-    });
-    O.on('picked_wg', d => {
-      if (!d) return;
-      if (d.ok) {
-        O.toast(d.message || O.tr('WireGuard config imported', 'Профиль WireGuard импортирован'), 2200);
-        if (d.status && O._warpActivePaint) O._warpActivePaint(d.status);
-      } else {
-        O.toast(d.message || O.tr('Invalid WireGuard .conf', 'Ошибка .conf файла'), 3500);
-      }
     });
   }
   O._warpActivePaint = nextSt => {

@@ -15,8 +15,9 @@ O.filesInit=root=>{
   titleEl=h('b',{class:'grow',style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},'Файлы');
   treeEl=h('div',{id:'tree',class:'modern-tree'});
   const searchInp=h('input',{class:'files-search-inp',placeholder:'Поиск в проекте...',oninput:e=>{filterQuery=e.target.value.toLowerCase().trim();draw()}});
-  const searchWrap=h('div',{class:'files-search-wrap'},O.icon('search'),searchInp,
+  const searchWrap=h('div',{class:'files-search-wrap hide'},O.icon('search'),searchInp,
     h('button',{class:'ibtn s',style:{marginLeft:'auto'},onclick:()=>{searchInp.value='';filterQuery='';draw()}},O.icon('x')));
+  const toggleSearch=()=>{searchWrap.classList.toggle('hide');if(!searchWrap.classList.contains('hide'))setTimeout(()=>searchInp.focus(),50);else{searchInp.value='';filterQuery='';draw()}};
 
   const pathInp=h('input',{
     class:'files-path-inp mono',
@@ -36,24 +37,10 @@ O.filesInit=root=>{
     pathApplyBtn
   );
 
-  const presetChips=[];
-  const presetsScroll=h('div',{class:'files-presets-scroll'});
-  PRESET_DIRS.forEach(pd=>{
-    const chip=h('button',{
-      class:'files-preset-chip'+(S.dir===pd.path?' on':''),
-      onclick:()=>applyPath(pd.path)
-    },O.icon(pd.icon),pd.label);
-    presetChips.push({chip,path:pd.path});
-    presetsScroll.append(chip);
-  });
-
   const syncPathUi=()=>{
     const d=S.dir||'/root';
     pathInp.value=d;
     titleEl.textContent=O.basename(d)||'/';
-    presetChips.forEach(pc=>{
-      pc.chip.classList.toggle('on',pc.path===d||(pc.path==='/storage/emulated/0/Download'&&d==='/sdcard/Download')||(pc.path==='/storage/emulated/0/Documents'&&d==='/sdcard/Documents'));
-    });
   };
 
   const applyPath=async p=>{
@@ -73,13 +60,14 @@ O.filesInit=root=>{
 
   root.append(
     h('div',{class:'pane-h'},
-      O.icon('folder'),titleEl,
+      h('button',{class:'ibtn s',title:'Быстрые папки',onclick:()=>O.actions('Быстрые папки',PRESET_DIRS.map(pd=>({icon:pd.icon,label:pd.label,sub:pd.path,fn:()=>applyPath(pd.path)})))},O.icon('folder')),
+      titleEl,
+      h('button',{class:'ibtn s',title:'Поиск',onclick:toggleSearch},O.icon('search')),
       h('button',{class:'ibtn s',title:'Веб-предпросмотр',onclick:()=>O.openPreview&&O.openPreview(S.dir)},O.icon('globe')),
       h('button',{class:'ibtn s',title:'Новый файл',onclick:()=>newEntry('',false)},O.icon('plus')),
       h('button',{class:'ibtn s',title:'Обновить',onclick:()=>O.refreshFiles(true)},O.icon('refresh'))
     ),
     pathBar,
-    presetsScroll,
     searchWrap,
     treeEl
   );

@@ -19,6 +19,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URI
 import java.nio.charset.StandardCharsets
+import java.util.Random
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
@@ -34,6 +35,27 @@ object WarpManager {
     private const val BURNED_TTL_MS = 24L * 60L * 60L * 1000L
     private const val GATE_WAIT_MS = 65_000L
     private const val WARP_TEST_URL = "http://detectportal.firefox.com/success.txt"
+    private val AWG_CONFIG_ENDPOINTS = listOf(
+        "https://warp-vercel-murex.warp-api.cfd",
+        "https://warp-netlify.warp-api.cfd",
+        "https://warp-vercel-chi.warp-api.cfd",
+        "https://warp-sub.warp-api.cfd",
+        "https://warp-workers.warp-api.cfd"
+    )
+    private val AWG_HOSTS = listOf(
+        "162.159.192.", "162.159.195.", "engage.cloudflareclient.com",
+        "8.6.112.", "8.34.70.", "8.34.146.", "8.35.211.", "8.39.125.",
+        "8.39.204.", "8.39.214.", "8.47.69.", "188.114.96.", "188.114.97.",
+        "188.114.98.", "188.114.99."
+    )
+    private val AWG_PORTS = intArrayOf(
+        500, 854, 859, 864, 878, 880, 890, 891, 894, 903, 908, 928, 934,
+        939, 942, 943, 945, 946, 955, 968, 987, 988, 1002, 1010, 1014,
+        1018, 1070, 1074, 1180, 1387, 1701, 1843, 2371, 2408, 2506, 3138,
+        3476, 3581, 3854, 4177, 4198, 4233, 4500, 5279, 5956, 7103, 7152,
+        7156, 7281, 7559, 8319, 8742, 8854, 8886
+    )
+    private val rng = Random()
     private val IPV4_RE = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
     private val WG_KEY_RE = Regex("^[A-Za-z0-9+/]{43}=$")
 
@@ -107,6 +129,7 @@ object WarpManager {
     @Volatile private var currentCountry: String = ""
     @Volatile private var currentCountryCode: String = ""
     @Volatile private var currentWarpState: String = ""
+    @Volatile private var currentAwgEndpoint: String = ""
     @Volatile private var currentColo: String = ""
     @Volatile private var currentIsp: String = ""
     @Volatile private var rotationsCount: Int = 0
@@ -133,13 +156,13 @@ object WarpManager {
     private fun runtimeWgFile(c: Context): File = File(warpDir(c), "active_wg.conf")
 
     fun binaryFile(c: Context): File? {
-        val lib = File(c.applicationInfo.nativeLibraryDir, "libwarp.so")
+        val lib = File(c.applicationInfo.nativeLibraryDir, "libawg.so")
         if (lib.exists() && lib.canExecute()) return lib
         if (lib.exists()) {
             try { lib.setExecutable(true) } catch (_: Exception) {}
             if (lib.canExecute()) return lib
         }
-        val alt = File(c.filesDir, "bin/warp")
+        val alt = File(c.filesDir, "bin/awg")
         return if (alt.exists() && alt.canExecute()) alt else null
     }
 
@@ -288,12 +311,9 @@ object WarpManager {
     }
 
     private fun normalizeMode(m: String): String = when (m.lowercase().trim()) {
-        "warp", "warp_direct", "warp-direct" -> "warp"
-        "warp_scan", "warp-scan", "scan" -> "warp_scan"
-        "warp_gool", "warp-gool", "gool" -> "warp_gool"
-        "wireguard", "wg", "route64" -> "wireguard"
-        "proxy", "http", "socks", "socks5" -> "proxy"
-        "cfon", "psiphon" -> "cfon"
+        "amnezia", "amneziawg", "awg", "warp", "warp_scan", "warp-scan",
+        "warp_gool", "warp-gool", "wireguard", "wg", "cfon", "psiphon",
+        "proxy", "http", "socks", "socks5" -> "amnezia"
         else -> "direct"
     }
 
@@ -573,6 +593,167 @@ object WarpManager {
         }
     }
 
+    // ---- AmneziaWG (WARP) ----
+    //
+    // A fresh AmneziaWG profile is generated from the public WARP config
+    // service used by https://warp-generation.github.io/ and then served by
+    // the bundled awg-wireproxy userspace client (SOCKS5, no root, no TUN).
+
+    private fun randomAwgEndpoint(): String {
+        val host = AWG_HOSTS[rng.nextInt(AWG_HOSTS.size)]
+        val port = AWG_PORTS[rng.nextInt(AWG_PORTS.size)]
+        return if (host.endsWith(".")) "$host${rng.nextInt(10) + 1}:$port" else "$host:$port"
+    }
+
+    private fun fetchWarpKeys(): JSONObject? {
+        val client = OkHttpClient.Builder()
+            .connectTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
+        for (url in AWG_CONFIG_ENDPOINTS) {
+            try {
+                val req = Request.Builder()
+                    .url(url)
+                    .header("X-Client", "WARP")
+                    .header("User-Agent", "OpenCode-Mobile")
+                    .build()
+                client.newCall(req).execute().use { r ->
+                    if (!r.isSuccessful) return@use
+                    val body = r.body?.string() ?: return@use
+                    val j = try { JSONObject(body) } catch (_: Exception) { return@use }
+                    if (!j.optBoolean("success", true)) return@use
+                    if (j.optString("privKey").isBlank() || j.optString("peer_pub").isBlank()) return@use
+                    return j
+                }
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
+    private fun buildAwgConfig(keys: JSONObject, socksPort: Int, endpoint: String): String {
+        val priv = keys.optString("privKey")
+        val peer = keys.optString("peer_pub")
+        val ipv4 = keys.optString("client_ipv4", "172.16.0.2").substringBefore('/')
+        // WARP only accepts the generator's fixed AmneziaWG obfuscation set.
+        val jc = 4
+        val jmin = 40
+        val jmax = 70
+        val s1 = 0
+        val s2 = 0
+        val h1 = 1
+        val h2 = 2
+        val h3 = 3
+        val h4 = 4
+        return buildString {
+            appendLine("[Interface]")
+            appendLine("PrivateKey = $priv")
+            appendLine("Address = $ipv4/32")
+            appendLine("DNS = 1.1.1.1, 1.0.0.1")
+            appendLine("MTU = 1280")
+            appendLine("Jc = $jc")
+            appendLine("Jmin = $jmin")
+            appendLine("Jmax = $jmax")
+            appendLine("S1 = $s1")
+            appendLine("S2 = $s2")
+            appendLine("H1 = $h1")
+            appendLine("H2 = $h2")
+            appendLine("H3 = $h3")
+            appendLine("H4 = $h4")
+            appendLine()
+            appendLine("[Peer]")
+            appendLine("PublicKey = $peer")
+            appendLine("AllowedIPs = 0.0.0.0/0")
+            appendLine("Endpoint = $endpoint")
+            appendLine("PersistentKeepalive = 25")
+            appendLine()
+            appendLine("[Socks5]")
+            appendLine("BindAddress = 127.0.0.1:$socksPort")
+        }
+    }
+
+    /** Regenerate the AmneziaWG profile from scratch (old one is deleted). */
+    private fun regenerateAwgProfile(c: Context, socksPort: Int): Pair<File, String>? {
+        val keys = fetchWarpKeys()
+        if (keys == null) {
+            lastError = "WARP registration failed (generator unreachable)"
+            return null
+        }
+        val endpoint = randomAwgEndpoint()
+        val file = runtimeWgFile(c)
+        try { file.delete() } catch (_: Exception) {}
+        file.writeText(buildAwgConfig(keys, socksPort, endpoint))
+        try { file.setReadable(false, false); file.setReadable(true, true) } catch (_: Exception) {}
+        currentAwgEndpoint = endpoint
+        return file to endpoint
+    }
+
+    private fun startAwgProcess(c: Context, freshIdentity: Boolean): Boolean {
+        val bin = binaryFile(c)
+        if (bin == null) {
+            lastError = "AmneziaWG client (libawg.so) missing from APK build"
+            return false
+        }
+        stopTunnelProcess()
+
+        if (freshIdentity) {
+            try { File(warpDir(c), "awg.log").delete() } catch (_: Exception) {}
+            try { runtimeWgFile(c).delete() } catch (_: Exception) {}
+        }
+
+        val port = freeLocalPort()
+        val profile = regenerateAwgProfile(c, port)
+        if (profile == null) return false
+        val confFile = profile.first
+
+        val logFile = File(warpDir(c), "awg.log")
+        return try {
+            logFile.writeText("")
+            val pb = ProcessBuilder(bin.absolutePath, "-c", confFile.absolutePath, "-s")
+                .directory(warpDir(c))
+                .redirectErrorStream(true)
+            val proc = pb.start()
+            activeProc = proc
+            tunnelPort = port
+
+            val outputLines = ArrayList<String>()
+            thread(isDaemon = true, name = "awg-log") {
+                try {
+                    proc.inputStream.bufferedReader().forEachLine { ln ->
+                        synchronized(outputLines) {
+                            outputLines.add(ln)
+                            if (outputLines.size > 80) outputLines.removeAt(0)
+                        }
+                        try { logFile.appendText(ln + "\n") } catch (_: Exception) {}
+                    }
+                } catch (_: Exception) {}
+            }
+
+            val deadline = System.currentTimeMillis() + 25_000L
+            var ready = false
+            while (System.currentTimeMillis() < deadline && proc.isAlive) {
+                if (canTcpConnect("127.0.0.1", port, 350)) { ready = true; break }
+                Thread.sleep(250)
+            }
+            if (!ready) {
+                val tail = synchronized(outputLines) { outputLines.takeLast(4).joinToString(" | ") }
+                lastError = if (tail.isNotBlank()) "AmneziaWG failed: $tail" else "AmneziaWG failed to start"
+                stopTunnelProcess()
+                false
+            } else {
+                currentUpstream = Upstream.Socks5("127.0.0.1", port)
+                activeModeState = "amnezia"
+                lastError = ""
+                lastMessage = "AmneziaWG · " + currentAwgEndpoint
+                dropGateTunnels()
+                true
+            }
+        } catch (e: Exception) {
+            lastError = e.message ?: "Failed launching AmneziaWG"
+            stopTunnelProcess()
+            false
+        }
+    }
+
     private fun startLibWarpProcess(c: Context, mode: String, freshIdentity: Boolean): Boolean {
         val bin = binaryFile(c)
         if (bin == null) {
@@ -737,19 +918,7 @@ object WarpManager {
         }
     }
 
-    private fun buildAttemptOrder(primary: String): List<String> {
-        if (!autoFallback) return listOf(primary)
-        val out = LinkedHashSet<String>()
-        out.add(primary)
-        if (primary != "direct") {
-            if (primary == "warp") out.add("warp_scan")
-            if (wgProfiles.isNotEmpty()) out.add("wireguard")
-            if (parsedProxyEntries().isNotEmpty()) out.add("proxy")
-            if (primary != "cfon") out.add("cfon")
-            if (primary != "warp") out.add("warp")
-        }
-        return out.toList()
-    }
+    private fun buildAttemptOrder(primary: String): List<String> = listOf(primary)
 
     private fun applyModeInternal(c: Context, targetMode: String, forceNewIdentity: Boolean): Boolean {
         val mode = normalizeMode(targetMode)
@@ -771,28 +940,12 @@ object WarpManager {
         val chain = buildAttemptOrder(mode)
         for (candidate in chain) {
             val ok = when (candidate) {
-                "warp", "warp_scan", "warp_gool", "cfon" -> startLibWarpProcess(c, candidate, forceNewIdentity)
-                "wireguard" -> {
-                    val list = synchronized(lock) { wgProfiles.toList() }
-                    if (forceNewIdentity && list.size > 1) {
-                        synchronized(lock) {
-                            val idx = wgProfiles.indexOfFirst { it.id == selectedWgId }
-                            selectedWgId = wgProfiles[(idx + 1).coerceAtLeast(0) % wgProfiles.size].id
-                            saveStateLocked(c)
-                        }
-                    }
-                    startLibWarpProcess(c, "wireguard", false)
-                }
-                "proxy" -> {
-                    if (forceNewIdentity) triggerChangeIpWebhook()
-                    startProxyUpstream(preferNext = forceNewIdentity)
-                }
+                "amnezia" -> startAwgProcess(c, forceNewIdentity)
                 else -> false
             }
             if (ok) {
                 activeModeState = candidate
                 statusState = "connected"
-                if (candidate != mode) lastMessage = "WARP fallback -> $candidate"
                 notifyChange()
                 return true
             }
@@ -837,10 +990,10 @@ object WarpManager {
             }
             rotatingFlag = true
         }
-        val targetMode = if (configuredMode == "direct") "warp" else configuredMode
+        val targetMode = if (configuredMode == "direct") "amnezia" else configuredMode
         if (configuredMode == "direct") {
             synchronized(lock) {
-                configuredMode = "warp"
+                configuredMode = "amnezia"
                 saveStateLocked(c)
             }
         }
@@ -853,7 +1006,7 @@ object WarpManager {
             notifyChange()
 
             var bestGeo: GeoInfo? = null
-            val maxAttempts = if (targetMode == "wireguard" && wgProfiles.size <= 1) 1 else 4
+            val maxAttempts = 3
             for (attempt in 1..maxAttempts) {
                 val started = applyModeInternal(c, targetMode, forceNewIdentity = true)
                 if (!started) continue
@@ -953,7 +1106,7 @@ object WarpManager {
         try {
             val req = Request.Builder()
                 .url("https://www.cloudflare.com/cdn-cgi/trace")
-                .header("User-Agent", "OpenCode-Mobile/2.2.1")
+                .header("User-Agent", "OpenCode-Mobile/2.3.0")
                 .build()
             client.newCall(req).execute().use { r ->
                 if (r.isSuccessful) {
@@ -997,7 +1150,7 @@ object WarpManager {
         try {
             val geoReq = Request.Builder()
                 .url("https://ipwho.is/$ip")
-                .header("User-Agent", "OpenCode-Mobile/2.2.1")
+                .header("User-Agent", "OpenCode-Mobile/2.3.0")
                 .build()
             client.newCall(geoReq).execute().use { r ->
                 if (r.isSuccessful) {
@@ -1067,6 +1220,7 @@ object WarpManager {
             put("warpState", currentWarpState)
             put("colo", currentColo)
             put("isp", currentIsp)
+            put("endpoint", currentAwgEndpoint)
             put("burnedCount", burnedIps.size)
             put("rotations", rotationsCount)
             put("lastRotatedAt", lastRotatedAt)

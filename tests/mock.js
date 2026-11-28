@@ -62,7 +62,7 @@ window.OC={
  drop(){},sseStart(){sse=true;setTimeout(()=>OCEvent('sse',{t:'open'}),5)},sseStop(){},wsOpen(id){setTimeout(()=>{OCEvent('ws',{id,t:'open'});OCEvent('ws',{id,t:'msg',d:'root@phone:~# '})},5)},wsSend(id,t){(window.__wsSent=window.__wsSent||[]).push(t)},wsClose(){},
  ls:p=>JSON.stringify({ok:true,path:p,items:[{name:'app',dir:true},{name:'notes.txt',dir:false}]}),fs:()=>JSON.stringify({ok:true}),readText:()=>JSON.stringify({ok:true,text:'abc'}),writeText:()=>JSON.stringify({ok:true}),
  cfgRead:()=>window.__cfg||'{\n // comment\n "plugin":["a"],\n "mcp":{"ctx7":{"type":"remote","url":"https://m.example/mcp","enabled":true}}\n}',cfgWrite(t){window.__cfg=t;return JSON.stringify({ok:true})},readLog:()=>'log line',
- pickFile(k,d){window.__picked=[k,d]},copy(t){window.__copied=t},pasteText:()=>'pasted',share(t){window.__shared=t},openLink(u){window.__opened=u},
+ pickFile(k,d){window.__picked=[k,d]},pickPath(){window.__pickPath=(window.__pickPath||0)+1},copy(t){window.__copied=t},pasteText:()=>'pasted',share(t){window.__shared=t},openLink(u){window.__opened=u},
  openApp(t){return true},preparePreview(p){return ''},startVoiceInput(l){},
  isOnline(){return true},
  warpStatus:()=>JSON.stringify({enabled:false,mode:'direct',activeMode:'direct',status:'idle',ip:'198.51.100.1',city:'Amsterdam',country:'Netherlands',countryCode:'NL',autoRotate:true,autoFallback:true,cfonCountry:'DE',burnedCount:0,rotations:0,wgConfigs:[]}),

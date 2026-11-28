@@ -768,6 +768,49 @@ object Runtime {
                 File(skillPrevHome, "SKILL.md").writeText(skillPrevContent)
             } catch (_: Exception) {}
 
+            val skillImgContent = """
+                ---
+                name: image-output
+                description: Produce images only on explicit request, by writing code that renders a real file, then attaching it by absolute path.
+                ---
+
+                # Image Output Skill
+
+                Do not generate, draw, or attach an image unless the user explicitly asked for one (a photo, illustration, logo, chart, diagram, or screenshot).
+
+                - Never call `t2i` on your own initiative. Only use it when the user asks for AI art/photos.
+                - For charts, plots, diagrams, UI mockups and similar, write code (Python + Pillow / matplotlib, HTML + screenshot, etc.), render it to a real `.png` file, then embed it:
+                  `![description](/absolute/path/to/file.png)`
+                - Keep the image in the workspace (or `/root/.cache/opencode-mob/media/`). Never invent paths.
+                - Text answers stay text: do not decorate ordinary replies with generated images.
+            """.trimIndent() + "\n"
+
+            val skillTimeoutContent = """
+                ---
+                name: command-timeout
+                description: Run shell commands with explicit timeouts, detect hangs, and never block the session silently.
+                ---
+
+                # Command Timeout Skill
+
+                Long-running or interactive commands must never hang the session.
+
+                - Wrap potentially slow commands: `timeout 120 <cmd>` (use 300 max unless the user asked for a build).
+                - Always surface the exit code; treat `124` as a timeout and report it instead of waiting forever.
+                - Never start interactive programs (`vim`, `nano`, `top`, `less`, REPLs) unless the user asked; use non-interactive flags.
+                - For servers use `nohup ... &` / `setsid` and print the PID, then poll the port with a short timeout.
+                - If a command produced no output for a long time, kill it and explain what was tried.
+            """.trimIndent() + "\n"
+
+            for ((slug, content) in listOf("image-output" to skillImgContent, "command-timeout" to skillTimeoutContent)) {
+                for (base in listOf(cfg, home, dotOpencode)) {
+                    try {
+                        val d = File(base, "skills/$slug").apply { mkdirs() }
+                        File(d, "SKILL.md").writeText(content)
+                    } catch (_: Exception) {}
+                }
+            }
+
             // Slash command definitions
             val cmdDir = File(cfg, "commands").apply { mkdirs() }
             try {
@@ -797,7 +840,7 @@ object Runtime {
 
             // Global System Prompt (AGENTS.md)
             val promptText = """
-# OpenCode Mobile Environment & Instructions (v2.0.2)
+# OpenCode Mobile Environment & Instructions (v2.3.0)
 
 You are running inside **OpenCode Mobile** directly on native Android (ARM64 / aarch64 architecture).
 You have full access to a complete Linux userspace environment, terminal tools, and native Android integrations.
@@ -831,13 +874,19 @@ You can embed interactive buttons in your markdown responses (the app renders cl
 - `<button data-action="files">Открыть Файлы</button>`
 - `<button data-action="term">Терминал</button>`
 
-## 5. Attaching & Generating Photos (T2I)
-When creating, generating, plotting, or saving an image (`.png`, `.jpg`, `.jpeg`, `.webp`):
-- If you are calling an image generation model via shell, use `t2i "<prompt>"` (or save any generated image inside the workspace / `/root/.cache/opencode-mob/media/`).
-- Always embed the image in your response as standard Markdown `![description](/absolute/path/to/image.png)` (or `https://...` / `data:image/...`) so OpenCode Mobile displays it as a photo attachment card in chat.
+## 5. Images & Attachments
+- Attached files arrive as absolute paths in the message (for example `@/sdcard/Download/report.pdf`). Read them directly from disk; never ask the user to upload or re-send the file.
+- Do NOT generate images unless the user explicitly asks for a photo, illustration, chart, diagram, or screenshot.
+- For charts/diagrams, write code that renders a real PNG, then embed it: `![description](/absolute/path/file.png)`.
+- Only use `t2i "<prompt>"` when the user explicitly wants AI-generated art/photos. Never call it on your own.
 
-## 6. Diff Statistics Reporting (MANDATORY)
-At the very end of EVERY response, you MUST output a separate line with line additions and deletions:
+## 6. Command Execution & Timeouts
+- Never let a command hang the session. Wrap slow commands: `timeout 120 <cmd>` (300 max unless the user asked for a build).
+- Check exit codes; `124` means timeout. Use non-interactive flags, and start servers with `nohup ... &`, then poll the port.
+- If there is no output for a long time, kill the process and explain what was tried.
+
+## 7. Diff Statistics Reporting (MANDATORY)
+At the very end of EVERY response, output a separate line with line additions and deletions:
 +N -M
 For example:
 +120 -67
@@ -849,15 +898,15 @@ For example:
             File(dotOpencode, "AGENTS.md").writeText(promptText)
 
             val readme = File(home, "README.md")
-            if (!readme.exists() || !readme.readText().contains("v2.2.1")) {
+            if (!readme.exists() || !readme.readText().contains("v2.3.0")) {
                 readme.writeText("""
-# OpenCode Mobile v2.2.1
+# OpenCode Mobile v2.3.0
 
 Мобильная среда разработки на Android (ARM64).
 
 ### Возможности
 - **Модели**: Облачные модели через OpenCode Zen, кастомные API-провайдеры и T2I генерация фото.
-- **WARP и обход лимитов**: Встроенный Cloudflare WARP, WireGuard .conf, прокси-пул и Psiphon-резерв с авто-ротацией IP.
+- **AmneziaWG**: Встроенный WARP-туннель с генерацией нового профиля при каждом подключении и авто-обновлением при лимитах.
 - **Linux-окружение**: Терминал, компиляторы, Python, Node.js, Git.
 - **Встроенный веб-предпросмотр**: Запуск сайтов и HTML/CSS/JS проектов прямо в приложении.
 - **Интеграция с Android**: Открытие приложений агентом (`openapp telegram`).

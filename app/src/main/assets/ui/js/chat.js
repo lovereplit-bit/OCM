@@ -2,7 +2,7 @@
 const O=window.OCM,h=O.h,S=O.S,api=O.api,bus=O.bus;
 let msgsEl,dockEl,popEl,ta,sendBtn,agentChip,modelChip,t2iChip,varChip,attsEl,jumpEl,statusEl,todoEl,revEl,fileIn,nokeyEl,comp,projChip,vcsChip,projTxt,vcsTxt,footerPrompt,chatRoot;
 const msgEls=new Map(),partEls=new Map(),open=new Set(),timers=new Map();
-let atts=[],mentions=[],stick=true,revKey='',trail=[],t2iOn=false,lastModelKey='',pendingResumeSid='',lastAutoRotateAt=0,warpWaiter=null;
+let atts=[],pathAtts=[],mentions=[],stick=true,revKey='',trail=[],t2iOn=false,lastModelKey='',pendingResumeSid='',lastAutoRotateAt=0,warpWaiter=null;
 O.rel=p=>{p=String(p||'');return S.dir&&p.startsWith(S.dir+'/')?p.slice(S.dir.length+1):p};
 const cur=()=>S.sessions.find(x=>x.id===S.sid)||O.child(S.sid);
 const modelStr=()=>S.model?S.model.providerID+'/'+S.model.modelID:undefined;
@@ -19,7 +19,12 @@ O.chatInit=root=>{
   nokeyEl=h('div',{class:'nokey hide'},h('span',{class:'grow'},O.tr('No models connected.','Модели не подключены.')),h('button',{class:'btn sm',onclick:()=>O.openConnect()},O.icon('key'),O.tr('Connect','Подключить')));
   ta=h('textarea',{rows:1,placeholder:O.tr('Chat with OpenCode...','Чат с OpenCode...'),oninput:onInput,onclick:onInput,onkeyup:e=>{if(e.key.length>1)onInput()}});
   fileIn=h('input',{type:'file',multiple:true,class:'hide',accept:'image/*,application/pdf,text/*',onchange:onFiles});
-  const plusBtn=h('button',{class:'attach-btn',onclick:()=>fileIn.click()},O.icon('plus'));
+  const plusBtn=h('button',{class:'attach-btn',title:O.tr('Attach a file','Прикрепить файл'),onclick:()=>{
+    const items=[];
+    if(O.native&&O.native.pickPath)items.push({icon:'folder',label:O.tr('File from phone','Файл с телефона'),sub:O.tr('Adds its path, no upload','Добавляет путь, без загрузки'),fn:()=>O.native.pickPath()});
+    items.push({icon:'doc',label:O.tr('Upload to chat','Загрузить в чат'),sub:O.tr('Sends the file contents','Отправляет содержимое файла'),fn:()=>fileIn.click()});
+    O.actions(O.tr('Attach','Прикрепить'),items);
+  }},O.icon('plus'));
   agentChip=h('button',{class:'hud-pill agent-pill',onclick:()=>O.openAgents()},h('span',null,'Build'),O.icon('chevD'));
   modelChip=h('button',{class:'hud-pill model-pill',onclick:()=>O.openModels()},h('span',null,O.tr('Select model','Выбрать модель')),O.icon('chevD'));
   t2iChip=h('button',{class:'hud-pill t2i-pill hide',title:O.tr('Toggle T2I photo generation mode','Режим генерации фото (T2I)'),onclick:()=>{t2iOn=!t2iOn;t2iChip.classList.toggle('on',t2iOn);updateChips()}},O.icon('image'),h('span',null,'T2I'));
@@ -40,7 +45,21 @@ O.chatInit=root=>{
   bus.on('perm',renderDock);bus.on('todo',sid=>{if(sid===S.sid)renderTodos()});
   bus.on('session',()=>{const k=revisionKey();if(k!==revKey)renderAll();else renderRevert()});
   bus.on('sessions',()=>{renderRevert()});
+  let lastAct=Date.now(),stuckEl=null;
+  ['msg','part','status','perm','todo','session','sessions','meta'].forEach(n=>bus.on(n,()=>{lastAct=Date.now();if(stuckEl){stuckEl.remove();stuckEl=null}}));
+  setInterval(()=>{
+    if(!busy()){lastAct=Date.now();if(stuckEl){stuckEl.remove();stuckEl=null}return}
+    if(stuckEl||Date.now()-lastAct<500000)return;
+    stuckEl=h('div',{class:'stuck-banner'},
+      h('div',{class:'stuck-ic'},O.icon('alert')),
+      h('div',{class:'grow'},h('b',null,O.tr('The agent has been silent for 8+ minutes','Агент молчит больше 8 минут')),
+        h('span',{class:'mut s'},O.tr('A command may be hanging.','Возможно, команда зависла.'))),
+      h('button',{class:'btn sm',onclick:()=>{lastAct=Date.now();if(stuckEl){stuckEl.remove();stuckEl=null}}},O.tr('Wait','Ждать')),
+      h('button',{class:'btn sm dng',onclick:async()=>{try{await api('POST','/session/'+S.sid+'/abort',{})}catch(e){O.toast(e.message)}lastAct=Date.now();if(stuckEl){stuckEl.remove();stuckEl=null}}},O.tr('Interrupt','Прервать')));
+    comp.insertBefore(stuckEl,comp.firstChild);
+  },5000);
   bus.on('meta',updateChips);bus.on('conn',updateChips);
+  O.on('picked_path',d=>{if(!d)return;if(!d.ok){O.toast(d.error||O.tr('Could not attach file','Не удалось прикрепить файл'),3500);return}O.attachPath(d.path,d.name);O.toast(O.tr('Attached: ','Прикреплено: ')+(d.name||O.basename(d.path)),1800)});
   O.on('warp_rotated',async d=>{
     if(!d)return;
     if(warpWaiter){const fn=warpWaiter;warpWaiter=null;fn(d);return}
@@ -209,6 +228,32 @@ function getMsgDiff(m){
   return{added:0,deleted:0,found:false};
 }
 
+O.showMessageDiff=m=>{
+  const items=[];
+  for(const p of (m&&m.parts)||[]){
+    if(p.type==='patch'){
+      if(typeof p.diff==='string'&&p.diff.trim())items.push({name:(p.files&&p.files[0]&&(p.files[0].file||p.files[0].filename))||'patch',diff:p.diff});
+      else if(Array.isArray(p.files))p.files.forEach(f=>{
+        if(typeof f.before==='string'||typeof f.after==='string')items.push({name:f.file||f.filename||'file',ops:O.diffOps(f.before||'',f.after||'')});
+      });
+    }else if(p.type==='tool'){
+      const st=p.state||{},md=st.metadata||p.metadata||{},i=st.input||{};
+      const diff=md.diff||p.diff;
+      if(typeof diff==='string'&&diff.trim())items.push({name:i.filePath||i.path||i.filename||p.tool||'diff',diff});
+      else if(p.tool==='edit'&&i.oldString!=null)items.push({name:i.filePath||i.path||'edit',ops:O.diffOps(String(i.oldString),String(i.newString||''))});
+      else if(p.tool==='write'&&typeof i.content==='string')items.push({name:i.filePath||i.path||'write',ops:O.diffOps('',String(i.content))});
+      else if((p.tool==='patch'||p.tool==='apply_patch')&&typeof i.patch==='string')items.push({name:i.filePath||'patch',diff:i.patch});
+    }
+  }
+  if(!items.length){O.toast(O.tr('No code changes in this message','В этом сообщении нет изменений кода'),2500);return}
+  const body=h('div');
+  items.forEach(it=>{
+    body.append(h('div',{class:'diff-file-head'},O.fileIcon(O.basename(it.name)),h('b',null,O.basename(it.name)),h('span',{class:'mut s'},O.dirname(it.name)==='.'?'':O.dirname(it.name))));
+    body.append(it.diff!=null?O.unifiedEl(it.diff):O.diffEl(it.ops,3));
+  });
+  O.sheet(O.tr('Changes in this message','Изменения в этом сообщении'),body,{full:true});
+};
+
 function render(el){
   const p=el._p;if(el._t===p.text)return;el._t=p.text;
   let cleanText=p.text||'';
@@ -237,8 +282,8 @@ function metaUpdate(el,m){
     if(hasDiff){
       const badge=h('div',{
         class:'msg-diff-line',
-        title:O.tr('View code changes in project','Посмотреть изменения кода в проекте'),
-        onclick:()=>O.setTab('changes')
+        title:O.tr('View changes in this message','Посмотреть изменения в этом сообщении'),
+        onclick:()=>O.showMessageDiff(m)
       },
       h('span',{class:'diff-label'},O.tr('Written','Написано')),
       h('span',{class:'diff-stat-val add'},'+'+diffStat.added),
@@ -549,7 +594,7 @@ function updateChips(){
   const mk=m?(m.providerID+'/'+m.modelID):'';
   const hasT2i=Boolean(mi&&O.isT2IModel&&O.isT2IModel(mi));
   const pureT2i=Boolean(mi&&O.isPureT2IModel&&O.isPureT2IModel(mi));
-  if(mk!==lastModelKey){lastModelKey=mk;t2iOn=pureT2i}
+  if(mk!==lastModelKey){lastModelKey=mk;t2iOn=false}
   if(t2iChip){
     t2iChip.classList.toggle('hide',!hasT2i);
     t2iChip.classList.toggle('on',hasT2i&&t2iOn);
@@ -567,7 +612,7 @@ function updateChips(){
   updateSend();
 }
 function updateSend(){
-  const b=busy(),has=!!ta.value.trim()||!!atts.length;
+  const b=busy(),has=!!ta.value.trim()||!!atts.length||!!pathAtts.length;
   sendBtn.className=b&&!has?'stop':(has?'ready':'');
   sendBtn.textContent='';
   sendBtn.append(O.icon(b&&!has?'stop':'send'));
@@ -633,14 +678,24 @@ O.subagents=()=>(S.agents||[]).filter(a=>a.mode==='subagent'||a.mode==='all');
 function insertMention(tok,part,from,to){ta.value=ta.value.slice(0,from)+tok+' '+ta.value.slice(to);const p=from+tok.length+1;ta.setSelectionRange(p,p);mentions.push({tok,part});hidePop();ta.focus();onInput()}
 O.addMention=(path,isDir)=>{const rel=O.rel(path);const tok='@'+rel;const abs=path.startsWith('/')?path:S.dir+'/'+path;
   ta.value=(ta.value?ta.value+' ':'')+tok+' ';mentions.push({tok,part:{type:'file',mime:isDir?'application/x-directory':'text/plain',url:'file://'+abs,filename:O.basename(path),source:{type:'file',path:abs,text:{value:tok,start:0,end:0}}}});O.setTab('chat');ta.focus();onInput()};
+O.attachPath=(path,name)=>{if(!path)return;const abs=String(path).startsWith('/')?String(path):'/'+path;
+  const nm=name||O.basename(abs);const ext=O.ext(nm);const mime=ext==='png'||ext==='jpg'||ext==='jpeg'||ext==='webp'||ext==='gif'?'image/'+(ext==='jpg'?'jpeg':ext):'text/plain';
+  const tok='@'+O.rel(abs);
+  if(pathAtts.some(a=>a.path===abs))return;
+  pathAtts.push({path:abs,name:nm,mime});
+  ta.value=(ta.value?ta.value+' ':'')+tok+' ';
+  mentions.push({tok,part:{type:'file',mime,url:'file://'+abs,filename:nm,source:{type:'file',path:abs,text:{value:tok,start:0,end:0}}}});
+  renderAtts();onInput();ta.focus()};
 O.insertText=t=>{ta.value=t;onInput();ta.focus()};
 function onFiles(){const files=[...fileIn.files];fileIn.value='';for(const f of files){
   const mi=S.model&&O.modelInfo(S.model.providerID,S.model.modelID);
   if(!(f.type||'').startsWith('text/')&&mi&&mi.attachment===false){O.toast('Эта модель не принимает вложения');continue}
   if(f.size>8e6){O.toast(f.name+' слишком большой (макс. 8 МБ)');continue}
   const r=new FileReader();r.onload=()=>{atts.push({type:'file',mime:f.type||'application/octet-stream',filename:f.name,url:r.result});renderAtts()};r.readAsDataURL(f)}}
-function renderAtts(){attsEl.textContent='';attsEl.classList.toggle('hide',!atts.length);
-  atts.forEach((a,i)=>attsEl.append(h('span',{class:'chip'},a.mime.startsWith('image/')?h('img',{src:a.url,style:{height:'22px',borderRadius:'4px'}}):O.fileIcon(a.filename),h('span',null,a.filename),h('button',{onclick:()=>{atts.splice(i,1);renderAtts();updateSend()}},O.icon('x')))));updateSend()}
+function renderAtts(){attsEl.textContent='';attsEl.classList.toggle('hide',!atts.length&&!pathAtts.length);
+  atts.forEach((a,i)=>attsEl.append(h('span',{class:'chip'},a.mime.startsWith('image/')?h('img',{src:a.url,style:{height:'22px',borderRadius:'4px'}}):O.fileIcon(a.filename),h('span',null,a.filename),h('button',{onclick:()=>{atts.splice(i,1);renderAtts();updateSend()}},O.icon('x')))));
+  pathAtts.forEach((a,i)=>attsEl.append(h('span',{class:'chip path-chip',title:a.path},O.fileIcon(a.name),h('span',null,a.name),h('button',{onclick:()=>{const tok='@'+O.rel(a.path);pathAtts.splice(i,1);mentions=mentions.filter(m=>m.tok!==tok);ta.value=ta.value.split(tok).join('').replace(/[ \t]{2,}/g,' ').trim();onInput();renderAtts()}},O.icon('x')))));
+  updateSend()}
 function resolveT2iEndpoint(){
   const cfg=O.readCfgObj?O.readCfgObj():{provider:{}};
   let authObj={};
@@ -841,8 +896,8 @@ O.generateImagePrompt=async(promptText)=>{
 };
 
 async function onSend(){
-  if(busy()&&!ta.value.trim()&&!atts.length){try{await api('POST','/session/'+S.sid+'/abort',{})}catch(e){O.toast(e.message)}return}
-  const text=ta.value.trim();if(!text&&!atts.length)return;
+  if(busy()&&!ta.value.trim()&&!atts.length&&!pathAtts.length){try{await api('POST','/session/'+S.sid+'/abort',{})}catch(e){O.toast(e.message)}return}
+  const text=ta.value.trim();if(!text&&!atts.length&&!pathAtts.length)return;
   const cm=/^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text);
   if(cm){const b=BUILTINS.find(x=>x.n===cm[1]);if(b){clear();b.run(cm[2]);return}
     const sc=(S.commands||[]).find(c=>c.name===cm[1]);
@@ -850,7 +905,10 @@ async function onSend(){
 
   if(!S.model){O.toast('Подключите провайдера, чтобы выбрать модель');O.openConnect();return}
   const curMi=O.modelInfo(S.model.providerID,S.model.modelID);
-  if(text&&!atts.length&&curMi&&((O.isPureT2IModel&&O.isPureT2IModel(curMi))||(O.isT2IModel&&O.isT2IModel(curMi)&&t2iOn))){
+  if(text&&!atts.length&&!pathAtts.length&&curMi&&O.isPureT2IModel&&O.isPureT2IModel(curMi)){
+    O.toast(O.tr('This is an image model. Use /imagine <prompt>.','Это модель изображений. Используйте /imagine <запрос>.'),4000);return;
+  }
+  if(text&&!atts.length&&!pathAtts.length&&curMi&&O.isT2IModel&&O.isT2IModel(curMi)&&t2iOn){
     clear();await O.generateImagePrompt(text);return;
   }
   if(text.startsWith('!')){const cmd=text.slice(1).trim();
@@ -878,6 +936,6 @@ async function onSend(){
     }
     ta.value=text;onInput();
   }}
-function clear(){ta.value='';atts=[];mentions=[];renderAtts();autosize();hidePop();updateSend()}
+function clear(){ta.value='';atts=[];pathAtts=[];mentions=[];renderAtts();autosize();hidePop();updateSend()}
 O.chat={renderAll,sess,focus:()=>ta&&ta.focus()};
 })();

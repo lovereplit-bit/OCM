@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds everything the APK embeds:
-#   jniLibs/arm64-v8a/{libproot.so,libproot-loader.so,libtalloc.so,libandroid-shmem.so,libwarp.so}
+#   jniLibs/arm64-v8a/{libproot.so,libproot-loader.so,libtalloc.so,libandroid-shmem.so,libawg.so}
 #   assets/rootfs.tar.xz + rootfs.id                                  Ubuntu 24.04 arm64 with opencode 1.x inside
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -53,16 +53,17 @@ for n in $(patchelf --print-needed "$LIBS/libproot.so"); do
   esac
 done
 
-echo "== 2/4 warp-plus (WARP / WireGuard / Psiphon android-arm64 tunnel binary) =="
-WARP_TAG="v1.2.6"
-curl -fsSL "https://github.com/bepass-org/warp-plus/releases/download/$WARP_TAG/warp-plus_android-arm64.zip" -o "$WORK/warp-plus.zip"
-python3 -c 'import zipfile, sys; z = zipfile.ZipFile(sys.argv[1]); z.extract("warp-plus", sys.argv[2])' "$WORK/warp-plus.zip" "$WORK"
-test -f "$WORK/warp-plus"
-install -m755 "$WORK/warp-plus" "$LIBS/libwarp.so"
-for n in $(patchelf --print-needed "$LIBS/libwarp.so" 2>/dev/null || true); do
+echo "== 2/4 awg-wireproxy (AmneziaWG userspace client, android-arm64) =="
+AWG_TAG="v2.1.0"
+curl -fsSL "https://github.com/bropines/awg-wireproxy/releases/download/$AWG_TAG/awg-wireproxy_${AWG_TAG#v}_linux_arm64.tar.gz" -o "$WORK/awg.tgz"
+mkdir -p "$WORK/awg"
+tar -xzf "$WORK/awg.tgz" -C "$WORK/awg" wireproxy
+test -f "$WORK/awg/wireproxy"
+install -m755 "$WORK/awg/wireproxy" "$LIBS/libawg.so"
+for n in $(patchelf --print-needed "$LIBS/libawg.so" 2>/dev/null || true); do
   case "$n" in
     libc.so|libdl.so|libm.so|liblog.so) ;;
-    *) echo "libwarp has an unexpected dependency: $n"; exit 1 ;;
+    *) echo "libawg has an unexpected dependency: $n"; exit 1 ;;
   esac
 done
 

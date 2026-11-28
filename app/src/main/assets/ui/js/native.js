@@ -64,6 +64,7 @@ O.native={
   state:()=>j(OC.state())||{},
   isOnline:()=>{try{return window.OC&&OC.isOnline?Boolean(OC.isOnline()):navigator.onLine!==false}catch{return navigator.onLine!==false}},
   warpStatus:()=>j(window.OC&&OC.warpStatus?OC.warpStatus():'{}')||{mode:'direct',activeMode:'direct',status:'idle',enabled:false},
+  pickPath:()=>{try{if(window.OC&&OC.pickPath)OC.pickPath()}catch{}},
   warpRefreshGeo:()=>{try{if(window.OC&&OC.warpRefreshGeo)OC.warpRefreshGeo()}catch{}},
   warpSetConfig:cfg=>{try{if(window.OC&&OC.warpSetConfig)OC.warpSetConfig(JSON.stringify(cfg||{}))}catch{}},
   warpRotate:sid=>{try{if(window.OC&&OC.warpRotate)OC.warpRotate(sid||'')}catch{}},
